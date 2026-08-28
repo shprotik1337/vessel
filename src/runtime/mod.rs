@@ -388,6 +388,10 @@ impl Runtime {
         CredentialState::load(&self.secrets)
     }
 
+    pub fn provider_registry(&self) -> Arc<ProviderRegistry> {
+        Arc::clone(&self.providers)
+    }
+
     fn save_credential(&mut self, kind: CredentialKind, value: &str) -> Result<(), String> {
         let value = value.trim();
         if value.is_empty() {

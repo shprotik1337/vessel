@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "apps/noverplay-gui/src-tauri"]
+resolver = "2"
+
 [package]
 name = "noverplay-tui"
 version = "1.0.0"
