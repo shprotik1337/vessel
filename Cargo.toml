@@ -1,5 +1,5 @@
 [workspace]
-members = ["."]
+members = [".", "apps/noverplay-gui/src-tauri"]
 resolver = "2"
 
 [package]

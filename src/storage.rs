@@ -403,6 +403,21 @@ impl Storage {
         })
     }
 
+    pub fn clear_all(&self) -> Result<()> {
+        let connection = self.connection()?;
+        connection.execute_batch(
+            "
+            DELETE FROM playlist_tracks;
+            DELETE FROM playlists;
+            DELETE FROM library_tracks;
+            DELETE FROM history;
+            DELETE FROM queue_tracks;
+            DELETE FROM queue_state;
+            ",
+        )?;
+        Ok(())
+    }
+
     fn connection(&self) -> Result<Connection> {
         let connection = Connection::open(&self.path)
             .with_context(|| format!("Не удалось открыть БД {}", self.path.display()))?;
