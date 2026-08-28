@@ -719,6 +719,11 @@ impl App {
         if self.search_query.trim() != query {
             return;
         }
+        eprintln!(
+            "[vessel] finish_search query={query:?} tracks={} failures={:?}",
+            tracks.len(),
+            failures
+        );
         self.search_results = tracks;
         self.selected = 0;
         self.status_message = if query.is_empty() {

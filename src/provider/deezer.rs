@@ -333,6 +333,21 @@ impl MusicProvider for DeezerProvider {
     }
 }
 
+impl DeezerProvider {
+    /// Проверяет, что ARL-ключ действительно авторизован: вызывает
+    /// deezer.getUserData и проверяет наличие checkForm + license_token.
+    /// Ровно та же проверка, что в prepare_full_track.
+    pub async fn probe(&self) -> Result<()> {
+        let user = self.gateway("deezer.getUserData", "", json!({})).await?;
+        let token = text_at(&user, &["results", "checkForm"]);
+        let license = text_at(&user, &["results", "USER", "OPTIONS", "license_token"]);
+        if token.is_none() || license.is_none() {
+            anyhow::bail!("Deezer ARL не авторизован — проверь cookie arl")
+        }
+        Ok(())
+    }
+}
+
 fn gateway_has_error(value: &Value) -> bool {
     match value {
         Value::Array(items) => !items.is_empty(),

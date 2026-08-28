@@ -134,6 +134,28 @@ fn provider_order(kind: ProviderKind) -> u8 {
     }
 }
 
+/// Строит провайдера из сырого ключа (как build_registry) и делает реальный
+/// запрос к сервису, чтобы проверить, что ключ рабочий.
+pub async fn probe_provider(
+    kind: ProviderKind,
+    credential: &str,
+) -> anyhow::Result<()> {
+    match kind {
+        ProviderKind::SoundCloud => {
+            let provider = soundcloud::SoundCloudProvider::new(credential)?;
+            provider.probe().await
+        }
+        ProviderKind::YandexMusic => {
+            let provider = yandex::YandexProvider::new(credential)?;
+            provider.probe().await
+        }
+        ProviderKind::Deezer => {
+            let provider = deezer::DeezerProvider::new(credential)?;
+            provider.probe().await
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
