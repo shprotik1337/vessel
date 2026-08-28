@@ -395,10 +395,20 @@ impl Runtime {
     }
 
     pub fn remove_credential(&mut self, key: crate::secrets::SecretKey) -> anyhow::Result<()> {
-        self.secrets.remove(key)
+        self.secrets.remove(key)?;
+        match key {
+            crate::secrets::SecretKey::SoundCloudClientIdOverride => {
+                self.config.soundcloud_enabled = false;
+            }
+            crate::secrets::SecretKey::YandexToken => self.config.yandex_enabled = false,
+            crate::secrets::SecretKey::DeezerArl => self.config.deezer_enabled = false,
+            _ => {}
+        }
+        self.reload_providers();
+        Ok(())
     }
 
-    fn save_credential(&mut self, kind: CredentialKind, value: &str) -> Result<(), String> {
+    pub fn save_credential(&mut self, kind: CredentialKind, value: &str) -> Result<(), String> {
         let value = value.trim();
         if value.is_empty() {
             return Err("ключ пустой".to_string());

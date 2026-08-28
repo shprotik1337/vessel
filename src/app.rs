@@ -1,6 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
+use serde::Serialize;
 
 use crate::{
     account::{
@@ -72,7 +73,7 @@ impl Screen {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 pub enum PlaybackStatus {
     Playing,
     #[default]
@@ -81,7 +82,7 @@ pub enum PlaybackStatus {
     Stopped,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PlayerState {
     pub status: PlaybackStatus,
     pub position_ms: u64,
@@ -719,11 +720,6 @@ impl App {
         if self.search_query.trim() != query {
             return;
         }
-        eprintln!(
-            "[vessel] finish_search query={query:?} tracks={} failures={:?}",
-            tracks.len(),
-            failures
-        );
         self.search_results = tracks;
         self.selected = 0;
         self.status_message = if query.is_empty() {
