@@ -69,5 +69,13 @@ impl MusicProvider for SoundCloudProvider {
     }
 }
 
+impl SoundCloudProvider {
+    /// Проверяет, что client_id реально работает: делает настоящий запрос
+    /// к поиску SoundCloud тем же кодом, которым идёт обычный поиск.
+    pub async fn probe(&self) -> Result<()> {
+        search_tracks(&self.client, "noverplay probe", None).await.map(|_| ())
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -7,6 +7,8 @@ mod providers;
 mod search;
 mod wave;
 
+pub use search::merge_pages;
+
 use std::{
     sync::Arc,
     time::{Duration, SystemTime},
@@ -392,6 +394,10 @@ impl Runtime {
         Arc::clone(&self.providers)
     }
 
+    pub fn remove_credential(&mut self, key: crate::secrets::SecretKey) -> anyhow::Result<()> {
+        self.secrets.remove(key)
+    }
+
     fn save_credential(&mut self, kind: CredentialKind, value: &str) -> Result<(), String> {
         let value = value.trim();
         if value.is_empty() {
@@ -742,7 +748,7 @@ impl Runtime {
         ));
     }
 
-    fn reload_providers(&mut self) {
+    pub fn reload_providers(&mut self) {
         let setup = build_registry(&self.config, &self.secrets);
         self.providers = Arc::new(setup.registry);
         self.notices.extend(setup.notices);

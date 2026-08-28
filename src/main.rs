@@ -166,6 +166,12 @@ fn persist_player(
         storage.save_queue(&app.queue_snapshot())?;
         app.queue_dirty = false;
     }
+    if app.playlists_dirty {
+        for playlist in &app.playlists {
+            storage.save_playlist(playlist)?;
+        }
+        app.playlists_dirty = false;
+    }
     if app.config_dirty {
         config.volume_percent = app.player.volume_percent;
         config.soundcloud_enabled = app.soundcloud_enabled;
