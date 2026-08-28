@@ -162,6 +162,7 @@ pub struct App {
     pub dirty: bool,
     pub queue_dirty: bool,
     pub config_dirty: bool,
+    pub playlists_dirty: bool,
     pub status_message: String,
     onboarding_result: Option<OnboardingResult>,
     onboarding_resume: Option<Box<OnboardingState>>,
@@ -231,6 +232,7 @@ impl App {
             dirty: true,
             queue_dirty: false,
             config_dirty: false,
+            playlists_dirty: false,
             status_message: "Готово".to_string(),
             onboarding_result: None,
             onboarding_resume: None,
@@ -1396,6 +1398,181 @@ impl App {
             self.config_dirty = true;
         }
         self.modal = None;
+    }
+}
+
+// Методы для графического интерфейса (Vessel). Тонкие обёртки поверх существующей
+// логики состояния — не дублируют бизнес-правила, а переиспользуют их.
+impl App {
+    pub fn gui_play_tracks(&mut self, tracks: Vec<TrackRef>, start: usize) -> bool {
+        if tracks.is_empty() {
+            return false;
+        }
+        let index = start.min(tracks.len() - 1);
+        self.queue = tracks;
+        self.queue_index = Some(index);
+        let track = self.queue[index].clone();
+        self.now_playing = Some(track.clone());
+        self.player.position_ms = 0;
+        self.player.buffered_ms = 0;
+        self.player.duration_ms = track.duration_ms.unwrap_or_default();
+        self.player.status = PlaybackStatus::Buffering;
+        self.queue_dirty = true;
+        self.effects.push(AppEffect::Play(Box::new(track)));
+        true
+    }
+
+    pub fn gui_toggle_like_track(&mut self, track: &TrackRef) -> bool {
+        let key = track.provider_key();
+        let liked = !self.library.iter().any(|current| current.provider_key() == key);
+        if liked {
+            self.library.insert(0, track.clone());
+        } else {
+            self.library.retain(|current| current.provider_key() != key);
+        }
+        self.effects.push(AppEffect::SetLiked {
+            track: Box::new(track.clone()),
+            liked,
+        });
+        liked
+    }
+
+    pub fn gui_seek_to(&mut self, position_ms: u64) {
+        self.player.position_ms = position_ms.min(self.player.duration_ms);
+        self.effects.push(AppEffect::Seek(self.player.position_ms));
+    }
+
+    pub fn gui_play_next(&mut self, track: TrackRef) {
+        let index = self.queue_index.map(|index| index + 1).unwrap_or(self.queue.len());
+        self.queue.insert(index.min(self.queue.len()), track);
+        self.queue_dirty = true;
+    }
+
+    pub fn gui_remove_from_queue(&mut self, index: usize) {
+        if index < self.queue.len() {
+            let _ = self.control_queue_remove(index + 1);
+        }
+    }
+
+    pub fn gui_add_to_queue(&mut self, track: TrackRef) {
+        self.control_queue_add(track);
+    }
+
+    pub fn gui_clear_history(&mut self) {
+        self.home_tracks.clear();
+    }
+
+    pub fn gui_move_queue_item(&mut self, from: usize, to: usize) {
+        if from >= self.queue.len() || to >= self.queue.len() || from == to {
+            return;
+        }
+        let track = self.queue.remove(from);
+        self.queue.insert(to, track);
+        if let Some(current) = self.queue_index {
+            self.queue_index = Some(match (from, current, to) {
+                (_, _, _) if from == current => to,
+                (_, _, _) if from < current && to >= current => current - 1,
+                (_, _, _) if from > current && to <= current => current + 1,
+                _ => current,
+            });
+        }
+        self.queue_dirty = true;
+    }
+
+    pub fn gui_set_shuffle(&mut self, on: bool) {
+        if self.player.shuffle != on {
+            self.player.shuffle = on;
+            self.queue_dirty = true;
+        }
+    }
+
+    pub fn gui_set_repeat(&mut self, mode: RepeatMode) {
+        if self.player.repeat != mode {
+            self.player.repeat = mode;
+            self.queue_dirty = true;
+        }
+    }
+
+    pub fn gui_play_playlist(&mut self, id: uuid::Uuid) -> bool {
+        let Some(playlist) = self.playlists.iter().find(|item| item.id == id) else {
+            return false;
+        };
+        self.gui_play_tracks(playlist.tracks.clone(), 0)
+    }
+
+    pub fn gui_create_playlist(&mut self, title: String) -> uuid::Uuid {
+        let playlist = Playlist::new(title, now_ms());
+        let id = playlist.id;
+        self.playlists.insert(0, playlist);
+        self.playlists_dirty = true;
+        id
+    }
+
+    pub fn gui_rename_playlist(&mut self, id: uuid::Uuid, title: String) {
+        if let Some(playlist) = self.playlists.iter_mut().find(|item| item.id == id) {
+            playlist.title = title;
+            playlist.updated_at_ms = now_ms();
+            self.playlists_dirty = true;
+        }
+    }
+
+    pub fn gui_delete_playlist(&mut self, id: uuid::Uuid) {
+        if let Some(index) = self.playlists.iter().position(|item| item.id == id) {
+            self.playlists.remove(index);
+            if self.active_playlist == Some(id) {
+                self.active_playlist = None;
+            }
+            self.playlists_dirty = true;
+        }
+    }
+
+    pub fn gui_add_to_playlist(&mut self, id: uuid::Uuid, track: TrackRef) -> bool {
+        if let Some(playlist) = self.playlists.iter_mut().find(|item| item.id == id) {
+            if playlist.push_unique(track) {
+                playlist.updated_at_ms = now_ms();
+                self.playlists_dirty = true;
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn gui_remove_from_playlist(&mut self, id: uuid::Uuid, index: usize) {
+        if let Some(playlist) = self.playlists.iter_mut().find(|item| item.id == id)
+            && index < playlist.tracks.len()
+        {
+            playlist.tracks.remove(index);
+            playlist.updated_at_ms = now_ms();
+            self.playlists_dirty = true;
+        }
+    }
+
+    pub fn gui_reorder_playlist(&mut self, id: uuid::Uuid, from: usize, to: usize) {
+        if let Some(playlist) = self.playlists.iter_mut().find(|item| item.id == id)
+            && from < playlist.tracks.len()
+            && to < playlist.tracks.len()
+            && from != to
+        {
+            let track = playlist.tracks.remove(from);
+            playlist.tracks.insert(to, track);
+            playlist.updated_at_ms = now_ms();
+            self.playlists_dirty = true;
+        }
+    }
+
+    pub fn gui_search(&mut self, query: String, provider: SearchProvider, immediate: bool) {
+        self.search_query = query.clone();
+        self.search_provider = provider;
+        self.search_results.clear();
+        self.effects.push(AppEffect::Search {
+            query,
+            provider,
+            immediate,
+        });
+    }
+
+    pub fn gui_dispatch(&mut self, effect: AppEffect) {
+        self.effects.push(effect);
     }
 }
 

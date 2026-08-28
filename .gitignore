@@ -15,6 +15,10 @@ artifacts/
 # Contains mutation testing data
 **/mutants.out*/
 
+# Apps
+apps/**/node_modules/
+apps/**/dist/
+
 # Локальные служебные файлы
 .claude/
 .codex/
