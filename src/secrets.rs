@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 
-const SERVICE_NAME: &str = "noverplay-tui";
+const SERVICE_NAME: &str = "vessel";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SecretKey {

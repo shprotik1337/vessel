@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/2.x/crates/tauri-cli/config.schema.json",
   "productName": "Vessel",
   "version": "0.1.0",
-  "identifier": "space.noverplay.vessel",
+  "identifier": "space.vessel.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

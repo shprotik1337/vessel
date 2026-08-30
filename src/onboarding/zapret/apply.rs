@@ -43,7 +43,7 @@ pub fn apply_plan(plan: &ZapretPlan) -> Result<ZapretApplyResult> {
 
 pub fn sudo_command(path: &Path) -> String {
     let escaped = path.display().to_string().replace('\'', "'\"'\"'");
-    format!("sudo noverplay setup-zapret --path '{escaped}'")
+    format!("sudo vessel setup-zapret --path '{escaped}'")
 }
 
 fn read_current(path: &Path) -> Result<String> {
@@ -68,7 +68,7 @@ fn create_backup(path: &Path) -> Result<PathBuf> {
         .as_millis();
     let bytes = fs::read(path).map_err(|error| with_permission_hint(error, path, "прочитать"))?;
     for suffix in 0..100_u8 {
-        let backup = parent.join(format!("{name}.noverplay-{stamp}-{suffix}.bak"));
+        let backup = parent.join(format!("{name}.vessel-{stamp}-{suffix}.bak"));
         match OpenOptions::new()
             .write(true)
             .create_new(true)

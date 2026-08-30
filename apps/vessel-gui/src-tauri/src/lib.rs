@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use noverplay_tui::{
+use vessel_core::{
     app::{App, PlaybackStatus, PlayerState},
     config::{AppConfig, AppPaths},
     model::{Playlist, TrackRef},
@@ -92,27 +92,27 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
     let credentials = core.runtime.credential_state().unwrap_or_default();
     let mut statuses = Vec::new();
     let kinds = [
-        noverplay_tui::model::ProviderKind::SoundCloud,
-        noverplay_tui::model::ProviderKind::YandexMusic,
-        noverplay_tui::model::ProviderKind::Deezer,
+        vessel_core::model::ProviderKind::SoundCloud,
+        vessel_core::model::ProviderKind::YandexMusic,
+        vessel_core::model::ProviderKind::Deezer,
     ];
     for kind in kinds {
         let label = kind.label().to_string();
         let kind_str = match kind {
-            noverplay_tui::model::ProviderKind::SoundCloud => "soundcloud",
-            noverplay_tui::model::ProviderKind::YandexMusic => "yandex",
-            noverplay_tui::model::ProviderKind::Deezer => "deezer",
+            vessel_core::model::ProviderKind::SoundCloud => "soundcloud",
+            vessel_core::model::ProviderKind::YandexMusic => "yandex",
+            vessel_core::model::ProviderKind::Deezer => "deezer",
         }
         .to_string();
         let enabled = match kind {
-            noverplay_tui::model::ProviderKind::SoundCloud => core.app.soundcloud_enabled,
-            noverplay_tui::model::ProviderKind::YandexMusic => core.app.yandex_enabled,
-            noverplay_tui::model::ProviderKind::Deezer => core.app.deezer_enabled,
+            vessel_core::model::ProviderKind::SoundCloud => core.app.soundcloud_enabled,
+            vessel_core::model::ProviderKind::YandexMusic => core.app.yandex_enabled,
+            vessel_core::model::ProviderKind::Deezer => core.app.deezer_enabled,
         };
         let has_credentials = match kind {
-            noverplay_tui::model::ProviderKind::SoundCloud => credentials.soundcloud,
-            noverplay_tui::model::ProviderKind::YandexMusic => credentials.yandex,
-            noverplay_tui::model::ProviderKind::Deezer => credentials.deezer,
+            vessel_core::model::ProviderKind::SoundCloud => credentials.soundcloud,
+            vessel_core::model::ProviderKind::YandexMusic => credentials.yandex,
+            vessel_core::model::ProviderKind::Deezer => credentials.deezer,
         };
         let connected = registry.get(kind).is_some() && enabled;
         statuses.push(ProviderStatus {
@@ -247,7 +247,7 @@ fn persist(core: &mut GuiCore) {
 
 fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
     let mut config = AppConfig::load(paths)?.normalized();
-    noverplay_tui::provider::cache::set_track_cache_dir(
+    vessel_core::provider::cache::set_track_cache_dir(
         config
             .track_cache_dir
             .as_deref()
@@ -258,7 +258,7 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
     let secrets = SecretStore::new(paths.secrets_file.clone());
     if let Some(client_id) = config.soundcloud_client_id_override.take() {
         secrets.set(
-            noverplay_tui::secrets::SecretKey::SoundCloudClientIdOverride,
+            vessel_core::secrets::SecretKey::SoundCloudClientIdOverride,
             &client_id,
         )?;
         config.save(paths)?;

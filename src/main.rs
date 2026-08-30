@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Result;
 use clap::Parser;
-use noverplay_tui::{
+use vessel_core::{
     action::Action,
     app::{App, Screen},
     audio::AudioEngine,
@@ -90,7 +90,7 @@ async fn run_tui() -> Result<()> {
             if let Some(result) = app.take_onboarding_result() {
                 config.guest_mode = matches!(
                     result.account_mode,
-                    noverplay_tui::onboarding::AccountMode::Guest
+                    vessel_core::onboarding::AccountMode::Guest
                 );
                 config.soundcloud_enabled = result.soundcloud_enabled;
                 config.yandex_enabled = result.yandex_enabled;
@@ -131,7 +131,7 @@ fn load_player(
     let secrets = SecretStore::new(paths.secrets_file.clone());
     if let Some(client_id) = config.soundcloud_client_id_override.take() {
         secrets.set(
-            noverplay_tui::secrets::SecretKey::SoundCloudClientIdOverride,
+            vessel_core::secrets::SecretKey::SoundCloudClientIdOverride,
             &client_id,
         )?;
         config.save(paths)?;
@@ -418,7 +418,7 @@ fn finish_control(app: &mut App, action: &Action, pending: &mut Option<PendingCo
 mod tests {
     use std::{io::BufRead, net::TcpListener, time::Duration};
 
-    use noverplay_tui::model::{PlaybackCapability, ProviderKind, TrackRef};
+    use vessel_core::model::{PlaybackCapability, ProviderKind, TrackRef};
     use url::Url;
 
     use super::*;
@@ -432,7 +432,7 @@ mod tests {
             .unwrap();
         let command = ControlCommand::Play {
             query: "test".to_string(),
-            provider: noverplay_tui::model::SearchProvider::All,
+            provider: vessel_core::model::SearchProvider::All,
         };
         let pending_command = begin_control(
             &mut app,
@@ -484,7 +484,7 @@ mod tests {
             server,
             ControlCommand::Search {
                 query: "test".to_string(),
-                provider: noverplay_tui::model::SearchProvider::All,
+                provider: vessel_core::model::SearchProvider::All,
             },
             Instant::now(),
         ));

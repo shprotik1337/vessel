@@ -1,16 +1,16 @@
 [workspace]
-members = [".", "apps/noverplay-gui/src-tauri"]
+members = [".", "apps/vessel-gui/src-tauri"]
 resolver = "2"
 
 [package]
-name = "noverplay-tui"
+name = "vessel-core"
 version = "1.0.0"
 edition = "2024"
 license = "GPL-3.0-only"
-description = "Терминальный музыкальный клиент Noverplay"
+description = "Vessel — музыкальный клиент"
 
 [[bin]]
-name = "noverplay"
+name = "vessel"
 path = "src/main.rs"
 
 [[bin]]

@@ -293,7 +293,7 @@ impl ControlServer {
         let worker_shutdown = Arc::clone(&shutdown);
         let worker_token = token;
         let thread = match thread::Builder::new()
-            .name("noverplay-control".to_string())
+            .name("vessel-control".to_string())
             .spawn(move || {
                 while !worker_shutdown.load(Ordering::Relaxed) {
                     let (mut stream, _) = match listener.accept() {

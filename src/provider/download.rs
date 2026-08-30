@@ -8,7 +8,7 @@ use crate::model::{PlaybackSource, TrackRef};
 pub fn downloads_dir() -> Result<PathBuf> {
     let base = directories::UserDirs::new()
         .and_then(|dirs| dirs.audio_dir().map(|dir| dir.to_path_buf()))
-        .unwrap_or_else(|| std::env::temp_dir().join("noverplay-downloads"));
+        .unwrap_or_else(|| std::env::temp_dir().join("vessel-downloads"));
     Ok(base.join("Vessel"))
 }
 

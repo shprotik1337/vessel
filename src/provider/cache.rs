@@ -28,9 +28,9 @@ pub fn track_cache_dir() -> PathBuf {
     if let Some(dir) = track_cache_override().lock().unwrap().as_ref() {
         return dir.clone();
     }
-    directories::ProjectDirs::from("dev", "Noverplay", "noverplay-tui")
+    directories::ProjectDirs::from("dev", "vessel", "vessel")
         .map(|dirs| dirs.cache_dir().to_path_buf())
-        .unwrap_or_else(|| std::env::temp_dir().join("noverplay").join("cache"))
+        .unwrap_or_else(|| std::env::temp_dir().join("vessel").join("cache"))
         .join("track-cache")
 }
 

@@ -17,7 +17,7 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn discover() -> Result<Self> {
-        let dirs = ProjectDirs::from("dev", "Noverplay", "noverplay-tui")
+        let dirs = ProjectDirs::from("dev", "vessel", "vessel")
             .context("Не удалось определить каталог данных пользователя")?;
         Ok(Self::from_roots(
             dirs.config_dir().to_path_buf(),

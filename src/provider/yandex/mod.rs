@@ -109,7 +109,7 @@ impl YandexProvider {
     /// Проверяет, что OAuth-токен валиден: делает реальный поисковый
     /// запрос тем же кодом, которым идёт обычный поиск.
     pub async fn probe(&self) -> Result<()> {
-        search_tracks(&self.client, "noverplay probe", None).await.map(|_| ())
+        search_tracks(&self.client, "vessel probe", None).await.map(|_| ())
     }
 }
 

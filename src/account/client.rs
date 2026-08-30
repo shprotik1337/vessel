@@ -27,7 +27,7 @@ impl AccountClient {
     pub fn new(server_url: &str, secrets: &SecretStore) -> anyhow::Result<Self> {
         let base_url = Url::parse(server_url.trim())?;
         let http = Client::builder()
-            .user_agent(format!("noverplay-tui/{APP_VERSION}"))
+            .user_agent(format!("vessel/{APP_VERSION}"))
             .timeout(Duration::from_secs(20))
             .build()?;
         Ok(Self {
@@ -132,9 +132,9 @@ impl AccountClient {
                 username,
                 password,
                 device_info: if cfg!(target_os = "windows") {
-                    "noverplay-tui windows"
+                    "vessel windows"
                 } else {
-                    "noverplay-tui linux"
+                    "vessel linux"
                 },
                 app_version: APP_VERSION,
                 captcha_id,

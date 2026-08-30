@@ -64,7 +64,7 @@ impl SoundCloudClient {
 
 fn build_http(builder: ClientBuilder) -> Result<Client> {
     builder
-        .user_agent(format!("noverplay-tui/{}", crate::APP_VERSION))
+        .user_agent(format!("vessel/{}", crate::APP_VERSION))
         .build()
         .context("не удалось создать HTTP-клиент SoundCloud")
 }

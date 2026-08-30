@@ -1,5 +1,5 @@
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\Noverplay")
+    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\vessel")
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,10 +7,10 @@ if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
     throw "LOCALAPPDATA не найден"
 }
 
-$source = Join-Path $PSScriptRoot "noverplay.exe"
+$source = Join-Path $PSScriptRoot "vessel.exe"
 $npSource = Join-Path $PSScriptRoot "np.exe"
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-    throw "Рядом с install.ps1 нет noverplay.exe"
+    throw "Рядом с install.ps1 нет vessel.exe"
 }
 if (-not (Test-Path -LiteralPath $npSource -PathType Leaf)) {
     throw "Рядом с install.ps1 нет np.exe"
@@ -18,7 +18,7 @@ if (-not (Test-Path -LiteralPath $npSource -PathType Leaf)) {
 
 $targetDir = [IO.Path]::GetFullPath($InstallDir)
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir "noverplay.exe") -Force
+Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir "vessel.exe") -Force
 Copy-Item -LiteralPath $npSource -Destination (Join-Path $targetDir "np.exe") -Force
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -31,5 +31,5 @@ if (-not $known) {
     [Environment]::SetEnvironmentVariable("Path", $nextPath, "User")
 }
 
-Write-Output "Noverplay установлен в $targetDir"
-Write-Output "Открой новую консоль и напиши noverplay или np play <трек>"
+Write-Output "vessel установлен в $targetDir"
+Write-Output "Открой новую консоль и напиши vessel или np play <трек>"

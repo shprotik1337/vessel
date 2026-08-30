@@ -727,7 +727,7 @@ fn blowfish_key(track_id: &str) -> [u8; 16] {
 }
 
 fn deezer_cache_dir() -> PathBuf {
-    std::env::temp_dir().join("noverplay").join("deezer-cache")
+    std::env::temp_dir().join("vessel").join("deezer-cache")
 }
 
 fn write_cache(path: &Path, bytes: &[u8]) -> Result<()> {

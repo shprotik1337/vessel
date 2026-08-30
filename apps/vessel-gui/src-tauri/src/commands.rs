@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use noverplay_tui::{
+use vessel_core::{
     credentials::CredentialKind,
     model::{Playlist, RepeatMode, SearchProvider, TrackRef},
     storage::HistoryEntry,
@@ -17,8 +17,8 @@ fn lock<'a>(core: &'a CoreState<'a>) -> std::sync::MutexGuard<'a, GuiCore> {
     core.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn provider_kind_from_str(value: &str) -> Result<noverplay_tui::model::ProviderKind, String> {
-    use noverplay_tui::model::ProviderKind;
+fn provider_kind_from_str(value: &str) -> Result<vessel_core::model::ProviderKind, String> {
+    use vessel_core::model::ProviderKind;
     match value {
         "soundcloud" | "sound_cloud" => Ok(ProviderKind::SoundCloud),
         "yandex" | "yandex_music" => Ok(ProviderKind::YandexMusic),
@@ -75,7 +75,7 @@ pub async fn search(
         Some(other) => return Err(format!("неизвестный провайдер: {other}")),
     };
     let pages = registry.search(&query, selection).await;
-    let (tracks, failures) = noverplay_tui::runtime::merge_pages(pages);
+    let (tracks, failures) = vessel_core::runtime::merge_pages(pages);
     Ok(crate::SearchOutcome { tracks, failures })
 }
 
@@ -84,8 +84,8 @@ pub async fn search_collections(
     core: CoreState<'_>,
     query: String,
     kind: String,
-) -> Result<Vec<noverplay_tui::provider::CollectionItem>, String> {
-    use noverplay_tui::provider::CollectionKind;
+) -> Result<Vec<vessel_core::provider::CollectionItem>, String> {
+    use vessel_core::provider::CollectionKind;
     let kind = match kind.as_str() {
         "playlists" | "playlist" => CollectionKind::Playlist,
         "albums" | "album" => CollectionKind::Album,
@@ -104,9 +104,9 @@ pub async fn search_collections(
         return Err("Сначала добавь ключ провайдера в Настройках".to_string());
     }
     let kinds = [
-        noverplay_tui::model::ProviderKind::SoundCloud,
-        noverplay_tui::model::ProviderKind::YandexMusic,
-        noverplay_tui::model::ProviderKind::Deezer,
+        vessel_core::model::ProviderKind::SoundCloud,
+        vessel_core::model::ProviderKind::YandexMusic,
+        vessel_core::model::ProviderKind::Deezer,
     ];
     let mut items = Vec::new();
     for provider_kind in kinds {
@@ -125,8 +125,8 @@ pub async fn artist_profile(
     core: CoreState<'_>,
     provider: String,
     artist_id: String,
-) -> Result<noverplay_tui::provider::ArtistProfile, String> {
-    use noverplay_tui::model::ProviderKind;
+) -> Result<vessel_core::provider::ArtistProfile, String> {
+    use vessel_core::model::ProviderKind;
     let kind = provider_kind_from_str(&provider)?;
     let registry = {
         let core = lock(&core);
@@ -171,7 +171,7 @@ fn resolve_download_dir(core: &GuiCore) -> String {
     {
         return dir.to_string();
     }
-    noverplay_tui::provider::download::downloads_dir()
+    vessel_core::provider::download::downloads_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_default()
 }
@@ -198,7 +198,7 @@ fn resolve_track_cache_dir(core: &GuiCore) -> String {
         .filter(|dir| !dir.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| {
-            noverplay_tui::provider::cache::track_cache_dir()
+            vessel_core::provider::cache::track_cache_dir()
                 .display()
                 .to_string()
         })
@@ -215,7 +215,7 @@ pub async fn set_cache_dir(core: CoreState<'_>, path: Option<String>) -> Result<
     let mut core = lock(&core);
     let value = path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
     core.config.track_cache_dir = value.clone();
-    noverplay_tui::provider::cache::set_track_cache_dir(value.map(PathBuf::from));
+    vessel_core::provider::cache::set_track_cache_dir(value.map(PathBuf::from));
     core.app.config_dirty = true;
     Ok(())
 }
@@ -240,12 +240,12 @@ pub async fn download_track(
         let core = lock(&core);
         resolve_download_dir(&core)
     };
-    let file_name = noverplay_tui::provider::download::track_file_name(&track, &source);
+    let file_name = vessel_core::provider::download::track_file_name(&track, &source);
     let dest = std::path::Path::new(&dir).join(file_name);
     if dest.exists() {
         return Ok(dest.display().to_string());
     }
-    noverplay_tui::provider::download::download_playback_source(&source, &dest)
+    vessel_core::provider::download::download_playback_source(&source, &dest)
         .await
         .map_err(|e| format!("{e:#}"))?;
     Ok(dest.display().to_string())
@@ -263,8 +263,8 @@ pub async fn download_track_to_cache(
     let Some(provider) = registry.get(track.provider) else {
         return Err("провайдер не подключён".to_string());
     };
-    if noverplay_tui::provider::cache::is_cached(&track) {
-        if let Some(path) = noverplay_tui::provider::cache::cached_track_path(&track) {
+    if vessel_core::provider::cache::is_cached(&track) {
+        if let Some(path) = vessel_core::provider::cache::cached_track_path(&track) {
             return Ok(path.display().to_string());
         }
     }
@@ -272,7 +272,7 @@ pub async fn download_track_to_cache(
         .download_source(&track)
         .await
         .map_err(|e| format!("{e:#}"))?;
-    let path = noverplay_tui::provider::cache::download_track_to_cache(&track, &source)
+    let path = vessel_core::provider::cache::download_track_to_cache(&track, &source)
         .await
         .map_err(|e| format!("{e:#}"))?;
     Ok(path.display().to_string())
@@ -297,7 +297,7 @@ pub async fn download_all_to_cache(
         ..Default::default()
     };
     for track in tracks {
-        if noverplay_tui::provider::cache::is_cached(&track) {
+        if vessel_core::provider::cache::is_cached(&track) {
             result.skipped += 1;
             continue;
         }
@@ -316,7 +316,7 @@ pub async fn download_all_to_cache(
                 continue;
             }
         };
-        match noverplay_tui::provider::cache::download_track_to_cache(&track, &source).await {
+        match vessel_core::provider::cache::download_track_to_cache(&track, &source).await {
             Ok(_) => result.downloaded += 1,
             Err(_) => result.failed += 1,
         }
@@ -391,7 +391,7 @@ pub async fn set_volume(core: CoreState<'_>, volume_percent: u8) -> Result<(), S
     let volume = volume_percent.min(100);
     core.app.player.volume_percent = volume;
     core.app
-        .gui_dispatch(noverplay_tui::effect::AppEffect::SetVolume(volume));
+        .gui_dispatch(vessel_core::effect::AppEffect::SetVolume(volume));
     core.app.config_dirty = true;
     Ok(())
 }
@@ -604,7 +604,7 @@ pub async fn reorder_playlists(
 
 /// Ключ трека в формате фронтенда: provider (snake_case) + id.
 fn frontend_track_key(track: &TrackRef) -> String {
-    use noverplay_tui::model::ProviderKind;
+    use vessel_core::model::ProviderKind;
     let provider = match track.provider {
         ProviderKind::SoundCloud => "sound_cloud",
         ProviderKind::YandexMusic => "yandex_music",
@@ -854,7 +854,7 @@ pub async fn probe_credential(
     if value.is_empty() {
         return Err("ключ пустой".to_string());
     }
-    match noverplay_tui::provider::probe_provider(kind, value).await {
+    match vessel_core::provider::probe_provider(kind, value).await {
         Ok(()) => Ok(true),
         Err(error) => Err(format!("{error:#}")),
     }
@@ -904,13 +904,13 @@ pub async fn get_related(
 #[tauri::command]
 pub async fn reset_settings(core: CoreState<'_>) -> Result<(), String> {
     let mut core = lock(&core);
-    let defaults = noverplay_tui::config::AppConfig::default();
+    let defaults = vessel_core::config::AppConfig::default();
     core.config.server_url = defaults.server_url;
     core.config.volume_percent = defaults.volume_percent;
     core.config.global_hotkeys_enabled = false;
     core.app.player.volume_percent = defaults.volume_percent;
     core.app
-        .gui_dispatch(noverplay_tui::effect::AppEffect::SetVolume(defaults.volume_percent));
+        .gui_dispatch(vessel_core::effect::AppEffect::SetVolume(defaults.volume_percent));
     core.app.config_dirty = true;
     Ok(())
 }
