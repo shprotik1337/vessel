@@ -3,11 +3,14 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use futures_util::{StreamExt, stream::FuturesUnordered};
+use serde::Serialize;
 use url::Url;
 
 use crate::model::{PlaybackSource, Playlist, ProviderKind, SearchProvider, TrackRef};
 
+pub mod cache;
 pub mod deezer;
+pub mod download;
 pub mod soundcloud;
 pub mod yandex;
 
@@ -22,6 +25,7 @@ pub struct ImportedPlaylist {
     pub title: String,
     pub description: String,
     pub source_url: Url,
+    pub cover_url: Option<Url>,
     pub tracks: Vec<TrackRef>,
 }
 
@@ -29,6 +33,34 @@ pub struct ImportedPlaylist {
 pub struct Attribution {
     pub label: String,
     pub url: Url,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionKind {
+    Playlist,
+    Album,
+    Artist,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct CollectionItem {
+    pub kind: CollectionKind,
+    pub provider: ProviderKind,
+    pub id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub artwork_url: Option<Url>,
+    pub web_url: Url,
+    pub track_count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ArtistProfile {
+    pub name: String,
+    pub avatar_url: Option<Url>,
+    pub popular_tracks: Vec<TrackRef>,
+    pub releases: Vec<CollectionItem>,
 }
 
 #[async_trait]
@@ -39,6 +71,22 @@ pub trait MusicProvider: Send + Sync {
 
     async fn search(&self, query: &str, cursor: Option<&str>) -> Result<SearchPage>;
 
+    async fn search_collections(
+        &self,
+        _query: &str,
+        _kind: CollectionKind,
+    ) -> Result<Vec<CollectionItem>> {
+        Ok(Vec::new())
+    }
+
+    async fn artist_profile(&self, _artist_id: &str) -> Result<ArtistProfile> {
+        bail!("страница артиста не поддерживается этим провайдером")
+    }
+
+    async fn artist_all_tracks(&self, _artist_id: &str) -> Result<Vec<TrackRef>> {
+        bail!("все треки артиста не поддерживаются этим провайдером")
+    }
+
     async fn import_playlist(&self, url: &Url) -> Result<ImportedPlaylist>;
 
     async fn related(&self, track: &TrackRef, limit: usize) -> Result<Vec<TrackRef>>;
@@ -48,6 +96,12 @@ pub trait MusicProvider: Send + Sync {
     }
 
     async fn playback_source(&self, track: &TrackRef) -> Result<PlaybackSource>;
+
+    /// Источник для скачивания: по умолчанию тот же, что для воспроизведения.
+    /// Провайдеры могут переопределить, чтобы отдавать прямые mp3-файлы.
+    async fn download_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
+        self.playback_source(track).await
+    }
 }
 
 #[derive(Default)]
@@ -114,6 +168,7 @@ impl ProviderRegistry {
         let mut playlist = Playlist::new(imported.title, now_ms);
         playlist.description = imported.description;
         playlist.source_url = Some(imported.source_url);
+        playlist.cover_url = imported.cover_url;
 
         // Дубли хотели пролезть вдвоём по одному паспорту, но фейс-контроль сегодня не бухой АХАХАХА 🫩
         for track in imported.tracks {
@@ -191,6 +246,7 @@ mod tests {
                 title: "Импорт".to_string(),
                 description: String::new(),
                 source_url: url.clone(),
+                cover_url: None,
                 tracks: self.tracks.clone(),
             })
         }

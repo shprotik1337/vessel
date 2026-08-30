@@ -3,16 +3,16 @@ import { Sidebar } from "./components/Sidebar";
 import { BottomPlayer } from "./components/BottomPlayer";
 import { Home } from "./pages/Home";
 import { Search } from "./pages/Search";
-import { Library } from "./pages/Library";
 import { Playlists } from "./pages/Playlists";
 import { PlaylistDetail } from "./pages/Playlist";
 import { Queue } from "./pages/Queue";
 import { Favorites } from "./pages/Favorites";
 import { Recent } from "./pages/Recent";
 import { Settings } from "./pages/Settings";
+import { Artist } from "./pages/Artist";
 
 function AppContent() {
-  const { view, playlistId, toast, toastError } = useApp();
+  const { view, playlistId, artist, artistProvider, artistId, toast, toastError } = useApp();
 
   const renderPage = () => {
     switch (view) {
@@ -20,12 +20,43 @@ function AppContent() {
         return <Home />;
       case "search":
         return <Search />;
-      case "library":
-        return <Library />;
       case "playlists":
         return <Playlists />;
       case "playlist":
         return playlistId ? <PlaylistDetail playlistId={playlistId} /> : <Playlists />;
+      case "artist":
+        return artist ? (
+          <Artist
+            artist={artist}
+            provider={artistProvider}
+            artistId={artistId}
+            mode="profile"
+          />
+        ) : (
+          <Home />
+        );
+      case "artist-releases":
+        return artist ? (
+          <Artist
+            artist={artist}
+            provider={artistProvider}
+            artistId={artistId}
+            mode="releases"
+          />
+        ) : (
+          <Home />
+        );
+      case "artist-tracks":
+        return artist ? (
+          <Artist
+            artist={artist}
+            provider={artistProvider}
+            artistId={artistId}
+            mode="tracks"
+          />
+        ) : (
+          <Home />
+        );
       case "queue":
         return <Queue />;
       case "favorites":

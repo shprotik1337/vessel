@@ -29,6 +29,13 @@ pub(super) async fn import_playlist(
         .or_else(|| first.description.clone())
         .unwrap_or_default();
     let expected = first.track_count as usize;
+    let cover_url = first
+        .cover
+        .uri
+        .as_deref()
+        .or_else(|| first.cover.items_uri.first().map(String::as_str))
+        .or(Some(first.og_image.as_str()))
+        .and_then(super::mapping::cover_url);
     let mut tracks = zagruzit_treki_pleilista(client, first.tracks.take()).await?;
 
     let mut page = 2;
@@ -47,6 +54,7 @@ pub(super) async fn import_playlist(
         title,
         description,
         source_url: source_url.clone(),
+        cover_url,
         tracks,
     })
 }

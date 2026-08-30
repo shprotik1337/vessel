@@ -6466,6 +6466,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
+ "url",
  "uuid",
 ]
 

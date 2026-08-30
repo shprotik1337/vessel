@@ -374,7 +374,23 @@ impl Runtime {
         }
         for event in audio_events {
             match &event {
-                crate::audio::AudioEvent::Playing => self.current_track_started = true,
+                crate::audio::AudioEvent::Playing => {
+                    if !self.current_track_started && self.current_track.is_some() {
+                        let played_at = SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as i64)
+                            .unwrap_or_default();
+                        if let Err(error) = self.storage.record_history(&HistoryEntry {
+                            track: self.current_track.clone().unwrap(),
+                            played_at_ms: played_at,
+                            completed: false,
+                            skipped: false,
+                        }) {
+                            self.notices.push(format!("Не удалось сохранить историю: {error}"));
+                        }
+                    }
+                    self.current_track_started = true;
+                }
                 crate::audio::AudioEvent::Ended => self.record_current(true, false),
                 crate::audio::AudioEvent::Failed(_) | crate::audio::AudioEvent::OutputFailed(_) => {
                     self.record_current(false, true)

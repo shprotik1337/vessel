@@ -55,7 +55,7 @@ pub fn normalizovat_track(track: Track) -> Option<TrackRef> {
     })
 }
 
-fn cover_url(raw: &str) -> Option<Url> {
+pub(super) fn cover_url(raw: &str) -> Option<Url> {
     let value = raw.trim().replace("%%", "1000x1000");
     if value.is_empty() {
         return None;

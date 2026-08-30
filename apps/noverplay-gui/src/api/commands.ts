@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  ArtistProfile,
+  CollectionItem,
   FullState,
   HistoryEntry,
   Playlist,
@@ -14,8 +16,29 @@ export async function getState(): Promise<FullState> {
   return invoke<FullState>("get_state");
 }
 
-export async function search(query: string): Promise<SearchOutcome> {
-  return invoke<SearchOutcome>("search", { query });
+export async function search(query: string, provider?: string): Promise<SearchOutcome> {
+  return invoke<SearchOutcome>("search", { query, provider });
+}
+
+export async function searchCollections(
+  query: string,
+  kind: "playlists" | "albums" | "artists",
+): Promise<CollectionItem[]> {
+  return invoke<CollectionItem[]>("search_collections", { query, kind });
+}
+
+export async function artistProfile(
+  provider: string,
+  artistId: string,
+): Promise<ArtistProfile> {
+  return invoke<ArtistProfile>("artist_profile", { provider, artistId });
+}
+
+export async function artistAllTracks(
+  provider: string,
+  artistId: string,
+): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("artist_all_tracks", { provider, artistId });
 }
 
 export async function play(track: TrackRef): Promise<void> {
@@ -58,6 +81,43 @@ export async function setRepeat(mode: RepeatMode): Promise<void> {
   return invoke("set_repeat", { mode });
 }
 
+export async function downloadTrack(track: TrackRef): Promise<string> {
+  return invoke<string>("download_track", { track });
+}
+
+export async function downloadTrackToCache(track: TrackRef): Promise<string> {
+  return invoke<string>("download_track_to_cache", { track });
+}
+
+export interface DownloadBatchResult {
+  downloaded: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+export async function downloadAllToCache(
+  tracks: TrackRef[],
+): Promise<DownloadBatchResult> {
+  return invoke<DownloadBatchResult>("download_all_to_cache", { tracks });
+}
+
+export async function getDownloadDir(): Promise<string> {
+  return invoke<string>("get_download_dir");
+}
+
+export async function setDownloadDir(path: string | null): Promise<void> {
+  return invoke("set_download_dir", { path });
+}
+
+export async function getCacheDir(): Promise<string> {
+  return invoke<string>("get_cache_dir");
+}
+
+export async function setCacheDir(path: string | null): Promise<void> {
+  return invoke("set_cache_dir", { path });
+}
+
 export async function addToQueue(track: TrackRef): Promise<void> {
   return invoke("add_to_queue", { track });
 }
@@ -74,6 +134,10 @@ export async function moveQueueItem(from: number, to: number): Promise<void> {
   return invoke("move_queue_item", { from, to });
 }
 
+export async function reorderQueue(tracks: TrackRef[]): Promise<void> {
+  return invoke("reorder_queue", { tracks });
+}
+
 export async function clearQueue(): Promise<void> {
   return invoke("clear_queue");
 }
@@ -84,6 +148,18 @@ export async function toggleFavorite(track: TrackRef): Promise<boolean> {
 
 export async function getPlaylists(): Promise<Playlist[]> {
   return invoke<Playlist[]>("get_playlists");
+}
+
+export async function importPlaylistUrl(url: string): Promise<Playlist> {
+  return invoke<Playlist>("import_playlist_url", { url });
+}
+
+export async function previewPlaylistUrl(url: string): Promise<Playlist> {
+  return invoke<Playlist>("preview_playlist_url", { url });
+}
+
+export async function saveImportedPlaylist(playlist: Playlist): Promise<void> {
+  return invoke("save_imported_playlist", { playlist });
 }
 
 export async function createPlaylist(title: string): Promise<Playlist> {
@@ -114,8 +190,36 @@ export async function reorderPlaylist(
   return invoke("reorder_playlist", { id, from, to });
 }
 
+export async function reorderLibrary(from: number, to: number): Promise<void> {
+  return invoke("reorder_library", { from, to });
+}
+
+export async function reorderPlaylists(order: string[]): Promise<void> {
+  return invoke("reorder_playlists", { order });
+}
+
+export interface TrackTime {
+  key: string;
+  timestamp_ms: number;
+}
+
+export async function getLibraryTimes(): Promise<TrackTime[]> {
+  return invoke<TrackTime[]>("get_library_times");
+}
+
+export async function getPlaylistTrackTimes(id: string): Promise<TrackTime[]> {
+  return invoke<TrackTime[]>("get_playlist_track_times", { id });
+}
+
 export async function playPlaylist(id: string): Promise<void> {
   return invoke("play_playlist", { id });
+}
+
+export async function setPlaylistCover(
+  id: string,
+  coverUrl: string | null,
+): Promise<void> {
+  return invoke("set_playlist_cover", { id, coverUrl });
 }
 
 export async function getHistory(): Promise<HistoryEntry[]> {

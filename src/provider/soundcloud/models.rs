@@ -2,10 +2,14 @@ use serde::{Deserialize, Deserializer};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct ScUser {
+    #[serde(default, deserialize_with = "string_id")]
+    pub id: String,
     #[serde(default)]
     pub username: String,
     #[serde(default)]
     pub permalink_url: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -71,6 +75,8 @@ pub struct ScPlaylist {
     pub description: Option<String>,
     #[serde(default)]
     pub permalink_url: Option<String>,
+    #[serde(default)]
+    pub artwork_url: Option<String>,
     #[serde(default)]
     pub tracks: Vec<ScTrack>,
 }

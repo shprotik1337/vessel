@@ -90,6 +90,10 @@ pub struct AppConfig {
     pub global_hotkeys_enabled: bool,
     pub hotkeys: HotkeyBindings,
     pub keybindings_notice_seen: bool,
+    #[serde(default)]
+    pub download_dir: Option<String>,
+    #[serde(default)]
+    pub track_cache_dir: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -113,6 +117,8 @@ impl Default for AppConfig {
             global_hotkeys_enabled: false,
             hotkeys: HotkeyBindings::default(),
             keybindings_notice_seen: false,
+            download_dir: None,
+            track_cache_dir: None,
         }
     }
 }

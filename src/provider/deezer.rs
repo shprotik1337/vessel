@@ -27,7 +27,10 @@ use url::Url;
 
 use crate::{
     model::{PlaybackCapability, PlaybackSource, ProviderKind, TrackRef},
-    provider::{Attribution, ImportedPlaylist, MusicProvider, SearchPage},
+    provider::{
+        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider,
+        SearchPage,
+    },
 };
 
 const API: &str = "https://api.deezer.com";
@@ -167,7 +170,7 @@ impl DeezerProvider {
                 .gateway("song.getListData", &token, json!({ "SNG_IDS": [track_id] }))
                 .await?;
         }
-        if gateway_has_error(&raw) {
+        if raw.get("error").is_some_and(gateway_has_error) {
             bail!("Deezer gateway: {}", raw["error"])
         }
         let song = raw
@@ -296,7 +299,176 @@ impl MusicProvider for DeezerProvider {
         })
     }
 
+    async fn search_collections(
+        &self,
+        query: &str,
+        kind: CollectionKind,
+    ) -> Result<Vec<CollectionItem>> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let endpoint = match kind {
+            CollectionKind::Playlist => "playlist",
+            CollectionKind::Album => "album",
+            CollectionKind::Artist => "artist",
+        };
+        let mut url = Url::parse(&format!("{API}/search/{endpoint}"))?;
+        url.query_pairs_mut()
+            .append_pair("q", query)
+            .append_pair("limit", "30");
+        let items = match kind {
+            CollectionKind::Artist => {
+                let page: ApiCollectionPage<ApiArtistEntry> = self.get(url).await?;
+                let mut artists: Vec<ApiArtistEntry> = page.data;
+                // Самый популярный носитель имени — вперёд, чтобы трибьюты не обгоняли оригинал
+                artists.sort_by(|a, b| b.nb_fan.unwrap_or(0).cmp(&a.nb_fan.unwrap_or(0)));
+                artists
+                    .into_iter()
+                    .filter_map(|entry| entry.to_collection_item())
+                    .collect()
+            }
+            other => {
+                let page: ApiCollectionPage<ApiCollectionEntry> = self.get(url).await?;
+                page.data
+                    .into_iter()
+                    .filter_map(|entry| entry.to_collection_item(other))
+                    .collect()
+            }
+        };
+        Ok(items)
+    }
+
+    async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
+        let artist: ApiArtistFull = self
+            .get(Url::parse(&format!("{API}/artist/{artist_id}"))?)
+            .await?;
+        let top: ApiPage<ApiTrack> = self
+            .get(Url::parse(&format!(
+                "{API}/artist/{artist_id}/top?limit=10"
+            ))?)
+            .await?;
+        let albums_page: ApiCollectionPage<ApiAlbumRelease> = self
+            .get(Url::parse(&format!(
+                "{API}/artist/{artist_id}/albums?limit=300"
+            ))?)
+            .await?;
+
+        let name = non_empty(artist.name, "Неизвестный артист");
+        let avatar_url = artist
+            .picture_xl
+            .or(artist.picture_big)
+            .and_then(|value| Url::parse(&value).ok());
+        let popular_tracks = top.data.into_iter().filter_map(map_track).collect();
+        let mut raw_releases: Vec<ApiAlbumRelease> = albums_page.data;
+        raw_releases.sort_by(|a, b| b.release_date.cmp(&a.release_date));
+        let releases: Vec<CollectionItem> = raw_releases
+            .into_iter()
+            .filter_map(|release| {
+                let id = release.id?.to_string();
+                let web_url = release
+                    .link
+                    .and_then(|value| Url::parse(&value).ok())
+                    .unwrap_or_else(|| {
+                        Url::parse(&format!("https://www.deezer.com/album/{id}")).unwrap()
+                    });
+                let artwork_url = release
+                    .cover_xl
+                    .or(release.cover_big)
+                    .and_then(|value| Url::parse(&value).ok());
+                let record = match release.record_type.as_deref() {
+                    Some("single") => "Сингл",
+                    Some("ep") => "EP",
+                    _ => "Альбом",
+                };
+                let subtitle = match release.release_date.as_deref() {
+                    Some(date) => format!("{date} · {record}"),
+                    None => record.to_string(),
+                };
+                Some(CollectionItem {
+                    kind: CollectionKind::Album,
+                    provider: ProviderKind::Deezer,
+                    id,
+                    title: non_empty(release.title, "Без названия"),
+                    subtitle,
+                    artwork_url,
+                    web_url,
+                    track_count: 0,
+                })
+            })
+            .collect();
+        Ok(ArtistProfile {
+            name,
+            avatar_url,
+            popular_tracks,
+            releases,
+        })
+    }
+
+    async fn artist_all_tracks(&self, artist_id: &str) -> Result<Vec<TrackRef>> {
+        // Все релизы артиста (с пагинацией), затем треки каждого альбома.
+        let mut albums: Vec<ApiAlbumRelease> = Vec::new();
+        let mut next: Option<String> = Some(
+            Url::parse(&format!("{API}/artist/{artist_id}/albums?limit=100"))?.to_string(),
+        );
+        while let Some(url) = next.take() {
+            let page: ApiCollectionPage<ApiAlbumRelease> = self.get(Url::parse(&url)?).await?;
+            let loaded = page.data.len();
+            albums.extend(page.data);
+            next = page.next;
+            if loaded == 0 {
+                break;
+            }
+        }
+        albums.sort_by(|a, b| b.release_date.cmp(&a.release_date));
+
+        let mut failed = 0usize;
+        let mut seen = std::collections::HashSet::new();
+        let mut tracks = Vec::new();
+        for album in &albums {
+            let Some(id) = album.id else { continue };
+            match self
+                .get::<ApiAlbumDetails>(Url::parse(&format!("{API}/album/{id}"))?)
+                .await
+            {
+                Ok(details) => {
+                    let mut album_tracks = details.tracks.data;
+                    let mut album_next = details.tracks.next;
+                    while let Some(url) = album_next.take() {
+                        let Ok(page) = self.playlist_page(Url::parse(&url)?).await else {
+                            break;
+                        };
+                        album_tracks.extend(page.data);
+                        album_next = page.next;
+                    }
+                    for track in album_tracks {
+                        if let Some(track_ref) = map_track(track)
+                            && seen.insert(track_ref.provider_key())
+                        {
+                            tracks.push(track_ref);
+                        }
+                    }
+                }
+                Err(_) => failed += 1,
+            }
+            // Debust-пауза, чтобы Deezer не начал душить за частые запросы
+            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        }
+        let _ = std::fs::write(
+            "C:\\Users\\SMILIN~1\\AppData\\Local\\Temp\\opencode\\vessel-deezer-artist.txt",
+            format!(
+                "artist_id={artist_id} albums={} failed={failed} tracks={}",
+                albums.len(),
+                tracks.len()
+            ),
+        );
+        Ok(tracks)
+    }
+
     async fn import_playlist(&self, source: &Url) -> Result<ImportedPlaylist> {
+        if let Some(id) = entity_id(source, "album") {
+            return self.import_album(&id, source).await;
+        }
         let id =
             entity_id(source, "playlist").context("не удалось определить ID плейлиста Deezer")?;
         let details: ApiPlaylist = self
@@ -313,6 +485,10 @@ impl MusicProvider for DeezerProvider {
             title: non_empty(details.title, "Deezer playlist"),
             description: details.description.unwrap_or_default(),
             source_url: source.clone(),
+            cover_url: details
+                .cover_xl
+                .or(details.cover_big)
+                .and_then(|value| Url::parse(&value).ok()),
             tracks: tracks.into_iter().filter_map(map_track).collect(),
         })
     }
@@ -328,12 +504,44 @@ impl MusicProvider for DeezerProvider {
     }
 
     async fn playback_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
+        // Если трек уже скачан в общий кэш — играем из него
+        if let Some(source) = crate::provider::cache::cached_source(track) {
+            return Ok(source);
+        }
         let path = self.prepare_full_track(&track.id).await?;
         full_cache_source(&path)
     }
 }
 
 impl DeezerProvider {
+    /// Импорт альбома Deezer: GET /album/{id} отдаёт title + tracks.data.
+    async fn import_album(&self, id: &str, source: &Url) -> Result<ImportedPlaylist> {
+        let details: ApiAlbumDetails = self
+            .get(Url::parse(&format!("{API}/album/{id}"))?)
+            .await?;
+        let mut tracks = details.tracks.data;
+        let mut next = details.tracks.next;
+        while let Some(url) = next.take() {
+            let page = self.playlist_page(Url::parse(&url)?).await?;
+            tracks.extend(page.data);
+            next = page.next;
+        }
+        let artist = details
+            .artist
+            .and_then(|artist| artist.name)
+            .unwrap_or_default();
+        Ok(ImportedPlaylist {
+            title: non_empty(details.title, "Deezer album"),
+            description: artist,
+            source_url: source.clone(),
+            cover_url: details
+                .cover_xl
+                .or(details.cover_big)
+                .and_then(|value| Url::parse(&value).ok()),
+            tracks: tracks.into_iter().filter_map(map_track).collect(),
+        })
+    }
+
     /// Проверяет, что ARL-ключ действительно авторизован: вызывает
     /// deezer.getUserData и проверяет наличие checkForm + license_token.
     /// Ровно та же проверка, что в prepare_full_track.
@@ -629,6 +837,17 @@ struct ApiPage<T> {
 struct ApiPlaylist {
     title: Option<String>,
     description: Option<String>,
+    cover_xl: Option<String>,
+    cover_big: Option<String>,
+    tracks: ApiPage<ApiTrack>,
+}
+
+#[derive(Deserialize)]
+struct ApiAlbumDetails {
+    title: Option<String>,
+    artist: Option<ApiArtist>,
+    cover_xl: Option<String>,
+    cover_big: Option<String>,
     tracks: ApiPage<ApiTrack>,
 }
 
@@ -652,6 +871,119 @@ struct ApiArtist {
 struct ApiAlbum {
     cover_xl: Option<String>,
     cover_big: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiCollectionPage<T> {
+    data: Vec<T>,
+    next: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiArtistEntry {
+    id: Option<u64>,
+    name: Option<String>,
+    link: Option<String>,
+    picture_xl: Option<String>,
+    picture_big: Option<String>,
+    #[serde(default)]
+    nb_fan: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct ApiArtistFull {
+    id: Option<u64>,
+    name: Option<String>,
+    link: Option<String>,
+    picture_xl: Option<String>,
+    picture_big: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiAlbumRelease {
+    id: Option<u64>,
+    title: Option<String>,
+    link: Option<String>,
+    cover_xl: Option<String>,
+    cover_big: Option<String>,
+    release_date: Option<String>,
+    record_type: Option<String>,
+}
+
+impl ApiArtistEntry {
+    fn to_collection_item(self) -> Option<CollectionItem> {
+        let id = self.id?.to_string();
+        let web_url = self
+            .link
+            .and_then(|value| Url::parse(&value).ok())
+            .unwrap_or_else(|| {
+                Url::parse(&format!("https://www.deezer.com/artist/{id}")).unwrap()
+            });
+        let artwork_url = self
+            .picture_xl
+            .or(self.picture_big)
+            .and_then(|value| Url::parse(&value).ok());
+        let fans = self
+            .nb_fan
+            .map(|count| format!(" · {count} слушателей"))
+            .unwrap_or_default();
+        Some(CollectionItem {
+            kind: CollectionKind::Artist,
+            provider: ProviderKind::Deezer,
+            id,
+            title: non_empty(self.name, "Неизвестный артист"),
+            subtitle: format!("Артист{fans}"),
+            artwork_url,
+            web_url,
+            track_count: 0,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct ApiCollectionEntry {
+    id: Option<u64>,
+    title: Option<String>,
+    link: Option<String>,
+    nb_tracks: Option<u64>,
+    artist: Option<ApiArtist>,
+    cover_xl: Option<String>,
+    cover_big: Option<String>,
+}
+
+impl ApiCollectionEntry {
+    fn to_collection_item(self, kind: CollectionKind) -> Option<CollectionItem> {
+        let id = self.id?.to_string();
+        let web_url = self
+            .link
+            .and_then(|value| Url::parse(&value).ok())
+            .unwrap_or_else(|| {
+                let endpoint = match kind {
+                    CollectionKind::Playlist => "playlist",
+                    CollectionKind::Album => "album",
+                    CollectionKind::Artist => "artist",
+                };
+                Url::parse(&format!("https://www.deezer.com/{endpoint}/{id}")).unwrap()
+            });
+        let artwork_url = self
+            .cover_xl
+            .or(self.cover_big)
+            .and_then(|value| Url::parse(&value).ok());
+        let subtitle = self
+            .artist
+            .and_then(|artist| artist.name)
+            .unwrap_or_else(|| format!("{} треков", self.nb_tracks.unwrap_or(0)));
+        Some(CollectionItem {
+            kind,
+            provider: ProviderKind::Deezer,
+            id,
+            title: non_empty(self.title, "Без названия"),
+            subtitle,
+            artwork_url,
+            web_url,
+            track_count: self.nb_tracks.unwrap_or(0) as usize,
+        })
+    }
 }
 
 #[cfg(test)]

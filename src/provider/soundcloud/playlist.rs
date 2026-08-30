@@ -21,10 +21,23 @@ pub(super) async fn import_playlist(
         .await
         .context("SoundCloud не разобрал ссылку на плейлист")?;
     ensure!(
-        matches!(playlist.kind.as_str(), "playlist" | "system-playlist"),
+        matches!(
+            playlist.kind.as_str(),
+            "playlist" | "system-playlist" | "album"
+        ),
         "ссылка SoundCloud ведет не на плейлист"
     );
 
+    let cover_url = playlist
+        .artwork_url
+        .as_deref()
+        .or_else(|| {
+            playlist
+                .tracks
+                .iter()
+                .find_map(|track| track.artwork_url.as_deref())
+        })
+        .and_then(|value| Url::parse(&value).ok());
     let tracks = zagruzit_dannye_trekov(client, playlist.tracks)
         .await?
         .into_iter()
@@ -40,6 +53,7 @@ pub(super) async fn import_playlist(
         title,
         description: playlist.description.unwrap_or_default(),
         source_url: source_url.clone(),
+        cover_url,
         tracks,
     })
 }

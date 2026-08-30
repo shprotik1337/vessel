@@ -74,6 +74,7 @@ impl Screen {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PlaybackStatus {
     Playing,
     #[default]
@@ -1523,6 +1524,14 @@ impl App {
             if self.active_playlist == Some(id) {
                 self.active_playlist = None;
             }
+            self.playlists_dirty = true;
+        }
+    }
+
+    pub fn gui_set_playlist_cover(&mut self, id: uuid::Uuid, cover_url: Option<url::Url>) {
+        if let Some(playlist) = self.playlists.iter_mut().find(|item| item.id == id) {
+            playlist.cover_url = cover_url;
+            playlist.updated_at_ms = now_ms();
             self.playlists_dirty = true;
         }
     }

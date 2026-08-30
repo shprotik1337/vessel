@@ -1,20 +1,48 @@
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
-import { artistLabel, trackKey } from "../lib/utils";
+import { artistLabel, trackKey, dedupe } from "../lib/utils";
 import type { TrackRef } from "../api/types";
-import { Artwork, tone } from "../components/Artwork";
+import { Artwork } from "../components/Artwork";
+import { PlaylistCover } from "../components/PlaylistCover";
 import * as api from "../api/commands";
 
 export function Home() {
   const { state, playTracks, navigateTo, showToast } = useApp();
   if (!state) return null;
 
-  const recent = state.history.slice(0, 5);
+  const recent = dedupe(state.history.map((h) => h.track)).slice(0, 5);
   const playlists = state.playlists.slice(0, 5);
   const library = state.library.slice(0, 10);
 
   const playOne = (track: TrackRef) => {
-    void playTracks([track], 0);
+    const ctx = dedupe(library);
+    const idx = ctx.findIndex((t) => trackKey(t) === trackKey(track));
+    void playTracks(ctx, idx < 0 ? 0 : idx);
+  };
+
+  const playRecent = (track: TrackRef) => {
+    const ctx = dedupe(state.history.map((h) => h.track));
+    const idx = ctx.findIndex((t) => trackKey(t) === trackKey(track));
+    void playTracks(ctx, idx < 0 ? 0 : idx);
+  };
+
+  const nowKey = state.now_playing ? trackKey(state.now_playing) : null;
+  const isLive =
+    state?.player.status === "playing" || state?.player.status === "buffering";
+
+  const isPlayingPlaylist = (tracks: TrackRef[]) => {
+    if (!state.now_playing || !isLive) return false;
+    return tracks.some((t) => trackKey(t) === trackKey(state.now_playing!));
+  };
+
+  const playPlaylist = async (playlistId: string) => {
+    const p = state.playlists.find((x) => x.id === playlistId);
+    if (!p || p.tracks.length === 0) return;
+    try {
+      await playTracks(p.tracks, 0);
+    } catch (error) {
+      showToast(String(error), true);
+    }
   };
 
   const playAll = async () => {
@@ -48,16 +76,38 @@ export function Home() {
             </span>
           </div>
           <div className="row-scroll">
-            {recent.map((entry, i) => (
+            {recent.map((track, i) => (
               <div
-                key={trackKey(entry.track) + i}
+                key={trackKey(track) + i}
                 className="card"
                 style={{ width: 190 }}
-                onClick={() => playOne(entry.track)}
+                onClick={() => playRecent(track)}
               >
-                <Artwork url={entry.track.artwork_url} alt={entry.track.title} seed={i} className="card-art" />
-                <div className="card-t">{entry.track.title}</div>
-                <div className="card-s">{artistLabel(entry.track.artists)}</div>
+                                <Artwork
+                  url={track.artwork_url}
+                  alt={track.title}
+                  seed={i}
+                  className="card-art"
+                  onPlayClick={async () => {
+                    if (trackKey(track) === nowKey && isLive) {
+                      try { await api.togglePlayback(); } catch {}
+                    } else {
+                      playRecent(track);
+                    }
+                  }}
+                  isPlaying={trackKey(track) === nowKey && isLive}
+                />
+                <div className="card-t">{track.title}</div>
+                <div
+                  className="card-s"
+                  style={{ cursor: track.artists[0] ? "pointer" : undefined }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (track.artists[0]) navigateTo("artist", { artist: track.artists[0], provider: track.provider });
+                  }}
+                >
+                  {artistLabel(track.artists)}
+                </div>
               </div>
             ))}
           </div>
@@ -73,13 +123,29 @@ export function Home() {
             </span>
           </div>
           <div className="row-scroll">
-            {playlists.map((p, i) => (
+            {playlists.map((p) => (
               <div
                 key={p.id}
                 className="card"
                 onClick={() => navigateTo("playlist", { playlistId: p.id })}
               >
-                <div className="card-art" style={{ background: tone(i) }} />
+                <div className="card-art">
+                  <PlaylistCover
+                    tracks={p.tracks}
+                    coverUrl={p.cover_url}
+                    border={false}
+                  />
+                  <button
+                    className="card-play"
+                    title="Играть"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void playPlaylist(p.id);
+                    }}
+                  >
+                    {isPlayingPlaylist(p.tracks) ? "❚❚" : "▶"}
+                  </button>
+                </div>
                 <div className="card-t">{p.title}</div>
                 <div className="card-s">{p.tracks.length} tracks</div>
               </div>
@@ -99,13 +165,14 @@ export function Home() {
           <div className="panel" style={{ padding: "12px 8px" }}>
             <div className="tracklist">
               {library.map((track, i) => (
-                <TrackRow
-                  key={trackKey(track)}
-                  track={track}
-                  index={i}
-                  nowKey={state.now_playing ? trackKey(state.now_playing) : null}
-                  onPlay={playOne}
-                />
+              <TrackRow
+                key={trackKey(track) + i}
+                track={track}
+                index={i}
+                nowKey={nowKey}
+                onPlay={playOne}
+                onArtistClick={(name, provider) => navigateTo("artist", { artist: name, provider })}
+              />
               ))}
             </div>
           </div>
