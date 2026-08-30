@@ -1,14 +1,14 @@
 [package]
 name = "vessel"
 version = "0.1.0"
-description = "Vessel — desktop music player powered by Noverplay"
+description = "Vessel — музыкальный клиент"
 edition = "2021"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-noverplay-tui = { path = "../../.." }
+vessel-core = { path = "../../.." }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }

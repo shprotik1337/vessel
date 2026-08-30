@@ -3162,47 +3162,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "noverplay-tui"
-version = "1.0.0"
-dependencies = [
- "aes",
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "blowfish",
- "cbc",
- "chrono",
- "clap",
- "cpal",
- "crossbeam-channel",
- "crossterm",
- "directories",
- "ed25519-dalek",
- "futures-util",
- "global-hotkey",
- "hex",
- "keyring",
- "libc",
- "md5 0.7.0",
- "rand_core 0.6.4",
- "ratatui",
- "reqwest",
- "resvg",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "symphonia",
- "tempfile",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "url",
- "uuid",
- "yandex-music",
- "zeroize",
-]
-
-[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6459,7 +6418,6 @@ name = "vessel"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "noverplay-tui",
  "serde",
  "serde_json",
  "tauri",
@@ -6468,6 +6426,48 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "vessel-core",
+]
+
+[[package]]
+name = "vessel-core"
+version = "1.0.0"
+dependencies = [
+ "aes",
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "blowfish",
+ "cbc",
+ "chrono",
+ "clap",
+ "cpal",
+ "crossbeam-channel",
+ "crossterm",
+ "directories",
+ "ed25519-dalek",
+ "futures-util",
+ "global-hotkey",
+ "hex",
+ "keyring",
+ "libc",
+ "md5 0.7.0",
+ "rand_core 0.6.4",
+ "ratatui",
+ "reqwest",
+ "resvg",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "symphonia",
+ "tempfile",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "url",
+ "uuid",
+ "yandex-music",
+ "zeroize",
 ]
 
 [[package]]

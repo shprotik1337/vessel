@@ -25,8 +25,8 @@ fi
 
 mkdir -p "$output"
 output=$(cd "$output" && pwd)
-archive="$output/noverplay-linux-x86_64.tar.gz"
-deb="$output/noverplay_${version}_amd64.deb"
+archive="$output/vessel-linux-x86_64.tar.gz"
+deb="$output/vessel_${version}_amd64.deb"
 checksums="$output/SHA256SUMS"
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
@@ -41,18 +41,18 @@ for path in "$archive" "$deb" "$checksums"; do
 done
 
 install -d -m 0755 "$stage"
-install -m 0755 "$binary" "$stage/noverplay"
+install -m 0755 "$binary" "$stage/vessel"
 install -m 0755 "$np_binary" "$stage/np"
 install -m 0644 LICENSE "$stage/LICENSE"
-tar -C "$stage" -czf "$archive" noverplay np LICENSE
+tar -C "$stage" -czf "$archive" vessel np LICENSE
 
-install -d -m 0755 "$debroot/DEBIAN" "$debroot/usr/bin" "$debroot/usr/share/doc/noverplay"
-install -m 0755 "$binary" "$debroot/usr/bin/noverplay"
+install -d -m 0755 "$debroot/DEBIAN" "$debroot/usr/bin" "$debroot/usr/share/doc/vessel"
+install -m 0755 "$binary" "$debroot/usr/bin/vessel"
 install -m 0755 "$np_binary" "$debroot/usr/bin/np"
-install -m 0644 LICENSE "$debroot/usr/share/doc/noverplay/copyright"
+install -m 0644 LICENSE "$debroot/usr/share/doc/vessel/copyright"
 installed_size=$(du -ck "$binary" "$np_binary" | awk '/total/{print $1}')
 printf '%s\n' \
-    'Package: noverplay' \
+    'Package: vessel' \
     "Version: $version" \
     'Section: sound' \
     'Priority: optional' \
@@ -60,8 +60,8 @@ printf '%s\n' \
     'Maintainer: Jselyx' \
     'Depends: libasound2 (>= 1.0.27) | libasound2t64' \
     "Installed-Size: $installed_size" \
-    'Homepage: https://github.com/Jselyx/noverplay-tui' \
-    'Description: терминальный музыкальный клиент Noverplay' \
+    'Homepage: https://github.com/Jselyx/vessel-tui' \
+    'Description: терминальный музыкальный клиент vessel' \
     > "$debroot/DEBIAN/control"
 chmod 0644 "$debroot/DEBIAN/control"
 

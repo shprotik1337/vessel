@@ -1,8 +1,8 @@
 use clap::Parser;
-use noverplay_tui::control::{
+use vessel_core::control::{
     ControlCommand, ControlRequest, NpCli, NpCommand, ProviderArg, split_provider_tag,
 };
-use noverplay_tui::model::SearchProvider;
+use vessel_core::model::SearchProvider;
 
 #[test]
 fn play_parser_accepts_provider_and_query_words() {

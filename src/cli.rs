@@ -10,10 +10,10 @@ use crate::onboarding::zapret::{ZapretInstall, ZapretPlan, apply_plan};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "noverplay",
-    bin_name = "noverplay",
+    name = "vessel",
+    bin_name = "vessel",
     version,
-    about = "Noverplay в терминале"
+    about = "Vessel — музыкальный клиент"
 )]
 pub struct Cli {
     #[arg(long, hide = true)]
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn setup_command_keeps_the_binary_name_short() {
         let cli = Cli::try_parse_from([
-            "noverplay",
+            "vessel",
             "setup-zapret",
             "--path",
             "/opt/zapret",
@@ -114,7 +114,7 @@ mod tests {
     fn windows_suffix_does_not_leak_into_help() {
         let help = Cli::command().render_help().to_string();
 
-        assert!(help.contains("Usage: noverplay [COMMAND]"));
-        assert!(!help.contains("noverplay.exe"));
+        assert!(help.contains("Usage: vessel [COMMAND]"));
+        assert!(!help.contains("vessel.exe"));
     }
 }

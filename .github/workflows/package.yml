@@ -33,17 +33,17 @@ jobs:
         run: cargo build --locked --release
       - name: Проверка бинарника
         run: |
-          target\release\noverplay.exe --version
+          target\release\vessel.exe --version
           target\release\np.exe --version
       - name: Упаковка
         shell: pwsh
-        run: .\packaging\windows\package.ps1 -Binary target\release\noverplay.exe -NpBinary target\release\np.exe -Version $env:PACKAGE_VERSION
+        run: .\packaging\windows\package.ps1 -Binary target\release\vessel.exe -NpBinary target\release\np.exe -Version $env:PACKAGE_VERSION
       - uses: actions/upload-artifact@v7
         with:
-          name: noverplay-windows-x86_64-${{ inputs.version }}
+          name: vessel-windows-x86_64-${{ inputs.version }}
           path: |
-            dist/noverplay-windows-x86_64.zip
-            dist/noverplay.json
+            dist/vessel-windows-x86_64.zip
+            dist/vessel.json
           if-no-files-found: error
           retention-days: 14
 
@@ -68,16 +68,16 @@ jobs:
         run: cargo build --locked --release
       - name: Проверка бинарника
         run: |
-          target/release/noverplay --version
+          target/release/vessel --version
           target/release/np --version
       - name: Упаковка
-        run: bash packaging/linux/package.sh target/release/noverplay target/release/np "$PACKAGE_VERSION"
+        run: bash packaging/linux/package.sh target/release/vessel target/release/np "$PACKAGE_VERSION"
       - uses: actions/upload-artifact@v7
         with:
-          name: noverplay-linux-x86_64-${{ inputs.version }}
+          name: vessel-linux-x86_64-${{ inputs.version }}
           path: |
-            dist/noverplay-linux-x86_64.tar.gz
-            dist/noverplay_${{ inputs.version }}_amd64.deb
+            dist/vessel-linux-x86_64.tar.gz
+            dist/vessel_${{ inputs.version }}_amd64.deb
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
@@ -99,6 +99,6 @@ jobs:
           gh release create "v$PACKAGE_VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "Noverplay TUI $PACKAGE_VERSION" \
+            --title "vessel TUI $PACKAGE_VERSION" \
             --notes "Первый публичный релиз TUI. np теперь сам поднимает фоновый плеер, а пакеты содержат оба бинарника."
           gh release upload "v$PACKAGE_VERSION" dist/* --repo "$GITHUB_REPOSITORY" --clobber

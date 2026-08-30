@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use chrono::{Local, LocalResult, NaiveDate, TimeZone};
 use clap::Parser;
-use noverplay_tui::{
+use vessel_core::{
     config::AppPaths,
     control::{
         ControlCommand, HistoryCommand, NpCli, NpCommand, QueueCommand, ResponseData,
@@ -91,7 +91,7 @@ fn run_control(paths: &AppPaths, command: NpCommand) -> Result<()> {
 fn send_command_with_autostart(
     paths: &AppPaths,
     command: ControlCommand,
-) -> Result<noverplay_tui::control::ControlResponse> {
+) -> Result<vessel_core::control::ControlResponse> {
     let first_error = match send_command(paths, command.clone()) {
         Ok(response) => return Ok(response),
         Err(error) => error,
@@ -158,9 +158,9 @@ fn background_player_binary() -> Result<PathBuf> {
 
 fn background_player_binary_next_to(current_exe: &Path) -> Result<PathBuf> {
     let file_name = if cfg!(windows) {
-        "noverplay.exe"
+        "vessel.exe"
     } else {
-        "noverplay"
+        "vessel"
     };
     let sibling = current_exe
         .parent()
@@ -194,7 +194,7 @@ fn run_history(paths: &AppPaths, command: HistoryCommand) -> Result<()> {
     Ok(())
 }
 
-fn print_tracks(tracks: &[noverplay_tui::model::TrackRef]) {
+fn print_tracks(tracks: &[vessel_core::model::TrackRef]) {
     if tracks.is_empty() {
         println!("Пусто");
         return;
@@ -276,9 +276,9 @@ mod tests {
             .path()
             .join(if cfg!(windows) { "np.exe" } else { "np" });
         let expected = temp.path().join(if cfg!(windows) {
-            "noverplay.exe"
+            "vessel.exe"
         } else {
-            "noverplay"
+            "vessel"
         });
         std::fs::write(&expected, []).unwrap();
 

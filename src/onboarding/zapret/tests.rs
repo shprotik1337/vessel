@@ -151,7 +151,7 @@ fn sudo_hint_quotes_a_weird_but_valid_path() {
 
     assert_eq!(
         command,
-        "sudo noverplay setup-zapret --path '/opt/дед'\"'\"'s zapret'"
+        "sudo vessel setup-zapret --path '/opt/дед'\"'\"'s zapret'"
     );
 }
 

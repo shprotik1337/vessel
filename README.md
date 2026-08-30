@@ -1,7 +1,7 @@
-# Noverplay TUI
+# vessel TUI
 
 <p align="center">
-  <a href="https://github.com/Jselyx/noverplay-tui/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Jselyx/noverplay-tui/ci.yml?branch=main&amp;style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=CI" alt="CI"></a>
+  <a href="https://github.com/Jselyx/vessel-tui/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Jselyx/vessel-tui/ci.yml?branch=main&amp;style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=CI" alt="CI"></a>
   <a href="#установка"><img src="https://img.shields.io/badge/Platforms-Windows%20%7C%20Linux-0078D4?style=for-the-badge&amp;logo=windowsterminal&amp;logoColor=white" alt="Windows and Linux"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--only-2EA44F?style=for-the-badge" alt="License: GPL-3.0-only"></a>
 </p>
@@ -14,7 +14,7 @@
   <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/Storage-SQLite-07405E?style=for-the-badge&amp;logo=sqlite&amp;logoColor=white" alt="SQLite"></a>
 </p>
 
-**Noverplay TUI** — музыкальный клиент для терминала с единым поиском по SoundCloud, Yandex Music и Deezer, собственной очередью, историей прослушивания и локальным CLI для управления плеером.
+**vessel TUI** — музыкальный клиент для терминала с единым поиском по SoundCloud, Yandex Music и Deezer, собственной очередью, историей прослушивания и локальным CLI для управления плеером.
 
 [Возможности](#возможности) · [Установка](#установка) · [Быстрый старт](#быстрый-старт) · [Управление](#управление-в-tui) · [`np` CLI](#np--управление-из-командной-строки) · [Разработка](#разработка)
 
@@ -25,7 +25,7 @@
 - «Моя волна» на основе истории, любимых треков и рекомендаций провайдеров;
 - локальная библиотека, постоянная очередь и история прослушивания;
 - импорт плейлистов по ссылкам SoundCloud, Yandex Music и Deezer;
-- гостевой режим и необязательный аккаунт Noverplay;
+- гостевой режим и необязательный аккаунт vessel;
 - настройка аудиовыхода, сервисов и глобальных хоткеев прямо в TUI;
 - отдельная команда `np` для скриптов, хоткеев, панелей и других локальных интеграций — TUI держать открытым не нужно;
 - адаптивный интерфейс для широких и узких терминалов.
@@ -34,48 +34,48 @@
 
 ## Провайдеры
 
-Noverplay подключает только включённые и настроенные сервисы. Если площадка недоступна или не настроена, остальные продолжают работать независимо.
+vessel подключает только включённые и настроенные сервисы. Если площадка недоступна или не настроена, остальные продолжают работать независимо.
 
 | Сервис | Что нужно для подключения | Возможности |
 | --- | --- | --- |
-| SoundCloud | `client_id` или аккаунт Noverplay, который получает ключ автоматически | поиск, воспроизведение, плейлисты, похожие треки |
+| SoundCloud | `client_id` или аккаунт vessel, который получает ключ автоматически | поиск, воспроизведение, плейлисты, похожие треки |
 | Yandex Music | OAuth-токен | поиск, воспроизведение, плейлисты, персональные и похожие треки |
 | Deezer | значение cookie `arl` | поиск, воспроизведение, плейлисты, похожие треки |
 
-Ключи добавляются в разделе **Настройки**. Сначала Noverplay пытается сохранить их в системном хранилище учётных данных. Если оно недоступно, используется локальный файл `secrets.json`; на Unix для него выставляются права `0600`.
+Ключи добавляются в разделе **Настройки**. Сначала vessel пытается сохранить их в системном хранилище учётных данных. Если оно недоступно, используется локальный файл `secrets.json`; на Unix для него выставляются права `0600`.
 
-> Noverplay TUI не является официальным клиентом SoundCloud, Yandex Music или Deezer. Для работы провайдеров нужен действующий доступ к соответствующим сервисам.
+> vessel TUI не является официальным клиентом SoundCloud, Yandex Music или Deezer. Для работы провайдеров нужен действующий доступ к соответствующим сервисам.
 
 ## Установка
 
 ### Linux одной строкой
 
-Последний релиз сразу с `noverplay` и `np`, без Rust, Cargo и прочего обряда посвящения:
+Последний релиз сразу с `vessel` и `np`, без Rust, Cargo и прочего обряда посвящения:
 
 ```bash
-curl -fsSL https://github.com/Jselyx/noverplay-tui/releases/latest/download/noverplay-linux-x86_64.tar.gz | sudo tar -xz -C /usr/local/bin noverplay np
+curl -fsSL https://github.com/Jselyx/vessel-tui/releases/latest/download/vessel-linux-x86_64.tar.gz | sudo tar -xz -C /usr/local/bin vessel np
 ```
 
 Без `sudo` — в пользовательский каталог:
 
 ```bash
-install -d "$HOME/.local/bin" && curl -fsSL https://github.com/Jselyx/noverplay-tui/releases/latest/download/noverplay-linux-x86_64.tar.gz | tar -xz -C "$HOME/.local/bin" noverplay np
+install -d "$HOME/.local/bin" && curl -fsSL https://github.com/Jselyx/vessel-tui/releases/latest/download/vessel-linux-x86_64.tar.gz | tar -xz -C "$HOME/.local/bin" vessel np
 ```
 
 Во втором случае убедитесь, что `$HOME/.local/bin` находится в `PATH`. Проверка:
 
 ```bash
-noverplay --version
+vessel --version
 np --version
 ```
 
 ### Windows
 
-Скачайте `noverplay-windows-x86_64.zip` из [последнего релиза](https://github.com/Jselyx/noverplay-tui/releases/latest), распакуйте архив и запустите `install.ps1`.
+Скачайте `vessel-windows-x86_64.zip` из [последнего релиза](https://github.com/Jselyx/vessel-tui/releases/latest), распакуйте архив и запустите `install.ps1`.
 
 ### Сборка из исходников
 
-Cargo установит оба бинарника, `noverplay` и `np`.
+Cargo установит оба бинарника, `vessel` и `np`.
 
 ### Требования
 
@@ -91,15 +91,15 @@ sudo apt install pkg-config libasound2-dev
 ### Сборка и установка
 
 ```bash
-git clone https://github.com/Jselyx/noverplay-tui.git
-cd noverplay-tui
+git clone https://github.com/Jselyx/vessel-tui.git
+cd vessel-tui
 cargo install --locked --path . --bins
 ```
 
 Убедитесь, что каталог Cargo с бинарниками находится в `PATH`, затем проверьте установку:
 
 ```bash
-noverplay --version
+vessel --version
 np --version
 ```
 
@@ -109,19 +109,19 @@ np --version
 cargo build --locked --release
 ```
 
-Готовые файлы появятся в `target/release/noverplay` и `target/release/np` с расширением `.exe` на Windows.
+Готовые файлы появятся в `target/release/vessel` и `target/release/np` с расширением `.exe` на Windows.
 
 ## Быстрый старт
 
 Запустите клиент без аргументов:
 
 ```bash
-noverplay
+vessel
 ```
 
 При первом запуске мастер предложит:
 
-1. выбрать аккаунт Noverplay или гостевой режим;
+1. выбрать аккаунт vessel или гостевой режим;
 2. включить нужные провайдеры;
 3. выбрать аудиовыход;
 4. проверить доступ к SoundCloud и при необходимости настроить Zapret.
@@ -164,7 +164,7 @@ np play massive attack
 np status
 ```
 
-Открывать `noverplay` заранее не нужно. История читается напрямую из локальной базы, а остальные команды используют запущенный TUI или автоматически поднимают фоновый процесс.
+Открывать `vessel` заранее не нужно. История читается напрямую из локальной базы, а остальные команды используют запущенный TUI или автоматически поднимают фоновый процесс.
 
 ### Поиск и воспроизведение
 
@@ -255,20 +255,20 @@ np queue add moderation @deezer
 
 ## Настройка Zapret
 
-Noverplay может добавить домены SoundCloud в уже установленный Zapret. Команда сначала показывает план изменений и просит подтверждение:
+vessel может добавить домены SoundCloud в уже установленный Zapret. Команда сначала показывает план изменений и просит подтверждение:
 
 ```bash
 # Linux
-noverplay setup-zapret --path /opt/zapret
+vessel setup-zapret --path /opt/zapret
 
 # Windows — укажите реальный каталог своей установки
-noverplay setup-zapret --path "C:\zapret"
+vessel setup-zapret --path "C:\zapret"
 ```
 
 Для неинтерактивного запуска используйте `--yes`:
 
 ```bash
-noverplay setup-zapret --path /opt/zapret --yes
+vessel setup-zapret --path /opt/zapret --yes
 ```
 
 Перед изменением существующего списка создаётся резервная копия. После завершения Zapret нужно перезапустить вручную.
@@ -282,7 +282,7 @@ noverplay setup-zapret --path /opt/zapret --yes
 3. сохраняет адрес, PID и токен в локальном каталоге данных;
 4. удаляет endpoint при штатном завершении и очищает устаревший файл при следующем запуске.
 
-`np` читает этот файл, проверяет loopback-адрес и отправляет одну JSON-команду владельцу состояния. Если владельца нет, `np` запускает `noverplay --background-player` и повторяет команду. При открытии TUI фоновый процесс передаёт ему управление. Control endpoint не публикуется в локальную сеть или интернет.
+`np` читает этот файл, проверяет loopback-адрес и отправляет одну JSON-команду владельцу состояния. Если владельца нет, `np` запускает `vessel --background-player` и повторяет команду. При открытии TUI фоновый процесс передаёт ему управление. Control endpoint не публикуется в локальную сеть или интернет.
 
 ## Стек
 

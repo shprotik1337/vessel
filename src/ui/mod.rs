@@ -583,7 +583,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|frame| draw(frame, &app)).unwrap();
         let content = terminal.backend().to_string();
-        assert!(content.contains("NOVERPLAY"));
+        assert!(content.contains("vessel"));
         assert!(content.contains("Ничего не играет"));
     }
 
