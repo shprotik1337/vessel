@@ -1,4 +1,4 @@
-export type ProviderKind = "soundcloud" | "yandex_music" | "deezer";
+export type ProviderKind = "soundcloud" | "yandex_music" | "deezer" | "spotify";
 
 export interface TrackRef {
   provider: ProviderKind;
@@ -71,6 +71,7 @@ export interface FullState {
   soundcloud_enabled: boolean;
   yandex_enabled: boolean;
   deezer_enabled: boolean;
+  spotify_enabled: boolean;
   server_url: string;
   status_message: string;
 }

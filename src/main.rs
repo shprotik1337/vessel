@@ -177,6 +177,7 @@ fn persist_player(
         config.soundcloud_enabled = app.soundcloud_enabled;
         config.yandex_enabled = app.yandex_enabled;
         config.deezer_enabled = app.deezer_enabled;
+        config.spotify_enabled = app.spotify_enabled;
         config.global_hotkeys_enabled = app.global_hotkeys_enabled;
         config.hotkeys = app.hotkeys.clone();
         config.keybindings_notice_seen = app.keybindings_notice_seen;

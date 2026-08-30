@@ -23,6 +23,7 @@ fn provider_kind_from_str(value: &str) -> Result<vessel_core::model::ProviderKin
         "soundcloud" | "sound_cloud" => Ok(ProviderKind::SoundCloud),
         "yandex" | "yandex_music" => Ok(ProviderKind::YandexMusic),
         "deezer" => Ok(ProviderKind::Deezer),
+        "spotify" => Ok(ProviderKind::Spotify),
         _ => Err(format!("неизвестный провайдер: {value}")),
     }
 }
@@ -32,6 +33,7 @@ fn credential_kind_from_str(value: &str) -> Result<CredentialKind, String> {
         "soundcloud" => Ok(CredentialKind::SoundCloudClientId),
         "yandex" => Ok(CredentialKind::YandexToken),
         "deezer" => Ok(CredentialKind::DeezerArl),
+        "spotify" => Ok(CredentialKind::SpotifySpDc),
         _ => Err(format!("неизвестный провайдер: {value}")),
     }
 }
@@ -609,6 +611,7 @@ fn frontend_track_key(track: &TrackRef) -> String {
         ProviderKind::SoundCloud => "sound_cloud",
         ProviderKind::YandexMusic => "yandex_music",
         ProviderKind::Deezer => "deezer",
+        ProviderKind::Spotify => "spotify",
     };
     format!("{}:{}", provider, track.id.trim())
 }
@@ -838,6 +841,9 @@ pub async fn save_credential(
         CredentialKind::DeezerArl => {
             core.app.deezer_enabled = true;
         }
+        CredentialKind::SpotifySpDc => {
+            core.app.spotify_enabled = true;
+        }
     }
     core.app.config_dirty = true;
     Ok(())
@@ -876,6 +882,9 @@ pub async fn remove_credential(core: CoreState<'_>, provider: String) -> Result<
         }
         CredentialKind::DeezerArl => {
             core.app.deezer_enabled = false;
+        }
+        CredentialKind::SpotifySpDc => {
+            core.app.spotify_enabled = false;
         }
     }
     core.app.config_dirty = true;

@@ -40,6 +40,7 @@ fn provider_prefix(kind: ProviderKind) -> &'static str {
         ProviderKind::SoundCloud => "sc",
         ProviderKind::YandexMusic => "ya",
         ProviderKind::Deezer => "dz",
+        ProviderKind::Spotify => "sp",
     }
 }
 
