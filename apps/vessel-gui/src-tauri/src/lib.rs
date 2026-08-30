@@ -43,6 +43,7 @@ pub struct FullState {
     pub soundcloud_enabled: bool,
     pub yandex_enabled: bool,
     pub deezer_enabled: bool,
+    pub spotify_enabled: bool,
     pub server_url: String,
     pub status_message: String,
 }
@@ -95,6 +96,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
         vessel_core::model::ProviderKind::SoundCloud,
         vessel_core::model::ProviderKind::YandexMusic,
         vessel_core::model::ProviderKind::Deezer,
+        vessel_core::model::ProviderKind::Spotify,
     ];
     for kind in kinds {
         let label = kind.label().to_string();
@@ -102,17 +104,20 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::SoundCloud => "soundcloud",
             vessel_core::model::ProviderKind::YandexMusic => "yandex",
             vessel_core::model::ProviderKind::Deezer => "deezer",
+            vessel_core::model::ProviderKind::Spotify => "spotify",
         }
         .to_string();
         let enabled = match kind {
             vessel_core::model::ProviderKind::SoundCloud => core.app.soundcloud_enabled,
             vessel_core::model::ProviderKind::YandexMusic => core.app.yandex_enabled,
             vessel_core::model::ProviderKind::Deezer => core.app.deezer_enabled,
+            vessel_core::model::ProviderKind::Spotify => core.app.spotify_enabled,
         };
         let has_credentials = match kind {
             vessel_core::model::ProviderKind::SoundCloud => credentials.soundcloud,
             vessel_core::model::ProviderKind::YandexMusic => credentials.yandex,
             vessel_core::model::ProviderKind::Deezer => credentials.deezer,
+            vessel_core::model::ProviderKind::Spotify => credentials.spotify,
         };
         let connected = registry.get(kind).is_some() && enabled;
         statuses.push(ProviderStatus {
@@ -141,6 +146,7 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
         soundcloud_enabled: core.app.soundcloud_enabled,
         yandex_enabled: core.app.yandex_enabled,
         deezer_enabled: core.app.deezer_enabled,
+        spotify_enabled: core.app.spotify_enabled,
         server_url: core.config.server_url.clone(),
         status_message: core.app.status_message.clone(),
     }
@@ -231,6 +237,7 @@ fn persist(core: &mut GuiCore) {
         config.soundcloud_enabled = core.app.soundcloud_enabled;
         config.yandex_enabled = core.app.yandex_enabled;
         config.deezer_enabled = core.app.deezer_enabled;
+        config.spotify_enabled = core.app.spotify_enabled;
         config.global_hotkeys_enabled = core.app.global_hotkeys_enabled;
         config.hotkeys = core.app.hotkeys.clone();
         config.keybindings_notice_seen = core.app.keybindings_notice_seen;

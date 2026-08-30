@@ -156,6 +156,7 @@ pub struct App {
     pub soundcloud_enabled: bool,
     pub yandex_enabled: bool,
     pub deezer_enabled: bool,
+    pub spotify_enabled: bool,
     pub global_hotkeys_enabled: bool,
     pub hotkeys: HotkeyBindings,
     pub keybindings_notice_seen: bool,
@@ -221,6 +222,7 @@ impl App {
             soundcloud_enabled: config.soundcloud_enabled,
             yandex_enabled: config.yandex_enabled,
             deezer_enabled: config.deezer_enabled,
+            spotify_enabled: config.spotify_enabled,
             global_hotkeys_enabled: config.global_hotkeys_enabled,
             hotkeys: config.hotkeys.clone(),
             keybindings_notice_seen: config.keybindings_notice_seen,
@@ -1084,6 +1086,7 @@ impl App {
                     CredentialKind::SoundCloudClientId => self.soundcloud_enabled = true,
                     CredentialKind::YandexToken => self.yandex_enabled = true,
                     CredentialKind::DeezerArl => self.deezer_enabled = true,
+                    CredentialKind::SpotifySpDc => self.spotify_enabled = true,
                 }
                 self.config_dirty = true;
                 self.modal = None;

@@ -12,6 +12,7 @@ pub mod cache;
 pub mod deezer;
 pub mod download;
 pub mod soundcloud;
+pub mod spotify;
 pub mod yandex;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -160,7 +161,7 @@ impl ProviderRegistry {
 
     pub async fn import_url(&self, url: &Url, now_ms: i64) -> Result<Playlist> {
         let kind = ProviderKind::from_url(url.as_str())
-            .context("ссылка не похожа на SoundCloud, Yandex Music или Deezer")?;
+            .context("ссылка не похожа на SoundCloud, Yandex Music, Deezer или Spotify")?;
         let provider = self
             .get(kind)
             .with_context(|| format!("провайдер {} не настроен", kind.label()))?;
@@ -186,6 +187,7 @@ fn provider_order(kind: ProviderKind) -> u8 {
         ProviderKind::SoundCloud => 0,
         ProviderKind::YandexMusic => 1,
         ProviderKind::Deezer => 2,
+        ProviderKind::Spotify => 3,
     }
 }
 
@@ -206,6 +208,10 @@ pub async fn probe_provider(
         }
         ProviderKind::Deezer => {
             let provider = deezer::DeezerProvider::new(credential)?;
+            provider.probe().await
+        }
+        ProviderKind::Spotify => {
+            let provider = spotify::SpotifyProvider::new(credential)?;
             provider.probe().await
         }
     }

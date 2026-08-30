@@ -7,16 +7,23 @@ pub enum CredentialKind {
     SoundCloudClientId,
     YandexToken,
     DeezerArl,
+    SpotifySpDc,
 }
 
 impl CredentialKind {
-    pub const ALL: [Self; 3] = [Self::SoundCloudClientId, Self::YandexToken, Self::DeezerArl];
+    pub const ALL: [Self; 4] = [
+        Self::SoundCloudClientId,
+        Self::YandexToken,
+        Self::DeezerArl,
+        Self::SpotifySpDc,
+    ];
 
     pub const fn label(self) -> &'static str {
         match self {
             Self::SoundCloudClientId => "SoundCloud client_id",
             Self::YandexToken => "Yandex OAuth токен",
             Self::DeezerArl => "Deezer ARL cookie",
+            Self::SpotifySpDc => "Spotify sp_dc",
         }
     }
 
@@ -25,6 +32,7 @@ impl CredentialKind {
             Self::SoundCloudClientId => SecretKey::SoundCloudClientIdOverride,
             Self::YandexToken => SecretKey::YandexToken,
             Self::DeezerArl => SecretKey::DeezerArl,
+            Self::SpotifySpDc => SecretKey::SpotifySpDc,
         }
     }
 
@@ -39,6 +47,9 @@ impl CredentialKind {
             Self::DeezerArl => {
                 "Вставь значение cookie arl или строку arl=...; cookie останется только локально"
             }
+            Self::SpotifySpDc => {
+                "Вставь значение cookie sp_dc из браузера; токен останется только локально"
+            }
         }
     }
 }
@@ -48,6 +59,7 @@ pub struct CredentialState {
     pub soundcloud: bool,
     pub yandex: bool,
     pub deezer: bool,
+    pub spotify: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,6 +98,7 @@ impl CredentialState {
                 || has_value(secrets, SecretKey::SoundCloudClientId)?,
             yandex: has_value(secrets, SecretKey::YandexToken)?,
             deezer: has_value(secrets, SecretKey::DeezerArl)?,
+            spotify: has_value(secrets, SecretKey::SpotifySpDc)?,
         })
     }
 
@@ -94,6 +107,7 @@ impl CredentialState {
             CredentialKind::SoundCloudClientId => self.soundcloud,
             CredentialKind::YandexToken => self.yandex,
             CredentialKind::DeezerArl => self.deezer,
+            CredentialKind::SpotifySpDc => self.spotify,
         }
     }
 
@@ -102,6 +116,7 @@ impl CredentialState {
             CredentialKind::SoundCloudClientId => self.soundcloud = configured,
             CredentialKind::YandexToken => self.yandex = configured,
             CredentialKind::DeezerArl => self.deezer = configured,
+            CredentialKind::SpotifySpDc => self.spotify = configured,
         }
     }
 }

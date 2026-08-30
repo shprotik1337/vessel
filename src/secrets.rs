@@ -15,6 +15,7 @@ pub enum SecretKey {
     SoundCloudClientIdOverride,
     YandexToken,
     DeezerArl,
+    SpotifySpDc,
 }
 
 impl SecretKey {
@@ -27,6 +28,7 @@ impl SecretKey {
             Self::SoundCloudClientIdOverride => "soundcloud-client-id-override",
             Self::YandexToken => "yandex-token",
             Self::DeezerArl => "deezer-arl",
+            Self::SpotifySpDc => "spotify-sp-dc",
         }
     }
 }

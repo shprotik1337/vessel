@@ -418,6 +418,7 @@ impl Runtime {
             }
             crate::secrets::SecretKey::YandexToken => self.config.yandex_enabled = false,
             crate::secrets::SecretKey::DeezerArl => self.config.deezer_enabled = false,
+            crate::secrets::SecretKey::SpotifySpDc => self.config.spotify_enabled = false,
             _ => {}
         }
         self.reload_providers();
@@ -439,6 +440,7 @@ impl Runtime {
             }
             CredentialKind::YandexToken => self.config.yandex_enabled = true,
             CredentialKind::DeezerArl => self.config.deezer_enabled = true,
+            CredentialKind::SpotifySpDc => self.config.spotify_enabled = true,
         }
         let setup = build_registry(&self.config, &self.secrets);
         self.providers = Arc::new(setup.registry);

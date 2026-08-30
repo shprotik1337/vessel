@@ -98,8 +98,8 @@ fn draw_sidebar(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .collect::<Vec<_>>();
     let block = Block::new()
         .title(Line::from(vec![
-            Span::styled(" NOVER", Style::new().fg(Color::White)),
-            Span::styled("PLAY ", Style::new().fg(PRIMARY)),
+            Span::styled(" ves", Style::new().fg(Color::White)),
+            Span::styled("sel ", Style::new().fg(PRIMARY)),
         ]))
         .borders(Borders::RIGHT)
         .border_style(Style::new().fg(BORDER))

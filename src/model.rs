@@ -12,6 +12,7 @@ pub enum SearchProvider {
     SoundCloud,
     YandexMusic,
     Deezer,
+    Spotify,
 }
 
 impl SearchProvider {
@@ -20,7 +21,8 @@ impl SearchProvider {
             Self::All => Self::SoundCloud,
             Self::SoundCloud => Self::YandexMusic,
             Self::YandexMusic => Self::Deezer,
-            Self::Deezer => Self::All,
+            Self::Deezer => Self::Spotify,
+            Self::Spotify => Self::All,
         }
     }
 
@@ -30,6 +32,7 @@ impl SearchProvider {
             Self::SoundCloud => "SoundCloud",
             Self::YandexMusic => "Yandex",
             Self::Deezer => "Deezer",
+            Self::Spotify => "Spotify",
         }
     }
 
@@ -39,6 +42,7 @@ impl SearchProvider {
             Self::SoundCloud => Some(ProviderKind::SoundCloud),
             Self::YandexMusic => Some(ProviderKind::YandexMusic),
             Self::Deezer => Some(ProviderKind::Deezer),
+            Self::Spotify => Some(ProviderKind::Spotify),
         }
     }
 }
@@ -50,6 +54,7 @@ pub enum ProviderKind {
     SoundCloud,
     YandexMusic,
     Deezer,
+    Spotify,
 }
 
 impl ProviderKind {
@@ -61,6 +66,8 @@ impl ProviderKind {
             Some(Self::YandexMusic)
         } else if host == "deezer.com" || host.ends_with(".deezer.com") {
             Some(Self::Deezer)
+        } else if host == "open.spotify.com" || host.ends_with(".spotify.com") {
+            Some(Self::Spotify)
         } else {
             None
         }
@@ -71,6 +78,7 @@ impl ProviderKind {
             Self::SoundCloud => "SoundCloud",
             Self::YandexMusic => "Yandex Music",
             Self::Deezer => "Deezer",
+            Self::Spotify => "Spotify",
         }
     }
 }
@@ -233,6 +241,10 @@ mod tests {
             ProviderKind::from_url("https://www.deezer.com/playlist/1"),
             Some(ProviderKind::Deezer)
         );
+        assert_eq!(
+            ProviderKind::from_url("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"),
+            Some(ProviderKind::Spotify)
+        );
     }
 
     #[test]
@@ -255,7 +267,8 @@ mod tests {
             SearchProvider::YandexMusic
         );
         assert_eq!(SearchProvider::YandexMusic.next(), SearchProvider::Deezer);
-        assert_eq!(SearchProvider::Deezer.next(), SearchProvider::All);
+        assert_eq!(SearchProvider::Deezer.next(), SearchProvider::Spotify);
+        assert_eq!(SearchProvider::Spotify.next(), SearchProvider::All);
     }
 
     #[test]

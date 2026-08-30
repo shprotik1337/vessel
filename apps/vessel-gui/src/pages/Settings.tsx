@@ -27,6 +27,12 @@ const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg
     logo: "DZ",
     bg: "#A238FF",
   },
+  spotify: {
+    key: "spotify",
+    hint: "Вставь значение cookie sp_dc из браузера. Токен останется только локально.",
+    logo: "SP",
+    bg: "#1DB954",
+  },
 };
 
 function ServiceRow({ status }: { status: ProviderStatus }) {
