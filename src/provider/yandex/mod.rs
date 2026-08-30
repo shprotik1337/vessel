@@ -1,3 +1,5 @@
+mod album;
+mod artist;
 mod client;
 mod mapping;
 mod personal;
@@ -19,7 +21,10 @@ use yandex_music::YandexMusicClient;
 
 use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
-    provider::{Attribution, ImportedPlaylist, MusicProvider, SearchPage},
+    provider::{
+        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider,
+        SearchPage,
+    },
 };
 
 use client::build_client;
@@ -27,7 +32,10 @@ use personal::personal_wave;
 use playback::poluchit_istochnik;
 use playlist::import_playlist;
 use related::related_tracks;
-use search::search_tracks;
+use search::{search_collections, search_tracks};
+
+use album::import_album;
+use artist::{artist_all_tracks, artist_profile};
 
 pub use mapping::normalizovat_track;
 pub use playlist_url::{YandexPlaylistRef, parse_playlist_url};
@@ -61,7 +69,26 @@ impl MusicProvider for YandexProvider {
         search_tracks(&self.client, query, cursor).await
     }
 
+    async fn search_collections(
+        &self,
+        query: &str,
+        kind: CollectionKind,
+    ) -> Result<Vec<CollectionItem>> {
+        search_collections(&self.client, query, kind).await
+    }
+
+    async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
+        artist_profile(&self.client, artist_id).await
+    }
+
+    async fn artist_all_tracks(&self, artist_id: &str) -> Result<Vec<TrackRef>> {
+        artist_all_tracks(&self.client, artist_id).await
+    }
+
     async fn import_playlist(&self, url: &Url) -> Result<ImportedPlaylist> {
+        if let Some(album_id) = album_id_from_url(url) {
+            return import_album(&self.client, album_id, url).await;
+        }
         import_playlist(&self.client, url).await
     }
 
@@ -84,6 +111,15 @@ impl YandexProvider {
     pub async fn probe(&self) -> Result<()> {
         search_tracks(&self.client, "noverplay probe", None).await.map(|_| ())
     }
+}
+
+fn album_id_from_url(url: &Url) -> Option<u32> {
+    let segments = url.path_segments()?.collect::<Vec<_>>();
+    segments.windows(2).find_map(|pair| {
+        (pair[0] == "album" && pair[1].chars().all(|ch| ch.is_ascii_digit()))
+            .then(|| pair[1].parse::<u32>().ok())
+            .flatten()
+    })
 }
 
 #[cfg(test)]

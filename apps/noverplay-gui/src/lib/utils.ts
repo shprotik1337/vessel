@@ -30,7 +30,7 @@ export function relativeTime(ms: number): string {
 
 export function providerLabel(provider: string): string {
   switch (provider) {
-    case "soundcloud":
+    case "sound_cloud":
       return "SoundCloud";
     case "yandex_music":
       return "Yandex";
@@ -57,4 +57,21 @@ export function isFavorite(library: TrackRef[], track: TrackRef): boolean {
 
 export function trackKey(track: TrackRef): string {
   return `${track.provider}:${track.id}`;
+}
+
+export function providerKey(track: TrackRef): string {
+  return `${track.provider}:${track.id}`;
+}
+
+export function dedupe(tracks: TrackRef[]): TrackRef[] {
+  const seen = new Set<string>();
+  const out: TrackRef[] = [];
+  for (const t of tracks) {
+    const key = trackKey(t);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(t);
+    }
+  }
+  return out;
 }

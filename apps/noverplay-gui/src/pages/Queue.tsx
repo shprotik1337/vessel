@@ -1,14 +1,22 @@
+import { useRef, useState } from "react";
+
 import { useApp } from "../store";
-import { artistLabel, formatTime, trackKey } from "../lib/utils";
+import { artistLabel, formatTime, trackKey, providerLabel } from "../lib/utils";
+import { Artwork } from "../components/Artwork";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
 export function Queue() {
   const { state, playTracks, showToast, refresh } = useApp();
+
   if (!state) return null;
 
+  const isLive =
+    state.player.status === "playing" || state.player.status === "buffering";
+
   const playOne = (track: TrackRef) => {
-    void playTracks([track], 0);
+    const idx = state.queue.findIndex((t) => trackKey(t) === trackKey(track));
+    void playTracks(state.queue, idx < 0 ? 0 : idx);
   };
 
   const removeAt = async (index: number) => {
@@ -30,8 +38,112 @@ export function Queue() {
     }
   };
 
+  // Отправляем ПОЛНЫЙ новый порядок очереди, как его видит фронт.
+  // Так бэкенд воспроизводит ровно тот порядок, который показан в UI.
+  const applyOrder = async (ordered: TrackRef[]) => {
+    try {
+      await api.reorderQueue(ordered);
+      await refresh();
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  const drag = useRef<{ from: number; startY: number; moved: boolean } | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const onMouseDown = (e: React.MouseEvent, i: number) => {
+    if (e.button !== 0) return;
+    drag.current = { from: i, startY: e.clientY, moved: false };
+    setHoverIdx(i);
+  };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!drag.current) return;
+    if (!drag.current.moved && Math.abs(e.clientY - drag.current.startY) > 3) {
+      drag.current.moved = true;
+    }
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const row = el?.closest?.("[data-qi]");
+    const idx = row ? Number(row.getAttribute("data-qi")) : null;
+    if (idx != null && hoverIdx !== idx) setHoverIdx(idx);
+  };
+
+  const onMouseUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (d && d.moved && hoverIdx != null && d.from !== hoverIdx) {
+      const ordered = [...queue];
+      const [moved] = ordered.splice(d.from, 1);
+      ordered.splice(hoverIdx, 0, moved);
+      void applyOrder(ordered);
+    }
+    setHoverIdx(null);
+  };
+
   const queue = state.queue;
   const currentIndex = state.queue_index;
+  const current = currentIndex != null && currentIndex < queue.length ? queue[currentIndex] : null;
+
+  const qrowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "40px 1fr auto 50px 22px",
+    gap: 12,
+    alignItems: "center",
+    height: 48,
+    padding: "0 12px",
+    borderRadius: 5,
+    cursor: "default",
+    border: "1px solid transparent",
+  };
+
+  const renderRow = (track: TrackRef, realIndex: number) => (
+    <div
+      key={trackKey(track) + realIndex}
+      data-qi={realIndex}
+      onMouseDown={(e) => onMouseDown(e, realIndex)}
+      style={{
+        ...qrowStyle,
+        cursor: "grab",
+        userSelect: "none",
+        ...(hoverIdx === realIndex && drag.current?.moved
+          ? { boxShadow: "inset 0 2px 0 0 var(--text)" }
+          : {}),
+      }}
+      className="qrow"
+      onDoubleClick={() => playOne(track)}
+    >
+      <Artwork
+        url={track.artwork_url}
+        alt={track.title}
+        size={40}
+        seed={realIndex}
+        className="t-art"
+        onPlayClick={async () => {
+          if (realIndex === currentIndex && isLive) {
+            try { await api.togglePlayback(); } catch {}
+          } else {
+            playOne(track);
+          }
+        }}
+        isPlaying={realIndex === currentIndex && isLive}
+      />
+      <div className="c-title" style={{ minWidth: 0 }}>
+        <span className="ttl">{track.title}</span>
+        <span className="sub">{artistLabel(track.artists)}</span>
+      </div>
+      <span className="pl-src">{providerLabel(track.provider)}</span>
+      <span className="c-time">{formatTime(track.duration_ms)}</span>
+      <span
+        className="qx"
+        onClick={() => removeAt(realIndex)}
+        title="Remove"
+        style={{ cursor: "pointer", color: "var(--text3)", fontSize: 15, textAlign: "center" }}
+      >
+        ✕
+      </span>
+    </div>
+  );
 
   return (
     <div className="view">
@@ -57,60 +169,63 @@ export function Queue() {
         </div>
       ) : (
         <>
-          {currentIndex != null && currentIndex < queue.length && (
-            <div className="queue-sec">
-              <div className="qsec-hd">
-                <span className="qsec-title">Now Playing</span>
-              </div>
-              <div className="qrow now">
-                <span className="eq" style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 11 }}>
-                  <i style={{ width: 2, background: "var(--text)", height: 8 }} />
-                  <i style={{ width: 2, background: "var(--text)", height: 11 }} />
-                  <i style={{ width: 2, background: "var(--text)", height: 6 }} />
-                </span>
-                <div className="t-art" style={{ background: "var(--elev)", width: 32, height: 32, borderRadius: 2 }} />
-                <div className="c-title">
-                  <span className="ttl">{queue[currentIndex].title}</span>
-                  <span className="sub">{artistLabel(queue[currentIndex].artists)}</span>
-                </div>
-                <span className="c-src" style={{ width: "auto", fontSize: 10, textTransform: "uppercase" }}>
-                  {queue[currentIndex].provider}
-                </span>
-                <span className="c-time">{formatTime(queue[currentIndex].duration_ms)}</span>
-              </div>
+          <div className="queue-sec">
+            <div className="qsec-hd">
+              <span className="qsec-title">Now Playing</span>
             </div>
-          )}
+            {current ? (
+              <div
+                style={{
+                  ...qrowStyle,
+                  gridTemplateColumns: "40px 1fr auto 50px",
+                  background: "var(--elev)",
+                  boxShadow: "inset 2px 0 0 0 var(--text)",
+                  borderRadius: 6,
+                }}
+                className="qrow now"
+                onDoubleClick={() => current && playOne(current)}
+              >
+                <Artwork
+                  url={current.artwork_url}
+                  alt={current.title}
+                  size={40}
+                  seed={currentIndex ?? 0}
+                  className="t-art"
+                  onPlayClick={async () => { try { await api.togglePlayback(); } catch {} }}
+                  isPlaying={isLive}
+                />
+                <div className="c-title" style={{ minWidth: 0 }}>
+                  <span className="ttl">{current.title}</span>
+                  <span className="sub">{artistLabel(current.artists)}</span>
+                </div>
+                <span className="pl-src">{providerLabel(current.provider)}</span>
+                <span className="c-time">{formatTime(current.duration_ms)}</span>
+              </div>
+            ) : (
+              <div className="set-desc" style={{ padding: "8px 2px" }}>Nothing playing</div>
+            )}
+          </div>
 
           <div className="queue-sec">
             <div className="qsec-hd">
               <span className="qsec-title">Up Next</span>
-              <span className="qsec-title" style={{ fontSize: 12, color: "var(--text3)" }}>
-                {queue.length - (currentIndex ?? -1) - 1} tracks
+              <span style={{ fontSize: 12, color: "var(--text3)" }}>
+                {queue.length - (currentIndex != null ? 1 : 0)} tracks
               </span>
             </div>
-            {queue
-              .map((track, i) => ({ track, i }))
-              .filter(({ i }) => i !== currentIndex)
-              .map(({ track, i }) => (
-                <div
-                  key={trackKey(track) + i}
-                  className="qrow"
-                  onDoubleClick={() => playOne(track)}
-                >
-                  <span className="qx" onClick={() => removeAt(i)} title="Remove">
-                    ✕
-                  </span>
-                  <div className="t-art" style={{ background: "var(--elev)", width: 32, height: 32, borderRadius: 2 }} />
-                  <div className="c-title">
-                    <span className="ttl">{track.title}</span>
-                    <span className="sub">{artistLabel(track.artists)}</span>
-                  </div>
-                  <span className="c-src" style={{ width: "auto", fontSize: 10, textTransform: "uppercase" }}>
-                    {track.provider}
-                  </span>
-                  <span className="c-time">{formatTime(track.duration_ms)}</span>
-                </div>
-              ))}
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: 2 }}
+              onMouseMove={onMouseMove}
+              onMouseUp={onMouseUp}
+              onMouseLeave={() => {
+                if (drag.current) drag.current = null;
+                setHoverIdx(null);
+              }}
+            >
+              {queue.map((track, i) =>
+                i === currentIndex ? null : renderRow(track, i),
+              )}
+            </div>
           </div>
         </>
       )}

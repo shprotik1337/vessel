@@ -56,10 +56,10 @@ impl Storage {
                 title TEXT NOT NULL,
                 description TEXT NOT NULL,
                 source_url TEXT,
+                cover_url TEXT,
                 created_at_ms INTEGER NOT NULL,
                 updated_at_ms INTEGER NOT NULL
             );
-
             CREATE TABLE IF NOT EXISTS playlist_tracks (
                 playlist_id TEXT NOT NULL,
                 position INTEGER NOT NULL,
@@ -104,6 +104,35 @@ impl Storage {
             );
             ",
         )?;
+        // миграция: колонка cover_url для обложек плейлистов
+        let has_cover = connection
+            .prepare("PRAGMA table_info(playlists)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "cover_url");
+        if !has_cover {
+            connection.execute("ALTER TABLE playlists ADD COLUMN cover_url TEXT", [])?;
+        }
+        // миграция: колонка position для ручного порядка плейлистов
+        let playlist_columns = connection
+            .prepare("PRAGMA table_info(playlists)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if !playlist_columns.iter().any(|name| name == "position") {
+            connection.execute("ALTER TABLE playlists ADD COLUMN position INTEGER", [])?;
+        }
+        // миграция: колонка added_at_ms для даты добавления трека в плейлист
+        let track_columns = connection
+            .prepare("PRAGMA table_info(playlist_tracks)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if !track_columns.iter().any(|name| name == "added_at_ms") {
+            connection.execute(
+                "ALTER TABLE playlist_tracks ADD COLUMN added_at_ms INTEGER",
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -111,14 +140,28 @@ impl Storage {
         // один плейлист одна транзакция, потому что половина плейлиста это уже современное искусство 🤡
         let mut connection = self.connection()?;
         let transaction = connection.transaction()?;
+        // Помним, когда трек добавляли: пересохранение не должно обнулять даты
+        let existing_dates: std::collections::HashMap<String, i64> = transaction
+            .prepare(
+                "SELECT provider_key, added_at_ms FROM playlist_tracks WHERE playlist_id = ?1",
+            )?
+            .query_map([playlist.id.to_string()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as i64)
+            .unwrap_or_default();
         transaction.execute(
             "
-            INSERT INTO playlists(id, title, description, source_url, created_at_ms, updated_at_ms)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT INTO playlists(id, title, description, source_url, cover_url, created_at_ms, updated_at_ms)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
                 source_url = excluded.source_url,
+                cover_url = excluded.cover_url,
                 updated_at_ms = excluded.updated_at_ms
             ",
             params![
@@ -126,6 +169,7 @@ impl Storage {
                 playlist.title,
                 playlist.description,
                 playlist.source_url.as_ref().map(ToString::to_string),
+                playlist.cover_url.as_ref().map(ToString::to_string),
                 playlist.created_at_ms,
                 playlist.updated_at_ms,
             ],
@@ -135,21 +179,54 @@ impl Storage {
             [playlist.id.to_string()],
         )?;
         for (position, track) in playlist.tracks.iter().enumerate() {
+            let added_at_ms = existing_dates.get(&track.provider_key()).copied().unwrap_or(now_ms);
             transaction.execute(
                 "
-                INSERT INTO playlist_tracks(playlist_id, position, provider_key, track_json)
-                VALUES (?1, ?2, ?3, ?4)
+                INSERT INTO playlist_tracks(playlist_id, position, provider_key, track_json, added_at_ms)
+                VALUES (?1, ?2, ?3, ?4, ?5)
                 ",
                 params![
                     playlist.id.to_string(),
                     position as i64,
                     track.provider_key(),
                     encode_track(track)?,
+                    added_at_ms,
                 ],
             )?;
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    /// Ручной порядок плейлистов: id в нужном порядке получают position.
+    pub fn save_playlists_order(&self, order: &[String]) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction()?;
+        for (index, id) in order.iter().enumerate() {
+            transaction.execute(
+                "UPDATE playlists SET position = ?1 WHERE id = ?2",
+                params![index as i64, id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Даты добавления треков плейлиста: (трек, added_at_ms).
+    pub fn playlist_track_times(&self, id: Uuid) -> Result<Vec<(TrackRef, i64)>> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT track_json, added_at_ms FROM playlist_tracks WHERE playlist_id = ?1",
+        )?;
+        let rows = statement.query_map([id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        let mut times = Vec::new();
+        for row in rows {
+            let (track_json, added_at_ms) = row?;
+            times.push((decode_track(&track_json)?, added_at_ms));
+        }
+        Ok(times)
     }
 
     pub fn delete_playlist(&self, id: Uuid) -> Result<bool> {
@@ -163,9 +240,9 @@ impl Storage {
         let connection = self.connection()?;
         let mut statement = connection.prepare(
             "
-            SELECT id, title, description, source_url, created_at_ms, updated_at_ms
+            SELECT id, title, description, source_url, cover_url, created_at_ms, updated_at_ms
             FROM playlists
-            ORDER BY updated_at_ms DESC, title COLLATE NOCASE
+            ORDER BY (position IS NULL), position, updated_at_ms DESC, title COLLATE NOCASE
             ",
         )?;
         let rows = statement.query_map([], |row| {
@@ -174,24 +251,31 @@ impl Storage {
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, Option<String>>(3)?,
-                row.get::<_, i64>(4)?,
+                row.get::<_, Option<String>>(4)?,
                 row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
             ))
         })?;
         let mut playlists = Vec::new();
         for row in rows {
-            let (id, title, description, source_url, created_at_ms, updated_at_ms) = row?;
+            let (id, title, description, source_url, cover_url, created_at_ms, updated_at_ms) =
+                row?;
             let id = Uuid::parse_str(&id).context("В БД найден повреждённый плейлист")?;
             let source_url = source_url
                 .map(|value| url::Url::parse(&value))
                 .transpose()
                 .context("В БД найден повреждённый URL плейлиста")?;
+            let cover_url = cover_url
+                .map(|value| url::Url::parse(&value))
+                .transpose()
+                .context("В БД найден повреждённый URL обложки плейлиста")?;
             let tracks = load_playlist_tracks(&connection, id)?;
             playlists.push(Playlist {
                 id,
                 title,
                 description,
                 source_url,
+                cover_url,
                 tracks,
                 created_at_ms,
                 updated_at_ms,
@@ -226,6 +310,20 @@ impl Storage {
             [track.provider_key()],
         )?;
         Ok(changed > 0)
+    }
+
+    pub fn reorder_library(&self, order: &[String]) -> Result<()> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction()?;
+        let base = i64::from(1_000_000_000u32) + order.len() as i64;
+        for (index, key) in order.iter().enumerate() {
+            transaction.execute(
+                "UPDATE library_tracks SET liked_at_ms = ?1 WHERE provider_key = ?2",
+                params![base - index as i64, key],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn library_tracks(&self) -> Result<Vec<TrackRef>> {
@@ -401,6 +499,11 @@ impl Storage {
             shuffle,
             repeat: parse_repeat(&repeat),
         })
+    }
+
+    pub fn clear_history(&self) -> Result<()> {
+        self.connection()?.execute("DELETE FROM history", [])?;
+        Ok(())
     }
 
     pub fn clear_all(&self) -> Result<()> {

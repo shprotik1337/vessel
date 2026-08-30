@@ -5,14 +5,25 @@ import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
 export function Recent() {
-  const { state, playTracks, showToast, refresh } = useApp();
+  const { state, playTracks, showToast, refresh, navigateTo } = useApp();
   if (!state) return null;
 
   const nowKey = state.now_playing ? trackKey(state.now_playing) : null;
   const history = state.history;
 
+  // unique by track key, keep most recent occurrence, ordered by most recent
+  const uniqueHistory = (() => {
+    const seen = new Map<string, (typeof history)[number]>();
+    for (const entry of history) {
+      const key = trackKey(entry.track);
+      seen.set(key, entry);
+    }
+    return Array.from(seen.values());
+  })();
+
   const playOne = (track: TrackRef) => {
-    void playTracks([track], 0);
+    const idx = uniqueHistory.findIndex((h) => trackKey(h.track) === trackKey(track));
+    void playTracks(uniqueHistory.map((h) => h.track), idx < 0 ? 0 : idx);
   };
 
   const clearAll = async () => {
@@ -30,10 +41,10 @@ export function Recent() {
       <div className="view-hd">
         <div>
           <div className="view-title">Recently Played</div>
-          <div className="view-sub">{history.length} tracks</div>
+          <div className="view-sub">{uniqueHistory.length} tracks</div>
         </div>
         <div className="btns">
-          {history.length > 0 && (
+          {uniqueHistory.length > 0 && (
             <button className="btn btn-ghost" onClick={clearAll}>
               Clear
             </button>
@@ -41,7 +52,7 @@ export function Recent() {
         </div>
       </div>
 
-      {history.length === 0 ? (
+      {uniqueHistory.length === 0 ? (
         <div className="empty">
           <div className="ico">⏱</div>
           <div className="t1">Nothing played yet</div>
@@ -49,13 +60,14 @@ export function Recent() {
         </div>
       ) : (
         <div className="tracklist">
-          {history.map((entry, i) => (
+          {uniqueHistory.map((entry, i) => (
             <TrackRow
               key={trackKey(entry.track) + i}
               track={entry.track}
               index={i}
               nowKey={nowKey}
               onPlay={playOne}
+              onArtistClick={(name, provider) => navigateTo("artist", { artist: name, provider })}
               showAdded
               addedLabel={relativeTime(entry.played_at_ms)}
             />

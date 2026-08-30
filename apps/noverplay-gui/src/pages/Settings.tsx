@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useApp } from "../store";
 import type { ProviderStatus } from "../api/types";
 import * as api from "../api/commands";
 
 type Tab = "services" | "playback" | "storage";
+
+type ConfirmTarget = "settings" | "data" | null;
 
 const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg: string }> = {
   soundcloud: {
@@ -26,34 +28,6 @@ const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg
     bg: "#A238FF",
   },
 };
-
-function VolumeSlider() {
-  const { state, showToast, refresh } = useApp();
-  if (!state) return null;
-  const vol = state.player.volume_percent;
-
-  const handleClick = async (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const value = Math.round((x / rect.width) * 100);
-    try {
-      await api.setVolume(Math.max(0, Math.min(100, value)));
-      await refresh();
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  return (
-    <div className="slider-row">
-      <div className="slider" onClick={handleClick} style={{ maxWidth: 200 }}>
-        <div className="fill" style={{ width: `${vol}%` }} />
-        <div className="knob" style={{ left: `${vol}%` }} />
-      </div>
-      <span className="slider-num">{vol}%</span>
-    </div>
-  );
-}
 
 function ServiceRow({ status }: { status: ProviderStatus }) {
   const { showToast, refresh } = useApp();
@@ -164,11 +138,87 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
 export function Settings() {
   const { state, showToast, refresh } = useApp();
   const [tab, setTab] = useState<Tab>("services");
+  const [confirm, setConfirm] = useState<ConfirmTarget>(null);
+  const [downloadDir, setDownloadDir] = useState("");
+  const [savedDir, setSavedDir] = useState("");
+  const [cacheDir, setCacheDir] = useState("");
+  const [savedCacheDir, setSavedCacheDir] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const dir = await api.getDownloadDir();
+        setDownloadDir(dir);
+        setSavedDir(dir);
+      } catch {
+        // папка останется пустой
+      }
+      try {
+        const dir = await api.getCacheDir();
+        setCacheDir(dir);
+        setSavedCacheDir(dir);
+      } catch {
+        // папка останется пустой
+      }
+    })();
+  }, []);
+
+  const changeDownloadDir = async () => {
+    const next = window.prompt("Папка для скачанных треков:", downloadDir);
+    if (next === null) return;
+    const value = next.trim();
+    try {
+      await api.setDownloadDir(value || null);
+      setDownloadDir(value);
+      showToast(value ? `Папка загрузок: ${value}` : "Папка сброшена по умолчанию");
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  const resetDownloadDir = async () => {
+    try {
+      await api.setDownloadDir(null);
+      const dir = await api.getDownloadDir();
+      setDownloadDir(dir);
+      setSavedDir(dir);
+      showToast("Папка сброшена по умолчанию");
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  const downloadDirChanged = downloadDir !== savedDir;
+  const cacheDirChanged = cacheDir !== savedCacheDir;
+
+  const changeCacheDir = async () => {
+    const next = window.prompt("Папка для кэша треков:", cacheDir);
+    if (next === null) return;
+    const value = next.trim();
+    try {
+      await api.setCacheDir(value || null);
+      setCacheDir(value);
+      showToast(value ? `Папка кэша: ${value}` : "Кэш сброшен по умолчанию");
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  const resetCacheDir = async () => {
+    try {
+      await api.setCacheDir(null);
+      const dir = await api.getCacheDir();
+      setCacheDir(dir);
+      setSavedCacheDir(dir);
+      showToast("Кэш сброшен по умолчанию");
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
 
   if (!state) return null;
 
   const resetSettings = async () => {
-    if (!window.confirm("Reset all settings to defaults?")) return;
     try {
       await api.resetSettings();
       await refresh();
@@ -179,7 +229,6 @@ export function Settings() {
   };
 
   const resetData = async () => {
-    if (!window.confirm("Wipe all library, playlists, queue and history?")) return;
     try {
       await api.resetData();
       await refresh();
@@ -187,6 +236,12 @@ export function Settings() {
     } catch (error) {
       showToast(String(error), true);
     }
+  };
+
+  const doConfirm = async () => {
+    if (confirm === "settings") await resetSettings();
+    if (confirm === "data") await resetData();
+    setConfirm(null);
   };
 
   return (
@@ -248,21 +303,7 @@ export function Settings() {
             <>
               <div className="sett-hd">
                 <div className="sett-title">Playback</div>
-                <div className="sett-sub">Volume and repeat behavior.</div>
-              </div>
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">Volume</span>
-                </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">Master volume</div>
-                      <div className="set-desc">Click or drag on the slider.</div>
-                    </div>
-                    <VolumeSlider />
-                  </div>
-                </div>
+                <div className="sett-sub">Repeat behavior.</div>
               </div>
               <div className="group">
                 <div className="group-hd">
@@ -302,7 +343,56 @@ export function Settings() {
             <>
               <div className="sett-hd">
                 <div className="sett-title">Storage</div>
-                <div className="sett-sub">Danger zone: reset local data.</div>
+                <div className="sett-sub">Downloads and local data.</div>
+              </div>
+              <div className="group">
+                <div className="group-hd">
+                  <span className="group-title">Downloads</span>
+                </div>
+                <div className="panel">
+                  <div className="set-row">
+                    <div className="set-cell">
+                      <div className="set-title">Папка загрузок</div>
+                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
+                        {downloadDir || "Загрузка…"}
+                      </div>
+                    </div>
+                    <div className="btns">
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={changeDownloadDir}
+                      >
+                        Изменить
+                      </button>
+                      {downloadDirChanged && (
+                        <button className="btn btn-outline btn-sm" onClick={resetDownloadDir}>
+                          Сбросить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="set-row">
+                    <div className="set-cell">
+                      <div className="set-title">Папка кэша треков</div>
+                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
+                        {cacheDir || "Загрузка…"}
+                      </div>
+                    </div>
+                    <div className="btns">
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={changeCacheDir}
+                      >
+                        Изменить
+                      </button>
+                      {cacheDirChanged && (
+                        <button className="btn btn-outline btn-sm" onClick={resetCacheDir}>
+                          Сбросить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="group">
                 <div className="group-hd">
@@ -314,7 +404,10 @@ export function Settings() {
                       <div className="set-title">Reset settings</div>
                       <div className="set-desc">Restore default volume and server URL.</div>
                     </div>
-                    <button className="btn btn-danger btn-sm" onClick={resetSettings}>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => setConfirm("settings")}
+                    >
                       Reset settings
                     </button>
                   </div>
@@ -325,7 +418,10 @@ export function Settings() {
                         Wipe library, playlists, queue and history. Credentials stay.
                       </div>
                     </div>
-                    <button className="btn btn-danger btn-sm" onClick={resetData}>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => setConfirm("data")}
+                    >
                       Wipe data
                     </button>
                   </div>
@@ -335,6 +431,41 @@ export function Settings() {
           )}
         </div>
       </div>
+
+      {confirm && (
+        <div className="ov show" onClick={() => setConfirm(null)}>
+          <div
+            className="ov-card"
+            style={{
+              width: 420,
+              height: "auto",
+              maxHeight: "auto",
+              padding: 24,
+              gap: 16,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sett-title" style={{ fontSize: 18 }}>
+              {confirm === "data"
+                ? "Wipe application data?"
+                : "Reset settings?"}
+            </div>
+            <div className="set-desc">
+              {confirm === "data"
+                ? "This will permanently delete all your playlists, queue, history and library. Credentials stay. Are you sure?"
+                : "This will restore default settings (volume, server URL). Are you sure?"}
+            </div>
+            <div className="btns" style={{ justifyContent: "flex-end", marginTop: 4 }}>
+              <button className="btn btn-outline" onClick={() => setConfirm(null)}>
+                Cancel
+              </button>
+              <button className="btn btn-danger" onClick={doConfirm}>
+                Yes, do it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

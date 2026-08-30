@@ -1,8 +1,12 @@
 use anyhow::Result;
 
-use crate::provider::SearchPage;
+use crate::provider::{CollectionItem, CollectionKind, SearchPage};
 
-use super::{client::SoundCloudClient, models::ScCollection, normalizovat_track};
+use super::{
+    client::SoundCloudClient,
+    models::{ScCollection, ScPlaylist, ScUser},
+    normalizovat_track,
+};
 
 const SEARCH_LIMIT: usize = 50;
 
@@ -41,6 +45,146 @@ pub(super) async fn search_tracks(
         tracks,
         next_cursor: has_more.then(|| (offset + SEARCH_LIMIT).to_string()),
     })
+}
+
+pub(super) async fn search_playlists(
+    client: &SoundCloudClient,
+    query: &str,
+) -> Result<Vec<CollectionItem>> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let response: ScCollection<ScPlaylist> = client
+        .get_json(
+            client.v2_url(&["search", "playlists"])?,
+            &[
+                ("q", query.to_string()),
+                ("limit", SEARCH_LIMIT.to_string()),
+                ("linked_partitioning", "true".to_string()),
+            ],
+        )
+        .await?;
+    Ok(response
+        .collection
+        .into_iter()
+        .filter_map(|playlist| {
+            let web_url = playlist
+                .permalink_url
+                .clone()
+                .and_then(|value| url::Url::parse(&value).ok())?;
+            let artwork_url = playlist
+                .tracks
+                .iter()
+                .find_map(|track| track.artwork_url.clone())
+                .and_then(|value| url::Url::parse(&value).ok());
+            let subtitle = format!("{} треков", playlist.tracks.len());
+            Some(CollectionItem {
+                kind: CollectionKind::Playlist,
+                provider: crate::model::ProviderKind::SoundCloud,
+                id: playlist.id,
+                title: playlist.title,
+                subtitle,
+                artwork_url,
+                web_url,
+                track_count: playlist.tracks.len(),
+            })
+        })
+        .collect())
+}
+
+pub(super) async fn search_albums(
+    client: &SoundCloudClient,
+    query: &str,
+) -> Result<Vec<CollectionItem>> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let response: ScCollection<ScPlaylist> = client
+        .get_json(
+            client.v2_url(&["search", "albums"])?,
+            &[
+                ("q", query.to_string()),
+                ("limit", SEARCH_LIMIT.to_string()),
+                ("linked_partitioning", "true".to_string()),
+            ],
+        )
+        .await?;
+    Ok(response
+        .collection
+        .into_iter()
+        .filter_map(|playlist| {
+            let web_url = playlist
+                .permalink_url
+                .clone()
+                .and_then(|value| url::Url::parse(&value).ok())?;
+            let artwork_url = playlist
+                .tracks
+                .iter()
+                .find_map(|track| track.artwork_url.clone())
+                .and_then(|value| url::Url::parse(&value).ok());
+            let subtitle = format!("{} треков", playlist.tracks.len());
+            Some(CollectionItem {
+                kind: CollectionKind::Album,
+                provider: crate::model::ProviderKind::SoundCloud,
+                id: playlist.id,
+                title: playlist.title,
+                subtitle,
+                artwork_url,
+                web_url,
+                track_count: playlist.tracks.len(),
+            })
+        })
+        .collect())
+}
+
+pub(super) async fn search_artists(
+    client: &SoundCloudClient,
+    query: &str,
+) -> Result<Vec<CollectionItem>> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let response: ScCollection<ScUser> = client
+        .get_json(
+            client.v2_url(&["search", "users"])?,
+            &[
+                ("q", query.to_string()),
+                ("limit", SEARCH_LIMIT.to_string()),
+                ("linked_partitioning", "true".to_string()),
+            ],
+        )
+        .await?;
+    Ok(response
+        .collection
+        .into_iter()
+        .filter_map(|user| {
+            let name = user.username.trim();
+            if name.is_empty() {
+                return None;
+            }
+            let web_url = user
+                .permalink_url
+                .and_then(|value| url::Url::parse(&value).ok())?;
+            // id = слаг permalink, по нему потом резолвится профиль артиста
+            let id = web_url.path_segments()?.next_back()?.to_string();
+            let artwork_url = user
+                .avatar_url
+                .and_then(|value| url::Url::parse(&value).ok());
+            Some(CollectionItem {
+                kind: CollectionKind::Artist,
+                provider: crate::model::ProviderKind::SoundCloud,
+                id,
+                title: name.to_string(),
+                subtitle: "Артист".to_string(),
+                artwork_url,
+                web_url,
+                track_count: 0,
+            })
+        })
+        .collect())
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -43,6 +44,7 @@ pub struct FullState {
     pub yandex_enabled: bool,
     pub deezer_enabled: bool,
     pub server_url: String,
+    pub status_message: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -69,6 +71,8 @@ fn state_hash(app: &App) -> u64 {
     app.player.shuffle.hash(&mut hasher);
     format!("{:?}", app.player.repeat).hash(&mut hasher);
     app.player.duration_ms.hash(&mut hasher);
+    app.player.position_ms.hash(&mut hasher);
+    app.player.buffered_ms.hash(&mut hasher);
     app.queue_index.hash(&mut hasher);
     app.now_playing
         .as_ref()
@@ -77,6 +81,9 @@ fn state_hash(app: &App) -> u64 {
     app.library.len().hash(&mut hasher);
     app.playlists.len().hash(&mut hasher);
     app.queue.len().hash(&mut hasher);
+    for track in app.queue.iter() {
+        track.provider_key().hash(&mut hasher);
+    }
     hasher.finish()
 }
 
@@ -135,6 +142,7 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
         yandex_enabled: core.app.yandex_enabled,
         deezer_enabled: core.app.deezer_enabled,
         server_url: core.config.server_url.clone(),
+        status_message: core.app.status_message.clone(),
     }
 }
 
@@ -239,6 +247,14 @@ fn persist(core: &mut GuiCore) {
 
 fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
     let mut config = AppConfig::load(paths)?.normalized();
+    noverplay_tui::provider::cache::set_track_cache_dir(
+        config
+            .track_cache_dir
+            .as_deref()
+            .map(str::trim)
+            .filter(|dir| !dir.is_empty())
+            .map(PathBuf::from),
+    );
     let secrets = SecretStore::new(paths.secrets_file.clone());
     if let Some(client_id) = config.soundcloud_client_id_override.take() {
         secrets.set(
@@ -291,7 +307,15 @@ pub fn run() {
 .invoke_handler(tauri::generate_handler![
             get_state,
             commands::search,
+            commands::search_collections,
+            commands::artist_profile,
+            commands::artist_all_tracks,
             commands::play,
+            commands::download_track,
+            commands::get_download_dir,
+            commands::set_download_dir,
+            commands::get_cache_dir,
+            commands::set_cache_dir,
             commands::play_tracks,
             commands::toggle_playback,
             commands::next,
@@ -308,12 +332,19 @@ pub fn run() {
             commands::clear_queue,
             commands::toggle_favorite,
             commands::get_playlists,
+            commands::import_playlist_url,
+            commands::preview_playlist_url,
+            commands::save_imported_playlist,
             commands::create_playlist,
             commands::rename_playlist,
             commands::delete_playlist,
             commands::add_to_playlist,
             commands::remove_from_playlist,
+            commands::reorder_playlists,
+            commands::get_library_times,
+            commands::get_playlist_track_times,
             commands::reorder_playlist,
+            commands::set_playlist_cover,
             commands::play_playlist,
             commands::get_history,
             commands::clear_history,
@@ -324,12 +355,29 @@ pub fn run() {
             commands::get_related,
             commands::reset_settings,
             commands::reset_data,
+            commands::reorder_library,
+            commands::reorder_queue,
+            commands::download_track_to_cache,
+            commands::download_all_to_cache,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
             let core = app.state::<Arc<Mutex<GuiCore>>>();
             let core = Arc::clone(core.inner());
-            std::thread::spawn(move || driver_loop(core, app_handle));
+            std::thread::spawn(move || {
+                let runtime = match tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        eprintln!("[vessel] tokio runtime: {error}");
+                        return;
+                    }
+                };
+                let _guard = runtime.enter();
+                driver_loop(core, app_handle);
+            });
             Ok(())
         })
         .run(tauri::generate_context!())

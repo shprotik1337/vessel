@@ -22,6 +22,12 @@ pub(super) async fn poluchit_istochnik(
         track.capability.can_play(),
         "трек недоступен этому аккаунту"
     );
+
+    // Если трек уже скачан в кэш — играем из локального файла
+    if let Some(source) = crate::provider::cache::cached_source(track) {
+        return Ok(source);
+    }
+
     let info = client
         .get_file_info(
             &GetFileInfoOptions::new(&track.id)

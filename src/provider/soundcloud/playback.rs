@@ -20,6 +20,11 @@ pub(super) async fn poluchit_istochnik(
     );
     ensure!(track.capability.can_play(), "трек SoundCloud недоступен");
 
+    // Трек уже в кэше — играем из файла
+    if let Some(source) = crate::provider::cache::cached_source(track) {
+        return Ok(source);
+    }
+
     let track_id = track
         .id
         .strip_prefix("soundcloud:tracks:")
@@ -104,6 +109,74 @@ fn bail_no_stream(preview: bool) -> anyhow::Error {
     } else {
         anyhow::anyhow!("доступны только превью, защищённые или неизвестные потоки")
     }
+}
+
+/// Для скачивания: только progressive MP3, старший битрейт вперёд.
+/// HLS (m3u8) для файла не годится — это плейлист сегментов.
+pub(super) async fn zagruzit_progressivnyi(
+    client: &SoundCloudClient,
+    track: &TrackRef,
+) -> Result<PlaybackSource> {
+    ensure!(
+        track.provider == ProviderKind::SoundCloud,
+        "для SoundCloud нужен трек SoundCloud"
+    );
+    ensure!(track.capability.can_play(), "трек SoundCloud недоступен");
+
+    let track_id = track
+        .id
+        .strip_prefix("soundcloud:tracks:")
+        .unwrap_or(&track.id)
+        .trim();
+    ensure!(!track_id.is_empty(), "у трека SoundCloud потерялся id");
+
+    let details: ScTrack = client
+        .get_json(client.v2_url(&["tracks", track_id])?, &[])
+        .await
+        .context("SoundCloud не отдал данные для скачивания")?;
+    let mut candidates: Vec<&ScTranscoding> = details
+        .media
+        .transcodings
+        .iter()
+        .filter(|item| !item.snipped)
+        .filter(|item| item.format.protocol.eq_ignore_ascii_case("progressive"))
+        .filter(|item| {
+            item.format
+                .mime_type
+                .to_ascii_lowercase()
+                .contains("audio/mpeg")
+        })
+        .collect();
+    ensure!(
+        !candidates.is_empty(),
+        "у этого трека нет прямой mp3-дорожки (только HLS) — скачать нельзя"
+    );
+    candidates.sort_by_key(|item| {
+        if item.preset.to_ascii_lowercase().contains("1_0") {
+            0 // mp3_1_0 = 320 kbps
+        } else {
+            1 // mp3_1_25 = 128 kbps
+        }
+    });
+    let transcoding = candidates[0];
+    let resolved: ScResolvedStream = client
+        .get_json(Url::parse(&transcoding.url)?, &[])
+        .await
+        .context("SoundCloud не разрешил адрес для скачивания")?;
+    let url = Url::parse(resolved.url.trim())
+        .context("SoundCloud вернул неверный адрес для скачивания")?;
+    ensure!(
+        url.scheme() == "https" && url.host_str().is_some(),
+        "SoundCloud вернул небезопасный адрес потока"
+    );
+    Ok(PlaybackSource {
+        url,
+        headers: BTreeMap::new(),
+        mime_type: Some("audio/mpeg".to_string()),
+        supports_range: true,
+        expires_at_ms: None,
+        capability: track.capability.clone(),
+    })
 }
 
 #[cfg(test)]

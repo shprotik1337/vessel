@@ -37,6 +37,7 @@ export interface Playlist {
   title: string;
   description: string;
   source_url: string | null;
+  cover_url: string | null;
   tracks: TrackRef[];
   created_at_ms: number;
   updated_at_ms: number;
@@ -71,6 +72,7 @@ export interface FullState {
   yandex_enabled: boolean;
   deezer_enabled: boolean;
   server_url: string;
+  status_message: string;
 }
 
 export interface SearchOutcome {
@@ -100,3 +102,23 @@ export type View =
   | "recent"
   | "queue"
   | "settings";
+
+export type CollectionKind = "playlist" | "album" | "artist";
+
+export interface CollectionItem {
+  kind: CollectionKind;
+  provider: ProviderKind;
+  id: string;
+  title: string;
+  subtitle: string;
+  artwork_url: string | null;
+  web_url: string;
+  track_count: number;
+}
+
+export interface ArtistProfile {
+  name: string;
+  avatar_url: string | null;
+  popular_tracks: TrackRef[];
+  releases: CollectionItem[];
+}

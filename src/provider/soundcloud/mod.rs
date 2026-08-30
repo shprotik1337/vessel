@@ -1,3 +1,4 @@
+mod artist;
 mod client;
 mod mapping;
 mod models;
@@ -14,14 +15,18 @@ use url::Url;
 
 use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
-    provider::{Attribution, ImportedPlaylist, MusicProvider, SearchPage},
+    provider::{
+        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider,
+        SearchPage,
+    },
 };
 
+use artist::{artist_all_tracks, artist_profile};
 use client::SoundCloudClient;
-use playback::poluchit_istochnik;
+use playback::{poluchit_istochnik, zagruzit_progressivnyi};
 use playlist::import_playlist;
 use related::related_tracks;
-use search::search_tracks;
+use search::{search_albums, search_artists, search_playlists, search_tracks};
 
 pub use mapping::normalizovat_track;
 pub use models::{ScCollection, ScPlaylist, ScTrack};
@@ -56,6 +61,26 @@ impl MusicProvider for SoundCloudProvider {
         search_tracks(&self.client, query, cursor).await
     }
 
+    async fn search_collections(
+        &self,
+        query: &str,
+        kind: CollectionKind,
+    ) -> Result<Vec<CollectionItem>> {
+        match kind {
+            CollectionKind::Playlist => search_playlists(&self.client, query).await,
+            CollectionKind::Album => search_albums(&self.client, query).await,
+            CollectionKind::Artist => search_artists(&self.client, query).await,
+        }
+    }
+
+    async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
+        artist_profile(&self.client, artist_id).await
+    }
+
+    async fn artist_all_tracks(&self, artist_id: &str) -> Result<Vec<TrackRef>> {
+        artist_all_tracks(&self.client, artist_id).await
+    }
+
     async fn import_playlist(&self, url: &Url) -> Result<ImportedPlaylist> {
         import_playlist(&self.client, url).await
     }
@@ -66,6 +91,10 @@ impl MusicProvider for SoundCloudProvider {
 
     async fn playback_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
         poluchit_istochnik(&self.client, track).await
+    }
+
+    async fn download_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
+        zagruzit_progressivnyi(&self.client, track).await
     }
 }
 

@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use noverplay_tui::{
@@ -5,6 +6,7 @@ use noverplay_tui::{
     model::{Playlist, RepeatMode, SearchProvider, TrackRef},
     storage::HistoryEntry,
 };
+use serde::Serialize;
 use tauri::State;
 
 use crate::GuiCore;
@@ -18,8 +20,8 @@ fn lock<'a>(core: &'a CoreState<'a>) -> std::sync::MutexGuard<'a, GuiCore> {
 fn provider_kind_from_str(value: &str) -> Result<noverplay_tui::model::ProviderKind, String> {
     use noverplay_tui::model::ProviderKind;
     match value {
-        "soundcloud" => Ok(ProviderKind::SoundCloud),
-        "yandex" => Ok(ProviderKind::YandexMusic),
+        "soundcloud" | "sound_cloud" => Ok(ProviderKind::SoundCloud),
+        "yandex" | "yandex_music" => Ok(ProviderKind::YandexMusic),
         "deezer" => Ok(ProviderKind::Deezer),
         _ => Err(format!("неизвестный провайдер: {value}")),
     }
@@ -44,7 +46,11 @@ fn repeat_from_str(value: &str) -> Result<RepeatMode, String> {
 }
 
 #[tauri::command]
-pub async fn search(core: CoreState<'_>, query: String) -> Result<crate::SearchOutcome, String> {
+pub async fn search(
+    core: CoreState<'_>,
+    query: String,
+    provider: Option<String>,
+) -> Result<crate::SearchOutcome, String> {
     let registry = {
         let core = lock(&core);
         core.runtime.provider_registry()
@@ -61,9 +67,261 @@ pub async fn search(core: CoreState<'_>, query: String) -> Result<crate::SearchO
             failures: Vec::new(),
         });
     }
-    let pages = registry.search(&query, SearchProvider::All).await;
+    let selection = match provider.as_deref() {
+        None | Some("all") => SearchProvider::All,
+        Some("soundcloud") => SearchProvider::SoundCloud,
+        Some("yandex") => SearchProvider::YandexMusic,
+        Some("deezer") => SearchProvider::Deezer,
+        Some(other) => return Err(format!("неизвестный провайдер: {other}")),
+    };
+    let pages = registry.search(&query, selection).await;
     let (tracks, failures) = noverplay_tui::runtime::merge_pages(pages);
     Ok(crate::SearchOutcome { tracks, failures })
+}
+
+#[tauri::command]
+pub async fn search_collections(
+    core: CoreState<'_>,
+    query: String,
+    kind: String,
+) -> Result<Vec<noverplay_tui::provider::CollectionItem>, String> {
+    use noverplay_tui::provider::CollectionKind;
+    let kind = match kind.as_str() {
+        "playlists" | "playlist" => CollectionKind::Playlist,
+        "albums" | "album" => CollectionKind::Album,
+        "artists" | "artist" => CollectionKind::Artist,
+        other => return Err(format!("неизвестный тип коллекции: {other}")),
+    };
+    let query = query.trim().to_string();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    if registry.is_empty() {
+        return Err("Сначала добавь ключ провайдера в Настройках".to_string());
+    }
+    let kinds = [
+        noverplay_tui::model::ProviderKind::SoundCloud,
+        noverplay_tui::model::ProviderKind::YandexMusic,
+        noverplay_tui::model::ProviderKind::Deezer,
+    ];
+    let mut items = Vec::new();
+    for provider_kind in kinds {
+        let Some(provider) = registry.get(provider_kind) else {
+            continue;
+        };
+        if let Ok(found) = provider.search_collections(&query, kind).await {
+            items.extend(found);
+        }
+    }
+    Ok(items)
+}
+
+#[tauri::command]
+pub async fn artist_profile(
+    core: CoreState<'_>,
+    provider: String,
+    artist_id: String,
+) -> Result<noverplay_tui::provider::ArtistProfile, String> {
+    use noverplay_tui::model::ProviderKind;
+    let kind = provider_kind_from_str(&provider)?;
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let provider_impl = registry
+        .get(kind)
+        .ok_or_else(|| "провайдер не подключён".to_string())?;
+    provider_impl
+        .artist_profile(artist_id.trim())
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+pub async fn artist_all_tracks(
+    core: CoreState<'_>,
+    provider: String,
+    artist_id: String,
+) -> Result<Vec<TrackRef>, String> {
+    let kind = provider_kind_from_str(&provider)?;
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let provider_impl = registry
+        .get(kind)
+        .ok_or_else(|| "провайдер не подключён".to_string())?;
+    provider_impl
+        .artist_all_tracks(artist_id.trim())
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+fn resolve_download_dir(core: &GuiCore) -> String {
+    if let Some(dir) = core
+        .config
+        .download_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+    {
+        return dir.to_string();
+    }
+    noverplay_tui::provider::download::downloads_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn get_download_dir(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    Ok(resolve_download_dir(&core))
+}
+
+#[tauri::command]
+pub async fn set_download_dir(core: CoreState<'_>, path: Option<String>) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.download_dir = path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+fn resolve_track_cache_dir(core: &GuiCore) -> String {
+    core.config
+        .track_cache_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            noverplay_tui::provider::cache::track_cache_dir()
+                .display()
+                .to_string()
+        })
+}
+
+#[tauri::command]
+pub async fn get_cache_dir(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    Ok(resolve_track_cache_dir(&core))
+}
+
+#[tauri::command]
+pub async fn set_cache_dir(core: CoreState<'_>, path: Option<String>) -> Result<(), String> {
+    let mut core = lock(&core);
+    let value = path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+    core.config.track_cache_dir = value.clone();
+    noverplay_tui::provider::cache::set_track_cache_dir(value.map(PathBuf::from));
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn download_track(
+    core: CoreState<'_>,
+    track: TrackRef,
+) -> Result<String, String> {
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let Some(provider) = registry.get(track.provider) else {
+        return Err("провайдер не подключён".to_string());
+    };
+    let source = provider
+        .download_source(&track)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let dir = {
+        let core = lock(&core);
+        resolve_download_dir(&core)
+    };
+    let file_name = noverplay_tui::provider::download::track_file_name(&track, &source);
+    let dest = std::path::Path::new(&dir).join(file_name);
+    if dest.exists() {
+        return Ok(dest.display().to_string());
+    }
+    noverplay_tui::provider::download::download_playback_source(&source, &dest)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    Ok(dest.display().to_string())
+}
+
+#[tauri::command]
+pub async fn download_track_to_cache(
+    core: CoreState<'_>,
+    track: TrackRef,
+) -> Result<String, String> {
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let Some(provider) = registry.get(track.provider) else {
+        return Err("провайдер не подключён".to_string());
+    };
+    if noverplay_tui::provider::cache::is_cached(&track) {
+        if let Some(path) = noverplay_tui::provider::cache::cached_track_path(&track) {
+            return Ok(path.display().to_string());
+        }
+    }
+    let source = provider
+        .download_source(&track)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let path = noverplay_tui::provider::cache::download_track_to_cache(&track, &source)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    Ok(path.display().to_string())
+}
+
+#[derive(Serialize, Default)]
+pub struct DownloadBatchResult {
+    pub downloaded: usize,
+    pub skipped: usize,
+    pub failed: usize,
+    pub total: usize,
+}
+
+#[tauri::command]
+pub async fn download_all_to_cache(
+    core: CoreState<'_>,
+    tracks: Vec<TrackRef>,
+) -> Result<DownloadBatchResult, String> {
+    let total = tracks.len();
+    let mut result = DownloadBatchResult {
+        total,
+        ..Default::default()
+    };
+    for track in tracks {
+        if noverplay_tui::provider::cache::is_cached(&track) {
+            result.skipped += 1;
+            continue;
+        }
+        let registry = {
+            let core = lock(&core);
+            core.runtime.provider_registry()
+        };
+        let Some(provider) = registry.get(track.provider) else {
+            result.failed += 1;
+            continue;
+        };
+        let source = match provider.download_source(&track).await {
+            Ok(source) => source,
+            Err(_) => {
+                result.failed += 1;
+                continue;
+            }
+        };
+        match noverplay_tui::provider::cache::download_track_to_cache(&track, &source).await {
+            Ok(_) => result.downloaded += 1,
+            Err(_) => result.failed += 1,
+        }
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -198,6 +456,55 @@ pub async fn move_queue_item(
 }
 
 #[tauri::command]
+pub async fn reorder_library(
+    core: CoreState<'_>,
+    from: usize,
+    to: usize,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    let len = core.app.library.len();
+    if from >= len || to >= len {
+        return Err("индекс вне библиотеки".to_string());
+    }
+    let mut order: Vec<String> = core
+        .app
+        .library
+        .iter()
+        .map(|t| t.provider_key())
+        .collect();
+    let key = order.remove(from);
+    order.insert(to, key);
+    core.storage.reorder_library(&order).map_err(|e| e.to_string())?;
+    let track = core.app.library.remove(from);
+    core.app.library.insert(to, track);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reorder_queue(
+    core: CoreState<'_>,
+    tracks: Vec<TrackRef>,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    if tracks.is_empty() && !core.app.queue.is_empty() {
+        return Err("пустой порядок очереди".to_string());
+    }
+    // Текущий трек всегда первый в очереди, остальные — в порядке из UI.
+    let now_key = core.app.now_playing.as_ref().map(|t| t.provider_key());
+    let mut reordered = tracks;
+    if let Some(now_key) = now_key {
+        if let Some(pos) = reordered.iter().position(|t| t.provider_key() == now_key) {
+            let now = reordered.remove(pos);
+            reordered.insert(0, now);
+        }
+    }
+    core.app.queue = reordered;
+    core.app.queue_index = Some(0);
+    core.app.queue_dirty = true;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn clear_queue(core: CoreState<'_>) -> Result<(), String> {
     let mut core = lock(&core);
     core.app.control_queue_clear();
@@ -217,6 +524,180 @@ pub async fn get_playlists(core: CoreState<'_>) -> Result<Vec<Playlist>, String>
 }
 
 #[tauri::command]
+pub async fn preview_playlist_url(core: CoreState<'_>, url: String) -> Result<Playlist, String> {
+    let parsed = url::Url::parse(&url).map_err(|e| format!("Неверный URL: {e}"))?;
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    registry
+        .import_url(&parsed, now_ms)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+pub async fn save_imported_playlist(
+    core: CoreState<'_>,
+    playlist: Playlist,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
+    if playlist
+        .source_url
+        .as_ref()
+        .is_some_and(|url| core.app.playlists.iter().any(|p| p.source_url.as_ref() == Some(url)))
+    {
+        return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+    }
+    if core
+        .app
+        .playlists
+        .iter()
+        .any(|p| p.source_url.is_none() && p.title == playlist.title && playlist.source_url.is_none())
+    {
+        return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+    }
+    core.storage
+        .save_playlist(&playlist)
+        .map_err(|e| e.to_string())?;
+    core.app.playlists.insert(0, playlist);
+    persist_playlist_order(&mut core);
+    core.app.playlists_dirty = true;
+    Ok(())
+}
+
+/// Пишет position для всех плейлистов в порядке app.playlists.
+fn persist_playlist_order(core: &mut GuiCore) {
+    let order: Vec<String> = core
+        .app
+        .playlists
+        .iter()
+        .map(|p| p.id.to_string())
+        .collect();
+    if let Err(error) = core.storage.save_playlists_order(&order) {
+        eprintln!("[vessel] save_playlists_order: {error}");
+    }
+}
+
+#[tauri::command]
+pub async fn reorder_playlists(
+    core: CoreState<'_>,
+    order: Vec<String>,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.storage
+        .save_playlists_order(&order)
+        .map_err(|e| e.to_string())?;
+    core.app.playlists.sort_by_key(|p| {
+        order
+            .iter()
+            .position(|id| id == &p.id.to_string())
+            .unwrap_or(usize::MAX)
+    });
+    Ok(())
+}
+
+/// Ключ трека в формате фронтенда: provider (snake_case) + id.
+fn frontend_track_key(track: &TrackRef) -> String {
+    use noverplay_tui::model::ProviderKind;
+    let provider = match track.provider {
+        ProviderKind::SoundCloud => "sound_cloud",
+        ProviderKind::YandexMusic => "yandex_music",
+        ProviderKind::Deezer => "deezer",
+    };
+    format!("{}:{}", provider, track.id.trim())
+}
+
+#[derive(Serialize)]
+pub struct TrackTime {
+    pub key: String,
+    pub timestamp_ms: i64,
+}
+
+#[tauri::command]
+pub async fn get_library_times(
+    core: CoreState<'_>,
+) -> Result<Vec<TrackTime>, String> {
+    let core = lock(&core);
+    let times = core
+        .storage
+        .liked_tracks_with_time()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(track, ts)| TrackTime {
+            key: frontend_track_key(&track),
+            timestamp_ms: ts,
+        })
+        .collect();
+    Ok(times)
+}
+
+#[tauri::command]
+pub async fn get_playlist_track_times(
+    core: CoreState<'_>,
+    id: String,
+) -> Result<Vec<TrackTime>, String> {
+    let core = lock(&core);
+    let id = uuid::Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    let times = core
+        .storage
+        .playlist_track_times(id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(track, ts)| TrackTime {
+            key: frontend_track_key(&track),
+            timestamp_ms: ts,
+        })
+        .collect();
+    Ok(times)
+}
+
+#[tauri::command]
+pub async fn import_playlist_url(
+    core: CoreState<'_>,
+    url: String,
+) -> Result<Playlist, String> {
+    let parsed = url::Url::parse(&url).map_err(|e| format!("Неверный URL: {e}"))?;
+    // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
+    {
+        let core = lock(&core);
+        if core
+            .app
+            .playlists
+            .iter()
+            .any(|p| p.source_url.as_ref() == Some(&parsed))
+        {
+            return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+        }
+    }
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let playlist = registry
+        .import_url(&parsed, now_ms)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let mut core = lock(&core);
+    core.storage
+        .save_playlist(&playlist)
+        .map_err(|e| e.to_string())?;
+    core.app.playlists.insert(0, playlist.clone());
+    persist_playlist_order(&mut core);
+    core.app.playlists_dirty = true;
+    Ok(playlist)
+}
+
+#[tauri::command]
 pub async fn create_playlist(core: CoreState<'_>, title: String) -> Result<Playlist, String> {
     let mut core = lock(&core);
     let id = core.app.gui_create_playlist(title);
@@ -227,6 +708,7 @@ pub async fn create_playlist(core: CoreState<'_>, title: String) -> Result<Playl
         .find(|p| p.id == id)
         .cloned()
         .ok_or_else(|| "плейлист не создался".to_string())?;
+    persist_playlist_order(&mut core);
     Ok(playlist)
 }
 
@@ -242,6 +724,7 @@ pub async fn rename_playlist(core: CoreState<'_>, id: String, title: String) -> 
 pub async fn delete_playlist(core: CoreState<'_>, id: String) -> Result<(), String> {
     let mut core = lock(&core);
     let id = uuid::Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    core.storage.delete_playlist(id).map_err(|e| e.to_string())?;
     core.app.gui_delete_playlist(id);
     Ok(())
 }
@@ -283,6 +766,24 @@ pub async fn reorder_playlist(
 }
 
 #[tauri::command]
+pub async fn set_playlist_cover(
+    core: CoreState<'_>,
+    id: String,
+    coverUrl: Option<String>,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    let id = uuid::Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    let cover_url = match coverUrl {
+        Some(value) if !value.trim().is_empty() => {
+            Some(url::Url::parse(value.trim()).map_err(|e| e.to_string())?)
+        }
+        _ => None,
+    };
+    core.app.gui_set_playlist_cover(id, cover_url);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn play_playlist(core: CoreState<'_>, id: String) -> Result<(), String> {
     let mut core = lock(&core);
     let id = uuid::Uuid::parse_str(&id).map_err(|e| e.to_string())?;
@@ -301,6 +802,7 @@ pub async fn get_history(core: CoreState<'_>) -> Result<Vec<HistoryEntry>, Strin
 #[tauri::command]
 pub async fn clear_history(core: CoreState<'_>) -> Result<(), String> {
     let mut core = lock(&core);
+    core.storage.clear_history().map_err(|e| e.to_string())?;
     core.app.gui_clear_history();
     Ok(())
 }

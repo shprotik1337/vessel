@@ -77,6 +77,7 @@ mod tests {
                 title: "Импорт".to_string(),
                 description: String::new(),
                 source_url: url.clone(),
+                cover_url: None,
                 tracks: vec![track()],
             })
         }
