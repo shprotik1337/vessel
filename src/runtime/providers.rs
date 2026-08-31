@@ -54,7 +54,8 @@ pub(super) fn build_registry(config: &AppConfig, secrets: &SecretStore) -> Provi
         && let Some(sp_dc) = load_secret(secrets, SecretKey::SpotifySpDc, &mut notices)
             .filter(|value| !value.trim().is_empty())
     {
-        match SpotifyProvider::new(sp_dc) {
+        let proxy = config.spotify_proxy.as_deref();
+        match SpotifyProvider::with_proxy(sp_dc, proxy) {
             Ok(provider) => registry.register(provider),
             Err(error) => notices.push(format!("Spotify не настроен: {error}")),
         }

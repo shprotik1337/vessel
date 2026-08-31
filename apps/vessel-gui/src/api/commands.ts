@@ -118,6 +118,14 @@ export async function setCacheDir(path: string | null): Promise<void> {
   return invoke("set_cache_dir", { path });
 }
 
+export async function getSpotifyProxy(): Promise<string> {
+  return invoke<string>("get_spotify_proxy");
+}
+
+export async function setSpotifyProxy(path: string | null): Promise<void> {
+  return invoke("set_spotify_proxy", { path });
+}
+
 export async function addToQueue(track: TrackRef): Promise<void> {
   return invoke("add_to_queue", { track });
 }

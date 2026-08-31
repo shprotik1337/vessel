@@ -13,13 +13,15 @@ const PROVIDERS: { key: string; label: string }[] = [
   { key: "soundcloud", label: "SoundCloud" },
   { key: "deezer", label: "Deezer" },
   { key: "yandex", label: "Yandex" },
+  { key: "spotify", label: "Spotify" },
 ];
 
-// провайдеры сериализуются в snake_case: sound_cloud / yandex_music / deezer
+// провайдеры сериализуются в snake_case: sound_cloud / yandex_music / deezer / spotify
 const PROVIDER_VALUE: Record<string, string> = {
   soundcloud: "sound_cloud",
   yandex: "yandex_music",
   deezer: "deezer",
+  spotify: "spotify",
 };
 
 const TABS = ["tracks", "playlists", "artists", "albums"];

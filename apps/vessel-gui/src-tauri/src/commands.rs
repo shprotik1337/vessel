@@ -74,6 +74,7 @@ pub async fn search(
         Some("soundcloud") => SearchProvider::SoundCloud,
         Some("yandex") => SearchProvider::YandexMusic,
         Some("deezer") => SearchProvider::Deezer,
+        Some("spotify") => SearchProvider::Spotify,
         Some(other) => return Err(format!("неизвестный провайдер: {other}")),
     };
     let pages = registry.search(&query, selection).await;
@@ -109,6 +110,7 @@ pub async fn search_collections(
         vessel_core::model::ProviderKind::SoundCloud,
         vessel_core::model::ProviderKind::YandexMusic,
         vessel_core::model::ProviderKind::Deezer,
+        vessel_core::model::ProviderKind::Spotify,
     ];
     let mut items = Vec::new();
     for provider_kind in kinds {
@@ -218,6 +220,20 @@ pub async fn set_cache_dir(core: CoreState<'_>, path: Option<String>) -> Result<
     let value = path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
     core.config.track_cache_dir = value.clone();
     vessel_core::provider::cache::set_track_cache_dir(value.map(PathBuf::from));
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_spotify_proxy(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    Ok(core.config.spotify_proxy.clone().unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn set_spotify_proxy(core: CoreState<'_>, path: Option<String>) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.spotify_proxy = path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
     core.app.config_dirty = true;
     Ok(())
 }
@@ -851,7 +867,7 @@ pub async fn save_credential(
 
 #[tauri::command]
 pub async fn probe_credential(
-    _core: CoreState<'_>,
+    core: CoreState<'_>,
     provider: String,
     value: String,
 ) -> Result<bool, String> {
@@ -860,7 +876,11 @@ pub async fn probe_credential(
     if value.is_empty() {
         return Err("ключ пустой".to_string());
     }
-    match vessel_core::provider::probe_provider(kind, value).await {
+    let proxy = {
+        let core = lock(&core);
+        core.config.spotify_proxy.clone()
+    };
+    match vessel_core::provider::probe_provider(kind, value, proxy.as_deref()).await {
         Ok(()) => Ok(true),
         Err(error) => Err(format!("{error:#}")),
     }

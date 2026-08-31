@@ -196,6 +196,7 @@ fn provider_order(kind: ProviderKind) -> u8 {
 pub async fn probe_provider(
     kind: ProviderKind,
     credential: &str,
+    proxy: Option<&str>,
 ) -> anyhow::Result<()> {
     match kind {
         ProviderKind::SoundCloud => {
@@ -211,7 +212,7 @@ pub async fn probe_provider(
             provider.probe().await
         }
         ProviderKind::Spotify => {
-            let provider = spotify::SpotifyProvider::new(credential)?;
+            let provider = spotify::SpotifyProvider::with_proxy(credential, proxy)?;
             provider.probe().await
         }
     }

@@ -95,6 +95,8 @@ pub struct AppConfig {
     pub download_dir: Option<String>,
     #[serde(default)]
     pub track_cache_dir: Option<String>,
+    #[serde(default)]
+    pub spotify_proxy: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -121,6 +123,7 @@ impl Default for AppConfig {
             keybindings_notice_seen: false,
             download_dir: None,
             track_cache_dir: None,
+            spotify_proxy: None,
         }
     }
 }

@@ -36,6 +36,8 @@ export function providerLabel(provider: string): string {
       return "Yandex";
     case "deezer":
       return "Deezer";
+    case "spotify":
+      return "Spotify";
     default:
       return provider;
   }
