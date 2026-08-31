@@ -366,6 +366,8 @@ pub fn run() {
             commands::reorder_queue,
             commands::download_track_to_cache,
             commands::download_all_to_cache,
+            commands::get_spotify_proxy,
+            commands::set_spotify_proxy,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

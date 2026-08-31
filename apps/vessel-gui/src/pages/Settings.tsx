@@ -149,6 +149,8 @@ export function Settings() {
   const [savedDir, setSavedDir] = useState("");
   const [cacheDir, setCacheDir] = useState("");
   const [savedCacheDir, setSavedCacheDir] = useState("");
+  const [spotifyProxy, setSpotifyProxy] = useState("");
+  const [savedSpotifyProxy, setSavedSpotifyProxy] = useState("");
 
   useEffect(() => {
     void (async () => {
@@ -165,6 +167,13 @@ export function Settings() {
         setSavedCacheDir(dir);
       } catch {
         // папка останется пустой
+      }
+      try {
+        const dir = await api.getSpotifyProxy();
+        setSpotifyProxy(dir);
+        setSavedSpotifyProxy(dir);
+      } catch {
+        // прокси останется пустым
       }
     })();
   }, []);
@@ -221,6 +230,32 @@ export function Settings() {
       showToast(String(error), true);
     }
   };
+
+  const changeSpotifyProxy = async () => {
+    const next = window.prompt("Прокси для Spotify (например socks5://127.0.0.1:1080):", spotifyProxy);
+    if (next === null) return;
+    const value = next.trim();
+    try {
+      await api.setSpotifyProxy(value || null);
+      setSpotifyProxy(value);
+      showToast(value ? `Прокси Spotify: ${value}` : "Прокси Spotify сброшен");
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  const resetSpotifyProxy = async () => {
+    try {
+      await api.setSpotifyProxy(null);
+      setSpotifyProxy("");
+      setSavedSpotifyProxy("");
+      showToast("Прокси Spotify сброшен");
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  const spotifyProxyChanged = spotifyProxy !== savedSpotifyProxy;
 
   if (!state) return null;
 
@@ -300,6 +335,31 @@ export function Settings() {
                   {state.providers.map((p) => (
                     <ServiceRow key={p.kind} status={p} />
                   ))}
+                </div>
+              </div>
+              <div className="group">
+                <div className="group-hd">
+                  <span className="group-title">Spotify proxy</span>
+                </div>
+                <div className="panel">
+                  <div className="set-row">
+                    <div className="set-cell">
+                      <div className="set-title">Прокси</div>
+                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
+                        {spotifyProxy || "Не задан (прямое соединение)"}
+                      </div>
+                    </div>
+                    <div className="btns">
+                      <button className="btn btn-ghost btn-sm" onClick={changeSpotifyProxy}>
+                        Изменить
+                      </button>
+                      {spotifyProxyChanged && (
+                        <button className="btn btn-outline btn-sm" onClick={resetSpotifyProxy}>
+                          Сбросить
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </>

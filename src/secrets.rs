@@ -5,6 +5,7 @@ use keyring::Entry;
 use serde::{Deserialize, Serialize};
 
 const SERVICE_NAME: &str = "vessel";
+const OLD_SERVICE_NAME: &str = "noverplay-tui";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SecretKey {
@@ -81,12 +82,15 @@ impl SecretStore {
     }
 
     pub fn get(&self, key: SecretKey) -> Result<Option<String>> {
-        if self.system_enabled
-            && let Ok(value) =
-                Entry::new(SERVICE_NAME, key.name()).and_then(|entry| entry.get_password())
-            && !value.is_empty()
-        {
-            return Ok(Some(value));
+        if self.system_enabled {
+            // Новое хранилище (vessel), затем старый service name (noverplay-tui)
+            for service in [SERVICE_NAME, OLD_SERVICE_NAME] {
+                if let Ok(value) = Entry::new(service, key.name()).and_then(|entry| entry.get_password())
+                    && !value.is_empty()
+                {
+                    return Ok(Some(value));
+                }
+            }
         }
         Ok(self.load_file()?.values.get(key.name()).cloned())
     }

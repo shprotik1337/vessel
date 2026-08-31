@@ -58,7 +58,7 @@ export function Home() {
       <div className="view-hd">
         <div>
           <div className="view-title">Good evening</div>
-          <div className="view-sub">Music from SoundCloud, Yandex and Deezer, together.</div>
+          <div className="view-sub">Music from SoundCloud, Yandex, Deezer and Spotify, together.</div>
         </div>
         <div className="btns">
           <button className="btn btn-primary" onClick={playAll}>

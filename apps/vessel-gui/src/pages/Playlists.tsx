@@ -72,7 +72,7 @@ export function Playlists() {
         <div className="empty">
           <div className="ico">♫</div>
           <div className="t1">No playlists yet</div>
-          <div className="t2">Create a playlist or import one from SoundCloud, Deezer or Yandex.</div>
+          <div className="t2">Create a playlist or import one from SoundCloud, Deezer, Yandex or Spotify.</div>
         </div>
       ) : (
         <div className="grid">
@@ -125,7 +125,7 @@ export function Playlists() {
             </div>
             <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
               <div className="set-desc">
-                Paste a playlist URL from SoundCloud, Deezer or Yandex Music. It will be
+                Paste a playlist URL from SoundCloud, Deezer, Yandex Music or Spotify. It will be
                 imported and saved to your library.
               </div>
               <div className="input-row">
