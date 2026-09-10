@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+﻿import { useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { formatTime, providerLabel, isFavorite
@@ -28,11 +28,11 @@ const REPEAT_SVG = (
 );
 
 const PLAY_SVG = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l14 8-14 8V4z"/></svg>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l14 8-14 8V4z"/></svg>
 );
 
 const PAUSE_SVG = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
 );
 
 const VOLUME_SVG = (
