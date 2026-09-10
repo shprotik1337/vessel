@@ -233,6 +233,11 @@ export function BottomPlayer() {
             <span className="ttl" style={{ minWidth: 0 }}>
               {track?.title ?? t(lang, "bottom.noTrack")}
             </span>
+            {track && (
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".5px", color: "var(--text2)", background: "rgba(255,255,255,.08)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", flexShrink: 0, marginTop: 1 }}>
+                {providerLabel(track.provider)}
+              </span>
+            )}
             <button
               className={`heart ${fav ? "active" : ""}`}
               onClick={handleFav}
@@ -243,11 +248,6 @@ export function BottomPlayer() {
             >
               {HEART_SVG}
             </button>
-            {track && (
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".5px", color: "var(--text2)", background: "rgba(255,255,255,.08)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", flexShrink: 0, marginTop: 1 }}>
-                {providerLabel(track.provider)}
-              </span>
-            )}
           </div>
           <div className="pl-sub">
             {track && track.artists.length > 0 ? (
