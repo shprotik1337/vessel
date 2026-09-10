@@ -39,6 +39,10 @@ const VOLUME_SVG = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
 );
 
+const MUTE_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+);
+
 export function BottomPlayer() {
   const { state, showToast, refresh, navigateTo, lang } = useApp();
   if (!state) return null;
@@ -179,6 +183,24 @@ export function BottomPlayer() {
     }
   };
 
+  // Мут: запоминаем последнюю громкость, чтобы вернуть её при размуте
+  const lastVolumeRef = useRef<number | null>(null);
+  const muted = player.volume_percent === 0;
+
+  const handleMute = async () => {
+    try {
+      if (!muted) {
+        lastVolumeRef.current = player.volume_percent;
+        await api.setVolume(0);
+      } else {
+        await api.setVolume(lastVolumeRef.current ?? 50);
+      }
+      await refresh();
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
   const playing = player.status === "playing" || player.status === "buffering";
   const failed = player.status === "error";
   // Текст ошибки: сначала failed-статус плеера, затем последнее уведомление
@@ -291,7 +313,14 @@ export function BottomPlayer() {
       <div className="pl-right">
         <div className="divider" />
         <div className="vol">
-          <span style={{ opacity: player.volume_percent === 0 ? 0.5 : 1 }}>{VOLUME_SVG}</span>
+          <button
+            className="vol-btn"
+            onClick={handleMute}
+            title={muted ? "Включить звук" : "Выключить звук"}
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? MUTE_SVG : VOLUME_SVG}
+          </button>
           <div ref={volBarRef} className="vol-bar" onPointerDown={onVolPointerDown}>
             <div className="fill" style={{ width: `${player.volume_percent}%` }} />
             <div className="knob" style={{ left: `${player.volume_percent}%` }} />
