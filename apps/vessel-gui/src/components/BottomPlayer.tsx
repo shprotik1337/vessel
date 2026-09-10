@@ -229,7 +229,7 @@ export function BottomPlayer() {
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
         <div className="pl-meta">
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0, position: "relative", top: 1.5 }}>
             <span className="ttl" style={{ minWidth: 0 }}>
               {track?.title ?? t(lang, "bottom.noTrack")}
             </span>
