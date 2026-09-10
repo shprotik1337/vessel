@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { useApp } from "../store";
 import { PlatformIcon } from "../components/PlatformIcon";
+import { TextInputModal, ConfirmModal, PathModal } from "../components/Modal";
 import type { ProviderStatus, UserProfile } from "../api/types";
 import * as api from "../api/commands";
 import { t } from "../i18n";
@@ -9,6 +10,7 @@ import { t } from "../i18n";
 type Tab = "services" | "playback" | "storage" | "users" | "recommendations";
 
 type ConfirmTarget = "settings" | "data" | null;
+type DirTarget = "download" | "cache" | null;
 
 function formatDate(ms: number): string {
   if (!ms) return "—";
@@ -266,6 +268,10 @@ function UsersTab() {
   const [active, setActive] = useState<UserProfile | null>(null);
   const [autoLogin, setAutoLogin] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const colors = ["#E1332D", "#4361EE", "#7209B7", "#F72585", "#1DB954", "#FF6B35", "#06D6A0", "#118AB2"];
 
@@ -289,15 +295,16 @@ function UsersTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const create = async () => {
-    const name = window.prompt(t(lang, "users.createName"), "");
-    if (!name || !name.trim()) return;
+  const doCreate = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
     setBusy(true);
     try {
-      await api.createUser(name.trim());
+      await api.createUser(trimmed);
       await load();
       await refresh();
-      showToast(`${t(lang, "toast.createdUser")} ${name.trim()}`);
+      setCreateOpen(false);
+      showToast(`${t(lang, "toast.createdUser")} ${trimmed}`);
     } catch (error) {
       showToast(String(error), true);
     } finally {
@@ -320,10 +327,9 @@ function UsersTab() {
     }
   };
 
-  const remove = async (name: string) => {
-    if (!window.confirm(`${t(lang, "users.deleteConfirm1")} «${name}» ${t(lang, "users.deleteConfirm2")}`)) {
-      return;
-    }
+  const doRemove = async () => {
+    if (!deleteTarget) return;
+    const name = deleteTarget;
     setBusy(true);
     try {
       await api.deleteUser(name);
@@ -331,6 +337,7 @@ function UsersTab() {
       await load();
       await refresh();
       showToast(t(lang, "toast.deleted"));
+      setDeleteTarget(null);
     } catch (error) {
       showToast(String(error), true);
     } finally {
@@ -338,13 +345,14 @@ function UsersTab() {
     }
   };
 
-  const exportUser = async () => {
-    const destination = window.prompt(t(lang, "users.exportPrompt"), "");
-    if (!destination || !destination.trim()) return;
+  const doExport = async (destination: string) => {
+    const path = destination.trim();
+    if (!path) return;
     setBusy(true);
     try {
-      const path = await api.exportUser(destination.trim());
-      showToast(`${t(lang, "toast.exported")} ${path}`);
+      const exported = await api.exportUser(path);
+      setExportOpen(false);
+      showToast(`${t(lang, "toast.exported")} ${exported}`);
     } catch (error) {
       showToast(String(error), true);
     } finally {
@@ -352,19 +360,29 @@ function UsersTab() {
     }
   };
 
-  const importUser = async () => {
-    const source = window.prompt(t(lang, "users.importPrompt"), "");
-    if (!source || !source.trim()) return;
+  const doImport = async (source: string) => {
+    const path = source.trim();
+    if (!path) return;
     setBusy(true);
     try {
-      const profile = await api.importUser(source.trim());
+      const profile = await api.importUser(path);
       await load();
       await refresh();
+      setImportOpen(false);
       showToast(`${t(lang, "toast.imported")} ${profile.display_name}`);
     } catch (error) {
       showToast(String(error), true);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const openUsersFolder = async () => {
+    try {
+      const dir = await api.getUsersDir();
+      await api.openPath(dir);
+    } catch (error) {
+      showToast(String(error), true);
     }
   };
 
@@ -400,7 +418,7 @@ function UsersTab() {
       <div className="group">
         <div className="group-hd">
           <span className="group-title">{t(lang, "users.list")}</span>
-          <button className="btn btn-primary btn-sm" onClick={create} disabled={busy}>
+          <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)} disabled={busy}>
             {t(lang, "users.create")}
           </button>
         </div>
@@ -428,7 +446,7 @@ function UsersTab() {
                     <button className="btn btn-outline btn-sm" onClick={() => switchTo(u.display_name)} disabled={busy}>
                       {t(lang, "users.open")}
                     </button>
-                    <button className="btn btn-danger btn-sm" onClick={() => remove(u.display_name)} disabled={busy}>
+                    <button className="btn btn-danger btn-sm" onClick={() => setDeleteTarget(u.display_name)} disabled={busy}>
                       {t(lang, "users.delete")}
                     </button>
                   </div>
@@ -478,7 +496,7 @@ function UsersTab() {
               <div className="set-desc">{t(lang, "users.export.desc")}</div>
             </div>
             <div className="btns">
-              <button className="btn btn-ghost btn-sm" onClick={exportUser} disabled={busy}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setExportOpen(true)} disabled={busy}>
                 {t(lang, "users.exportAction")}
               </button>
             </div>
@@ -489,8 +507,19 @@ function UsersTab() {
               <div className="set-desc">{t(lang, "users.import.desc")}</div>
             </div>
             <div className="btns">
-              <button className="btn btn-ghost btn-sm" onClick={importUser} disabled={busy}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(true)} disabled={busy}>
                 {t(lang, "users.importAction")}
+              </button>
+            </div>
+          </div>
+          <div className="set-row">
+            <div className="set-cell">
+              <div className="set-title">{t(lang, "users.folder")}</div>
+              <div className="set-desc">{t(lang, "users.folder.desc")}</div>
+            </div>
+            <div className="btns">
+              <button className="btn btn-outline btn-sm" onClick={openUsersFolder}>
+                {t(lang, "users.folderAction")}
               </button>
             </div>
           </div>
@@ -518,6 +547,51 @@ function UsersTab() {
           )}
         </div>
       </div>
+
+      {createOpen && (
+        <TextInputModal
+          lang={lang}
+          title={t(lang, "users.createName")}
+          placeholder={t(lang, "users.createName")}
+          confirmText={t(lang, "common.create")}
+          onSubmit={doCreate}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          lang={lang}
+          title={`${t(lang, "users.deleteConfirm1")} «${deleteTarget}» ${t(lang, "users.deleteConfirm2")}`}
+          confirmText={t(lang, "common.delete")}
+          onConfirm={doRemove}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {exportOpen && (
+        <PathModal
+          lang={lang}
+          title={t(lang, "users.export")}
+          hint={t(lang, "users.exportHint")}
+          browseMode="folder"
+          confirmText={t(lang, "users.exportAction")}
+          onSubmit={doExport}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+
+      {importOpen && (
+        <PathModal
+          lang={lang}
+          title={t(lang, "users.import")}
+          hint={t(lang, "users.importHint")}
+          browseMode="folder"
+          confirmText={t(lang, "users.importAction")}
+          onSubmit={doImport}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -775,6 +849,8 @@ export function Settings() {
   const [savedCacheDir, setSavedCacheDir] = useState("");
   const [spotifyProxy, setSpotifyProxy] = useState("");
   const [savedSpotifyProxy, setSavedSpotifyProxy] = useState("");
+  const [dirModal, setDirModal] = useState<DirTarget>(null);
+  const [proxyOpen, setProxyOpen] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -802,14 +878,14 @@ export function Settings() {
     })();
   }, []);
 
-  const changeDownloadDir = async () => {
-    const next = window.prompt("Папка для скачанных треков:", downloadDir);
-    if (next === null) return;
-    const value = next.trim();
+  const changeDownloadDir = async (value: string) => {
+    const next = value.trim();
     try {
-      await api.setDownloadDir(value || null);
-      setDownloadDir(value);
-      showToast(value ? `Папка загрузок: ${value}` : "Папка сброшена по умолчанию");
+      await api.setDownloadDir(next || null);
+      setDownloadDir(next);
+      setSavedDir(next);
+      setDirModal(null);
+      showToast(next ? `Папка загрузок: ${next}` : "Папка сброшена по умолчанию");
     } catch (error) {
       showToast(String(error), true);
     }
@@ -830,14 +906,14 @@ export function Settings() {
   const downloadDirChanged = downloadDir !== savedDir;
   const cacheDirChanged = cacheDir !== savedCacheDir;
 
-  const changeCacheDir = async () => {
-    const next = window.prompt("Папка для кэша треков:", cacheDir);
-    if (next === null) return;
-    const value = next.trim();
+  const changeCacheDir = async (value: string) => {
+    const next = value.trim();
     try {
-      await api.setCacheDir(value || null);
-      setCacheDir(value);
-      showToast(value ? `Папка кэша: ${value}` : "Кэш сброшен по умолчанию");
+      await api.setCacheDir(next || null);
+      setCacheDir(next);
+      setSavedCacheDir(next);
+      setDirModal(null);
+      showToast(next ? `Папка кэша: ${next}` : "Кэш сброшен по умолчанию");
     } catch (error) {
       showToast(String(error), true);
     }
@@ -855,14 +931,14 @@ export function Settings() {
     }
   };
 
-  const changeSpotifyProxy = async () => {
-    const next = window.prompt("Прокси для Spotify (например socks5://127.0.0.1:1080):", spotifyProxy);
-    if (next === null) return;
-    const value = next.trim();
+  const changeSpotifyProxy = async (value: string) => {
+    const next = value.trim();
     try {
-      await api.setSpotifyProxy(value || null);
-      setSpotifyProxy(value);
-      showToast(value ? `Прокси Spotify: ${value}` : "Прокси Spotify сброшен");
+      await api.setSpotifyProxy(next || null);
+      setSpotifyProxy(next);
+      setSavedSpotifyProxy(next);
+      setProxyOpen(false);
+      showToast(next ? `Прокси Spotify: ${next}` : "Прокси Spotify сброшен");
     } catch (error) {
       showToast(String(error), true);
     }
@@ -880,6 +956,15 @@ export function Settings() {
   };
 
   const spotifyProxyChanged = spotifyProxy !== savedSpotifyProxy;
+
+  const openDir = async (dir: string) => {
+    if (!dir) return;
+    try {
+      await api.openPath(dir);
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
 
   if (!state) return null;
 
@@ -987,7 +1072,7 @@ export function Settings() {
                       </div>
                     </div>
                     <div className="btns">
-                      <button className="btn btn-ghost btn-sm" onClick={changeSpotifyProxy}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setProxyOpen(true)}>
                         {t(lang, "settings.proxy.change")}
                       </button>
                       {spotifyProxyChanged && (
@@ -1091,8 +1176,14 @@ export function Settings() {
                     </div>
                     <div className="btns">
                       <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => openDir(downloadDir)}
+                      >
+                        {t(lang, "settings.openFolder")}
+                      </button>
+                      <button
                         className="btn btn-ghost btn-sm"
-                        onClick={changeDownloadDir}
+                        onClick={() => setDirModal("download")}
                       >
                         {t(lang, "settings.proxy.change")}
                       </button>
@@ -1112,8 +1203,14 @@ export function Settings() {
                     </div>
                     <div className="btns">
                       <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => openDir(cacheDir)}
+                      >
+                        {t(lang, "settings.openFolder")}
+                      </button>
+                      <button
                         className="btn btn-ghost btn-sm"
-                        onClick={changeCacheDir}
+                        onClick={() => setDirModal("cache")}
                       >
                         {t(lang, "settings.proxy.change")}
                       </button>
@@ -1164,6 +1261,32 @@ export function Settings() {
           {tab === "recommendations" && <RecommendationsTab />}
         </div>
       </div>
+
+      {dirModal && (
+        <PathModal
+          lang={lang}
+          title={dirModal === "download" ? t(lang, "settings.downloadDirModal") : t(lang, "settings.cacheDirModal")}
+          initial={dirModal === "download" ? downloadDir : cacheDir}
+          placeholder="C:\Users\…"
+          browseMode="folder"
+          confirmText={t(lang, "common.save")}
+          onSubmit={dirModal === "download" ? changeDownloadDir : changeCacheDir}
+          onClose={() => setDirModal(null)}
+        />
+      )}
+
+      {proxyOpen && (
+        <TextInputModal
+          lang={lang}
+          title={t(lang, "settings.proxyModal")}
+          hint={t(lang, "settings.proxyModalHint")}
+          initial={spotifyProxy}
+          placeholder="socks5://127.0.0.1:1080"
+          confirmText={t(lang, "common.save")}
+          onSubmit={changeSpotifyProxy}
+          onClose={() => setProxyOpen(false)}
+        />
+      )}
 
       {confirm && (
         <div className="ov show" onClick={() => setConfirm(null)}>

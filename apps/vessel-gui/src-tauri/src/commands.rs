@@ -1634,4 +1634,80 @@ fn now_ms() -> i64 {
         .unwrap_or_default()
 }
 
+// ---------- Нативные диалоги и проводник ----------
+
+fn file_path_to_string(path: tauri_plugin_dialog::FilePath) -> String {
+    match path {
+        tauri_plugin_dialog::FilePath::Url(url) => url.to_string(),
+        tauri_plugin_dialog::FilePath::Path(p) => p.to_string_lossy().into_owned(),
+    }
+}
+
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        app.dialog()
+            .file()
+            .blocking_pick_folder()
+            .map(file_path_to_string)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn pick_file(app: AppHandle, extensions: Option<Vec<String>>) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let mut dialog = app.dialog().file();
+        if let Some(exts) = extensions {
+            if !exts.is_empty() {
+                dialog = dialog.add_filter("Файлы", &exts.iter().map(String::as_str).collect::<Vec<_>>());
+            }
+        }
+        dialog.blocking_pick_file().map(file_path_to_string)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_file_as(
+    app: AppHandle,
+    default_name: Option<String>,
+    extensions: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let mut dialog = app.dialog().file();
+        if let Some(name) = default_name {
+            dialog = dialog.set_file_name(name);
+        }
+        if let Some(exts) = extensions {
+            if !exts.is_empty() {
+                dialog = dialog.add_filter("Файлы", &exts.iter().map(String::as_str).collect::<Vec<_>>());
+            }
+        }
+        dialog.blocking_save_file().map(file_path_to_string)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_path(app: AppHandle, path: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_path(path, None::<String>).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_users_dir(core: CoreState<'_>) -> Result<String, String> {
+    let dir = lock(&core)
+        .users
+        .users_dir()
+        .to_path_buf();
+    Ok(dir.to_string_lossy().into_owned())
+}
+
 

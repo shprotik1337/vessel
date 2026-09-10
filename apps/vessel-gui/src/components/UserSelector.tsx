@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { useApp } from "../store";
 import type { UserProfile } from "../api/types";
+import { TextInputModal } from "./Modal";
 import * as api from "../api/commands";
 import { t } from "../i18n";
 
@@ -11,6 +12,7 @@ export function UserSelector() {
   const [selected, setSelected] = useState<string | null>(null);
   const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -37,13 +39,13 @@ export function UserSelector() {
     }
   };
 
-  const createAndChoose = async () => {
-    const name = window.prompt("Имя нового пользователя:", "");
-    if (!name || !name.trim()) return;
+  const createAndChoose = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
     setBusy(true);
     try {
-      await api.createUser(name.trim());
-      await api.selectUser(name.trim(), remember);
+      await api.createUser(trimmed);
+      await api.selectUser(trimmed, remember);
       await refresh();
     } catch (error) {
       showToast(String(error), true);
@@ -204,7 +206,7 @@ export function UserSelector() {
             <button
               className="btn btn-outline"
               style={{ flex: 1 }}
-              onClick={createAndChoose}
+              onClick={() => setCreateOpen(true)}
               disabled={busy}
             >
               {t(lang, "selector.create")}
@@ -220,6 +222,16 @@ export function UserSelector() {
           </div>
         </div>
       </div>
+      {createOpen && (
+        <TextInputModal
+          lang={lang}
+          title={t(lang, "users.createName")}
+          placeholder={t(lang, "users.createName")}
+          confirmText={t(lang, "common.create")}
+          onSubmit={createAndChoose}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
     </div>
   );
 }

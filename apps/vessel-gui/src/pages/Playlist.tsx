@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
 import { PlaylistCover } from "../components/PlaylistCover";
+import { TextInputModal, ConfirmModal } from "../components/Modal";
 import { trackKey, formatDuration, artistLabel } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
@@ -20,6 +21,9 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
   const [sort, setSort] = useState<SortMode>("custom");
   const [dir, setDir] = useState<SortDir>("desc");
   const [addedTimes, setAddedTimes] = useState<Map<string, number>>(new Map());
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
@@ -116,25 +120,24 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
     }
   };
 
-  const rename = async () => {
-    const title = window.prompt(t(lang, "playlist.renamePrompt"), playlist.title);
-    if (!title || !title.trim() || title.trim() === playlist.title) return;
+  const rename = async (title: string) => {
+    const name = title.trim();
+    if (!name || name === playlist.title) return;
     try {
-      await api.renamePlaylist(playlist.id, title.trim());
+      await api.renamePlaylist(playlist.id, name);
       await refresh();
-      showToast(`${t(lang, "common.renamed")} ${title.trim()}`);
+      setRenameOpen(false);
+      showToast(`${t(lang, "common.renamed")} ${name}`);
     } catch (error) {
       showToast(String(error), true);
     }
   };
 
-  const changeCover = async () => {
-    const current = playlist.cover_url ?? "";
-    const value = window.prompt(t(lang, "playlist.coverPrompt"), current);
-    if (value === null) return;
+  const changeCover = async (value: string) => {
     try {
       await api.setPlaylistCover(playlist.id, value.trim() || null);
       await refresh();
+      setCoverOpen(false);
       showToast(value.trim() ? t(lang, "playlist.coverUpdated") : t(lang, "playlist.coverReset"));
     } catch (error) {
       showToast(String(error), true);
@@ -142,10 +145,10 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
   };
 
   const deletePl = async () => {
-    if (!window.confirm(t(lang, "playlist.deleteConfirm").replace("{title}", playlist.title))) return;
     try {
       await api.deletePlaylist(playlist.id);
       await refresh();
+      setDeleteOpen(false);
       navigateTo("playlists");
       showToast(`${t(lang, "common.deleted")} ${playlist.title}`);
     } catch (error) {
@@ -222,10 +225,10 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
               <button className="btn btn-primary btn-sm" onClick={playAll}>
                 ▶ {t(lang, "playlist.play")}
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={rename}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setRenameOpen(true)}>
                 {t(lang, "playlist.rename")}
               </button>
-              <button className="btn btn-ghost btn-sm" onClick={changeCover}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setCoverOpen(true)}>
                 {t(lang, "playlist.cover")}
               </button>
               <button
@@ -235,7 +238,7 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
               >
                 {downloading ? "..." : t(lang, "playlist.cache")}
               </button>
-              <button className="btn btn-danger btn-sm" onClick={deletePl}>
+              <button className="btn btn-danger btn-sm" onClick={() => setDeleteOpen(true)}>
                 {t(lang, "playlist.delete")}
               </button>
             </div>
@@ -299,6 +302,39 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
           )}
         </div>
       </div>
+
+      {renameOpen && (
+        <TextInputModal
+          lang={lang}
+          title={t(lang, "playlist.renamePrompt")}
+          initial={playlist.title}
+          confirmText={t(lang, "common.rename")}
+          onSubmit={rename}
+          onClose={() => setRenameOpen(false)}
+        />
+      )}
+
+      {coverOpen && (
+        <TextInputModal
+          lang={lang}
+          title={t(lang, "playlist.coverPrompt")}
+          initial={playlist.cover_url ?? ""}
+          placeholder="https://…"
+          confirmText={t(lang, "common.save")}
+          onSubmit={changeCover}
+          onClose={() => setCoverOpen(false)}
+        />
+      )}
+
+      {deleteOpen && (
+        <ConfirmModal
+          lang={lang}
+          title={t(lang, "playlist.deleteConfirm").replace("{title}", playlist.title)}
+          confirmText={t(lang, "common.delete")}
+          onConfirm={deletePl}
+          onClose={() => setDeleteOpen(false)}
+        />
+      )}
     </div>
   );
 }
