@@ -230,9 +230,19 @@ export function BottomPlayer() {
         )}
         <div className="pl-meta">
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
-            <span className="ttl">
+            <span className="ttl" style={{ minWidth: 0 }}>
               {track?.title ?? t(lang, "bottom.noTrack")}
             </span>
+            <button
+              className={`heart ${fav ? "active" : ""}`}
+              onClick={handleFav}
+              title={t(lang, "bottom.favorite")}
+              aria-label="Like"
+              disabled={!track}
+              style={{ marginTop: -6 }}
+            >
+              {HEART_SVG}
+            </button>
             {track && (
               <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".5px", color: "var(--text2)", background: "rgba(255,255,255,.08)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", flexShrink: 0, marginTop: 1 }}>
                 {providerLabel(track.provider)}
@@ -262,15 +272,6 @@ export function BottomPlayer() {
             )}
           </div>
         </div>
-        <button
-          className={`heart ${fav ? "active" : ""}`}
-          onClick={handleFav}
-          title={t(lang, "bottom.favorite")}
-          aria-label="Like"
-          disabled={!track}
-        >
-          {HEART_SVG}
-        </button>
       </div>
       <div className="pl-center">
         <div className="pl-controls">
