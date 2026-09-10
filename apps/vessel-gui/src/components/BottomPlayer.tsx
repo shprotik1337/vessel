@@ -229,12 +229,12 @@ export function BottomPlayer() {
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
         <div className="pl-meta">
-          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <span className="ttl" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
+            <span className="ttl">
               {track?.title ?? t(lang, "bottom.noTrack")}
             </span>
             {track && (
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".5px", color: "var(--text2)", background: "rgba(255,255,255,.08)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", flexShrink: 0 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".5px", color: "var(--text2)", background: "rgba(255,255,255,.08)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", flexShrink: 0, marginTop: 1 }}>
                 {providerLabel(track.provider)}
               </span>
             )}
