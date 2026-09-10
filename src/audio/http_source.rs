@@ -13,7 +13,10 @@ use reqwest::{
 };
 use symphonia::core::io::MediaSource;
 
-const HTTP_CHUNK_BYTES: usize = 256 * 1024;
+const HTTP_CHUNK_BYTES: usize = 1024 * 1024; // 1MB — YouTube CDN лимит на один range запрос
+// UA того же семейства, что и при резолве стрима (Firefox) — YouTube CDN
+// привязывает некоторые ссылки к семейству клиента.
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
 pub(super) struct HttpRangeSource {
     client: Client,
@@ -35,6 +38,7 @@ impl HttpRangeSource {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
+            .user_agent(BROWSER_UA)
             .build()?;
         let headers = normalize_headers(headers)?;
         let mut source = Self {
@@ -70,12 +74,19 @@ impl HttpRangeSource {
 
     fn fetch_once(&mut self, start: u64) -> io::Result<()> {
         let end = start.saturating_add(HTTP_CHUNK_BYTES as u64 - 1);
+        crate::dlog!("[http] fetch range {start}-{end} (chunk={HTTP_CHUNK_BYTES})");
         let mut request = self.client.get(&self.url).headers(self.headers.clone());
         if self.range_supported || start > 0 {
             request = request.header(RANGE, format!("bytes={start}-{end}"));
         }
         let response = request.send().map_err(io_error)?;
         let status = response.status();
+        // YouTube CDN блокирует range-запросы на поздние чанки (403).
+        // Тогда пробуем без Range — отдаст всё с начала, сдвигаемся на start.
+        if status == StatusCode::FORBIDDEN && start > 0 {
+            drop(response);
+            return self.fetch_without_range(start);
+        }
         if !status.is_success() {
             return Err(io::Error::other(format!("источник вернул HTTP {status}")));
         }
@@ -103,6 +114,43 @@ impl HttpRangeSource {
             .take(HTTP_CHUNK_BYTES as u64)
             .read_to_end(&mut chunk)
             .map_err(io_error)?;
+        self.chunk_start = start;
+        self.chunk = chunk;
+        Ok(())
+    }
+
+    /// Range-запрос отклонён: качаем весь файл без Range и сдвигаемся на start.
+    fn fetch_without_range(&mut self, start: u64) -> io::Result<()> {
+        let request = self.client.get(&self.url).headers(self.headers.clone());
+        let response = request.send().map_err(io_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(io::Error::other(format!("источник вернул HTTP {status}")));
+        }
+        // Сколько байт отдать запросившему: если сервер вернул 200 (весь файл) —
+        // пропускаем уже прочитанные start байт.
+        let headers = response.headers().clone();
+        let length = dlina_iz_range(&headers).or_else(|| {
+            headers
+                .get(CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok())
+        });
+        let partial = status == StatusCode::PARTIAL_CONTENT;
+        let skip = if partial { 0 } else { start };
+        // Content-Length (200) или total из Content-Range (206) = полный размер файла.
+        self.length = length;
+        let mut chunk = Vec::with_capacity(HTTP_CHUNK_BYTES + skip as usize);
+        response
+            .take(HTTP_CHUNK_BYTES as u64 + skip)
+            .read_to_end(&mut chunk)
+            .map_err(io_error)?;
+        let chunk = if (skip as usize) < chunk.len() {
+            chunk.split_off(skip as usize)
+        } else {
+            Vec::new()
+        };
+        self.range_supported = false;
         self.chunk_start = start;
         self.chunk = chunk;
         Ok(())

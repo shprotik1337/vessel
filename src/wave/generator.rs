@@ -52,6 +52,7 @@ pub async fn generate_wave(
         settings.size.saturating_mul(8).clamp(120, 480)
     };
     let native_related = settings.source_mode != WaveSourceMode::LibraryOnly
+        && !settings.mixed_providers
         && !seeds.tracks.is_empty()
         && matches!(
             settings.primary_provider,
@@ -275,6 +276,7 @@ async fn collect_related(
                 pool,
                 WaveCandidateOrigin::Related,
                 candidate_target,
+                None,
                 failures,
             )
             .await;
@@ -284,14 +286,46 @@ async fn collect_related(
             let Some(provider) = providers.get(kind) else {
                 continue;
             };
+            let provider_cap = if settings.mixed_providers {
+                let provider_count = settings.provider_order().len().max(1);
+                Some((candidate_target / provider_count).max(8))
+            } else {
+                None
+            };
             let result = if kind == seed.provider {
                 timeout_at(deadline, provider.related(seed, target.min(64))).await
+            } else if settings.mixed_providers {
+                // смешанный режим: ищем похожие треки на других провайдерах
+                let query = format!("{} {}", seed.display_artist(), seed.title);
+                collect_search_provider(
+                    providers,
+                    kind,
+                    &query,
+                    target.min(24),
+                    deadline,
+                    pool,
+                    WaveCandidateOrigin::Related,
+                    candidate_target,
+                    provider_cap,
+                    failures,
+                )
+                .await;
+                continue;
             } else {
                 continue;
             };
             match result {
                 Ok(Ok(tracks)) if !tracks.is_empty() => {
-                    pool.extend(tracks, WaveCandidateOrigin::Related, candidate_target);
+                    if settings.mixed_providers {
+                        pool.extend_balanced(
+                            tracks,
+                            WaveCandidateOrigin::Related,
+                            candidate_target,
+                            provider_cap,
+                        );
+                    } else {
+                        pool.extend(tracks, WaveCandidateOrigin::Related, candidate_target);
+                    }
                 }
                 Ok(Ok(_)) => {
                     let query = format!("{} {}", seed.display_artist(), seed.title);
@@ -304,6 +338,7 @@ async fn collect_related(
                         pool,
                         WaveCandidateOrigin::Related,
                         candidate_target,
+                        provider_cap,
                         failures,
                     )
                     .await;
@@ -327,21 +362,35 @@ async fn collect_search_order(
     candidate_target: usize,
     failures: &mut Vec<String>,
 ) {
+    let provider_count = settings.provider_order().len().max(1);
     for (index, kind) in settings.provider_order().into_iter().enumerate() {
         let before = pool.len();
+        let per_target = if settings.mixed_providers {
+            // при смешивании — каждому провайдеру своя доля
+            (target / provider_count).max(6)
+        } else {
+            target
+        };
+        let provider_cap = if settings.mixed_providers {
+            Some((candidate_target / provider_count).max(8))
+        } else {
+            None
+        };
         collect_search_provider(
             providers,
             kind,
             query,
-            target,
+            per_target,
             deadline,
             pool,
             origin,
             candidate_target,
+            provider_cap,
             failures,
         )
         .await;
-        if index == 0 && pool.len() > before {
+        // для смешанного режима не прерываемся после первого провайдера
+        if !settings.mixed_providers && index == 0 && pool.len() > before {
             break;
         }
     }
@@ -357,6 +406,7 @@ async fn collect_search_provider(
     pool: &mut CandidatePool,
     origin: WaveCandidateOrigin,
     candidate_target: usize,
+    provider_cap: Option<usize>,
     failures: &mut Vec<String>,
 ) {
     let Some(provider) = providers.get(kind) else {
@@ -367,10 +417,11 @@ async fn collect_search_provider(
             break;
         }
         match timeout_at(deadline, provider.search(&variant, None)).await {
-            Ok(Ok(page)) => pool.extend(
+            Ok(Ok(page)) => pool.extend_balanced(
                 page.tracks.into_iter().take(target),
                 origin,
                 candidate_target,
+                provider_cap,
             ),
             Ok(Err(error)) => push_failure(failures, kind, &error),
             Err(_) => push_timeout(failures, kind),
@@ -398,6 +449,16 @@ fn query_variants(query: &str, kind: ProviderKind) -> Vec<String> {
 }
 
 fn related_provider_order(settings: &WaveSettings, seed: ProviderKind) -> Vec<ProviderKind> {
+    if settings.mixed_providers {
+        // смешиваем — related ищем по всем выбранным провайдерам
+        let mut order = vec![seed];
+        for provider in settings.provider_order() {
+            if !order.contains(&provider) {
+                order.push(provider);
+            }
+        }
+        return order;
+    }
     if settings.source_mode == WaveSourceMode::CurrentService {
         return vec![settings.primary_provider];
     }
@@ -615,6 +676,7 @@ mod tests {
             genres: Vec::new(),
             explicit: false,
             drm: false,
+            isrc: None,
         }
     }
 }

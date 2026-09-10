@@ -14,6 +14,7 @@ pub mod download;
 pub mod soundcloud;
 pub mod spotify;
 pub mod yandex;
+pub mod youtube;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SearchPage {
@@ -70,6 +71,11 @@ pub trait MusicProvider: Send + Sync {
 
     fn attribution(&self) -> Attribution;
 
+    /// Для downcast к конкретному провайдеру (OAuth-потоки и т.п.).
+    fn as_any(&self) -> &dyn std::any::Any {
+        &()
+    }
+
     async fn search(&self, query: &str, cursor: Option<&str>) -> Result<SearchPage>;
 
     async fn search_collections(
@@ -102,6 +108,13 @@ pub trait MusicProvider: Send + Sync {
     /// Провайдеры могут переопределить, чтобы отдавать прямые mp3-файлы.
     async fn download_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
         self.playback_source(track).await
+    }
+
+    /// Импорт лайков (избранных треков) пользователя с этой платформы.
+    /// Возвращает пустой вектор, если платформа не поддерживает импорт лайков.
+    async fn liked_tracks(&self, profile_url: Option<&str>) -> Result<Vec<TrackRef>> {
+        let _ = profile_url;
+        Ok(Vec::new())
     }
 }
 
@@ -188,6 +201,7 @@ fn provider_order(kind: ProviderKind) -> u8 {
         ProviderKind::YandexMusic => 1,
         ProviderKind::Deezer => 2,
         ProviderKind::Spotify => 3,
+        ProviderKind::YouTubeMusic => 4,
     }
 }
 
@@ -213,6 +227,10 @@ pub async fn probe_provider(
         }
         ProviderKind::Spotify => {
             let provider = spotify::SpotifyProvider::with_proxy(credential, proxy)?;
+            provider.probe().await
+        }
+        ProviderKind::YouTubeMusic => {
+            let provider = youtube::YouTubeMusicProvider::new()?;
             provider.probe().await
         }
     }
@@ -280,6 +298,7 @@ mod tests {
             genres: Vec::new(),
             explicit: false,
             drm: false,
+            isrc: None,
         }
     }
 

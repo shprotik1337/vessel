@@ -10,9 +10,11 @@ import { Favorites } from "./pages/Favorites";
 import { Recent } from "./pages/Recent";
 import { Settings } from "./pages/Settings";
 import { Artist } from "./pages/Artist";
+import { WavePage } from "./pages/Wave";
+import { UserSelector } from "./components/UserSelector";
 
 function AppContent() {
-  const { view, playlistId, artist, artistProvider, artistId, toast, toastError } = useApp();
+  const { state, view, playlistId, artist, artistProvider, artistId, toast, toastError } = useApp();
 
   const renderPage = () => {
     switch (view) {
@@ -65,6 +67,8 @@ function AppContent() {
         return <Recent />;
       case "settings":
         return <Settings />;
+      case "wave":
+        return <WavePage />;
       default:
         return <Home />;
     }
@@ -77,6 +81,7 @@ function AppContent() {
         <main className="content">{renderPage()}</main>
       </div>
       <BottomPlayer />
+      {state?.needs_user_selection && <UserSelector />}
       {toast && (
         <div className="toast-wrap">
           <div className={`toast ${toastError ? "error" : ""}`}>

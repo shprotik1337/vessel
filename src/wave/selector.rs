@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use crate::model::ProviderKind;
+
 use super::{RankedWaveTrack, WaveBucket, WaveMode, WaveQueueQuotas, WaveSettings, WaveSourceMode};
 
 pub fn select_ranked(
@@ -11,6 +15,7 @@ pub fn select_ranked(
         picked_new_tracks: 0,
         liked_exact_picked: 0,
         language_cursor: 0,
+        provider_picks: HashMap::new(),
     };
     let liked_exact_cap = if settings.mode == WaveMode::Favorites
         || settings.source_mode == WaveSourceMode::LibraryOnly
@@ -25,6 +30,7 @@ pub fn select_ranked(
         target_new_tracks: quotas.discovery,
         liked_exact_cap,
         languages: &settings.language_rotation,
+        mixed_providers: settings.mixed_providers,
     };
     for (bucket, count) in [
         (Some(WaveBucket::Favorites), quotas.favorites),
@@ -44,6 +50,7 @@ struct SelectionState {
     picked_new_tracks: usize,
     liked_exact_picked: usize,
     language_cursor: usize,
+    provider_picks: HashMap<ProviderKind, usize>,
 }
 
 struct SelectionRules<'a> {
@@ -52,6 +59,7 @@ struct SelectionRules<'a> {
     target_new_tracks: usize,
     liked_exact_cap: usize,
     languages: &'a [String],
+    mixed_providers: bool,
 }
 
 fn pick_from_pool(
@@ -70,9 +78,13 @@ fn pick_from_pool(
         } else {
             Some(rules.languages[state.language_cursor % rules.languages.len()].as_str())
         };
-        let mut pick_index = None;
+
+        // При смешивании собираем все подходящие кандидаты и выбираем того,
+        // чей провайдер наименее представлен в финальной очереди — чтобы
+        // SoundCloud не забивал всё, а провайдеры чередовались.
+        let mut candidates: Vec<(usize, usize)> = Vec::new();
         for require_language in [true, false] {
-            if pick_index.is_some() {
+            if rules.mixed_providers && !candidates.is_empty() {
                 break;
             }
             for (index, item) in state.pool.iter().enumerate() {
@@ -95,14 +107,34 @@ fn pick_from_pool(
                 {
                     continue;
                 }
-                pick_index = Some(index);
+                let picks = state
+                    .provider_picks
+                    .get(&item.track.provider)
+                    .copied()
+                    .unwrap_or(0);
+                candidates.push((index, picks));
+                if !rules.mixed_providers {
+                    break;
+                }
+            }
+            if !rules.mixed_providers && !candidates.is_empty() {
                 break;
             }
         }
+
+        let pick_index = if rules.mixed_providers {
+            candidates
+                .iter()
+                .min_by_key(|(_, picks)| *picks)
+                .map(|(index, _)| *index)
+        } else {
+            candidates.first().map(|(index, _)| *index)
+        };
         let Some(index) = pick_index else {
             break;
         };
         let picked = state.pool.remove(index);
+        *state.provider_picks.entry(picked.track.provider).or_default() += 1;
         if picked.is_new_artist {
             state.picked_new_tracks = state.picked_new_tracks.saturating_add(1);
         }

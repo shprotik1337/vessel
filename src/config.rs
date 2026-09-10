@@ -45,6 +45,12 @@ impl AppPaths {
         }
         Ok(())
     }
+
+    /// Корень каталогов пользователей. Лежит отдельно от кода и cache,
+    /// чтобы всю папку Users можно было скопировать на другой компьютер.
+    pub fn users_dir(&self) -> PathBuf {
+        self.data_dir.join("Users")
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -86,6 +92,7 @@ pub struct AppConfig {
     pub yandex_enabled: bool,
     pub deezer_enabled: bool,
     pub spotify_enabled: bool,
+    pub youtube_music_enabled: bool,
     pub soundcloud_client_id_override: Option<String>,
     pub soundcloud_client_id_refresh_at_ms: Option<i64>,
     pub global_hotkeys_enabled: bool,
@@ -97,6 +104,24 @@ pub struct AppConfig {
     pub track_cache_dir: Option<String>,
     #[serde(default)]
     pub spotify_proxy: Option<String>,
+    #[serde(default = "default_history_limit")]
+    pub history_limit: usize,
+    #[serde(default)]
+    pub users_dir_override: Option<String>,
+    #[serde(default)]
+    pub auto_login_user: Option<String>,
+    #[serde(default)]
+    pub wave_source: Option<String>,
+    #[serde(default)]
+    pub wave_providers: Option<String>,
+    #[serde(default)]
+    pub recommendation_providers: Option<String>,
+    #[serde(default)]
+    pub youtube_potoken_provider: Option<String>,
+    /// Источник аудио для Spotify-треков: "youtube_music" | "deezer".
+    /// None = родной Spotify-плеер (premium).
+    #[serde(default)]
+    pub spotify_playback_source: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -116,6 +141,7 @@ impl Default for AppConfig {
             yandex_enabled: true,
             deezer_enabled: true,
             spotify_enabled: true,
+            youtube_music_enabled: true,
             soundcloud_client_id_override: None,
             soundcloud_client_id_refresh_at_ms: None,
             global_hotkeys_enabled: false,
@@ -124,6 +150,14 @@ impl Default for AppConfig {
             download_dir: None,
             track_cache_dir: None,
             spotify_proxy: None,
+            history_limit: 2000,
+            users_dir_override: None,
+            auto_login_user: None,
+            wave_source: None,
+            wave_providers: None,
+            recommendation_providers: None,
+            youtube_potoken_provider: None,
+            spotify_playback_source: None,
         }
     }
 }
@@ -163,8 +197,13 @@ impl AppConfig {
             .soundcloud_client_id_override
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        self.history_limit = self.history_limit.clamp(500, 10_000);
         self
     }
+}
+
+fn default_history_limit() -> usize {
+    2000
 }
 
 #[cfg(test)]

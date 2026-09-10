@@ -503,6 +503,58 @@ impl MusicProvider for DeezerProvider {
         Ok(page.data.into_iter().filter_map(map_track).collect())
     }
 
+    async fn liked_tracks(&self, _profile_url: Option<&str>) -> Result<Vec<TrackRef>> {
+        // Deezer: лайки через внутренний gateway (ARL-сессия).
+        // Сначала получаем checkForm-токен и USER_ID, затем song.getFavorites
+        // с пагинацией по start.
+        let user = self.gateway("deezer.getUserData", "", json!({})).await?;
+        let mut token = text_at(&user, &["results", "checkForm"])
+            .context("Deezer ARL не авторизован: нет checkForm")?
+            .to_string();
+        let user_id = user_id_at(&user, &["results", "USER", "USER_ID"])
+            .context("Deezer не выдал USER_ID")?;
+        let mut tracks = Vec::new();
+        let mut start = 0u64;
+        loop {
+            let page = self
+                .gateway(
+                    "song.getFavorites",
+                    &token,
+                    json!({ "USER_ID": user_id, "nb": 100, "start": start }),
+                )
+                .await?;
+            if gateway_has_invalid_token(&page) {
+                let refreshed = self.gateway("deezer.getUserData", "", json!({})).await?;
+                token = text_at(&refreshed, &["results", "checkForm"])
+                    .context("Deezer не обновил checkForm")?
+                    .to_string();
+                continue;
+            }
+            if page.get("error").is_some_and(gateway_has_error) {
+                bail!("Deezer gateway: {}", page["error"])
+            }
+            let items = page
+                .pointer("/results/data")
+                .and_then(Value::as_array)
+                .context("Deezer не вернул список лайков")?;
+            let loaded = items.len();
+            for item in items {
+                if let Some(track) = map_favorite_song(item) {
+                    tracks.push(track);
+                }
+            }
+            let total = page
+                .pointer("/results/total")
+                .and_then(Value::as_u64)
+                .unwrap_or((start + loaded as u64).max(1));
+            start += loaded as u64;
+            if start >= total || loaded == 0 {
+                break;
+            }
+        }
+        Ok(tracks)
+    }
+
     async fn playback_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
         // Если трек уже скачан в общий кэш — играем из него
         if let Some(source) = crate::provider::cache::cached_source(track) {
@@ -624,6 +676,15 @@ fn text_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
         .as_str()
         .map(str::trim)
         .filter(|value| !value.is_empty())
+}
+
+fn user_id_at(value: &Value, path: &[&str]) -> Option<String> {
+    let v = path.iter().try_fold(value, |current, key| current.get(*key))?;
+    match v {
+        Value::Number(n) => n.to_string().into(),
+        Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        _ => None,
+    }
 }
 
 fn legacy_urls(raw: &Value, format: &str) -> Result<Vec<String>> {
@@ -817,6 +878,7 @@ fn map_track(track: ApiTrack) -> Option<TrackRef> {
         genres: Vec::new(),
         explicit: track.explicit_lyrics.unwrap_or(false),
         drm: true,
+        isrc: track.isrc.filter(|value| !value.trim().is_empty()),
     })
 }
 
@@ -824,6 +886,60 @@ fn non_empty(value: Option<String>, fallback: &str) -> String {
     value
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| fallback.to_string())
+}
+
+/// Пустые ISRC-строки от gateway превращаем в None.
+trait PipeOptionString {
+    fn pipe_option_string(self) -> Option<String>;
+}
+impl PipeOptionString for String {
+    fn pipe_option_string(self) -> Option<String> {
+        let trimmed = self.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+}
+
+/// Маппит song-объект из gateway (deezer.pageFavorites / song.getListData)
+/// в TrackRef. Gateway отдаёт поля в верхнем регистре: SNG_ID, SNG_TITLE,
+/// ART_NAME, DURATION, ALB_ID, ALB_PICTURE.
+fn map_favorite_song(raw: &serde_json::Value) -> Option<TrackRef> {
+    let id = raw_value(raw, "SNG_ID");
+    if id.is_empty() || id == "0" {
+        return None;
+    }
+    let title = raw_value(raw, "SNG_TITLE");
+    let artist = raw_value(raw, "ART_NAME");
+    let album_id = raw_value(raw, "ALB_ID");
+    let picture = raw_value(raw, "ALB_PICTURE");
+    let duration_s = raw_value(raw, "DURATION")
+        .parse::<u64>()
+        .unwrap_or(0);
+    let artwork_url = if picture.is_empty() {
+        None
+    } else {
+        Url::parse(&format!(
+            "https://e-cdns-images.dzcdn.net/images/cover/{picture}/500x500-000000-80-0-0.jpg"
+        ))
+        .ok()
+    };
+    Some(TrackRef {
+        provider: ProviderKind::Deezer,
+        id: id.clone(),
+        title: if title.is_empty() { "Без названия".to_string() } else { title },
+        artists: if artist.is_empty() { Vec::new() } else { vec![artist] },
+        duration_ms: (duration_s > 0).then_some(duration_s.saturating_mul(1000)),
+        artwork_url,
+        web_url: album_id
+            .parse::<u64>()
+            .ok()
+            .and_then(|_| Url::parse(&format!("https://www.deezer.com/album/{album_id}")).ok())
+            .unwrap_or_else(|| Url::parse(&format!("https://www.deezer.com/track/{id}")).unwrap()),
+        capability: PlaybackCapability::Full,
+        genres: Vec::new(),
+        explicit: false,
+        drm: true,
+        isrc: raw_value(raw, "ISRC").pipe_option_string(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -843,6 +959,11 @@ struct ApiPlaylist {
 }
 
 #[derive(Deserialize)]
+struct ApiUser {
+    id: Option<u64>,
+}
+
+#[derive(Deserialize)]
 struct ApiAlbumDetails {
     title: Option<String>,
     artist: Option<ApiArtist>,
@@ -858,6 +979,7 @@ struct ApiTrack {
     duration: Option<u64>,
     link: Option<String>,
     explicit_lyrics: Option<bool>,
+    isrc: Option<String>,
     artist: Option<ApiArtist>,
     album: Option<ApiAlbum>,
 }

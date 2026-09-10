@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+﻿import { invoke } from "@tauri-apps/api/core";
 
 import type {
   ArtistProfile,
@@ -10,6 +10,7 @@ import type {
   RepeatMode,
   SearchOutcome,
   TrackRef,
+  UserProfile,
 } from "./types";
 
 export async function getState(): Promise<FullState> {
@@ -126,6 +127,48 @@ export async function setSpotifyProxy(path: string | null): Promise<void> {
   return invoke("set_spotify_proxy", { path });
 }
 
+export async function getSpotifyPlaybackSource(): Promise<string> {
+  return invoke<string>("get_spotify_playback_source");
+}
+
+export async function setSpotifyPlaybackSource(source: string): Promise<void> {
+  return invoke("set_spotify_playback_source", { source });
+}
+
+
+
+export async function spotifyBrowserLogin(): Promise<void> {
+  return invoke("spotify_browser_login");
+}
+
+export async function spotifyCaptureCookies(): Promise<string> {
+  return invoke<string>("spotify_capture_cookies");
+}
+
+export async function spotifyLoginWindowOpen(): Promise<boolean> {
+  return invoke<boolean>("spotify_login_window_open");
+}
+
+export async function spotifyAuthCancel(): Promise<void> {
+  return invoke("spotify_auth_cancel");
+}
+
+export async function youtubeOauthBegin(): Promise<string> {
+  return invoke<string>("youtube_oauth_begin");
+}
+
+export async function youtubeOauthFinish(): Promise<void> {
+  return invoke("youtube_oauth_finish");
+}
+
+export async function youtubeBrowserLogin(): Promise<void> {
+  return invoke("youtube_browser_login");
+}
+
+export async function youtubeCaptureCookies(): Promise<string> {
+  return invoke<string>("youtube_capture_cookies");
+}
+
 export async function addToQueue(track: TrackRef): Promise<void> {
   return invoke("add_to_queue", { track });
 }
@@ -238,6 +281,15 @@ export async function clearHistory(): Promise<void> {
   return invoke("clear_history");
 }
 
+export async function importLikes(
+  provider: string,
+  target: string,
+  profileUrl?: string | null,
+  playlistTitle?: string | null,
+): Promise<number> {
+  return invoke<number>("import_likes", { provider, target, profileUrl, playlistTitle });
+}
+
 export async function getProviderStatus(): Promise<ProviderStatus[]> {
   return invoke<ProviderStatus[]>("get_provider_status");
 }
@@ -254,11 +306,48 @@ export async function removeCredential(provider: string): Promise<void> {
   return invoke("remove_credential", { provider });
 }
 
+export async function setProviderEnabled(provider: string, enabled: boolean): Promise<void> {
+  return invoke("set_provider_enabled", { provider, enabled });
+}
+
 export async function getRelated(
   track: TrackRef,
   limit?: number,
 ): Promise<TrackRef[]> {
   return invoke<TrackRef[]>("get_related", { track, limit });
+}
+
+export async function getWaveRecommendations(
+  source: string,
+  size?: number,
+  playlistId?: string | null,
+  providers?: string | null,
+): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("get_wave_recommendations", { source, size, playlistId, providers });
+}
+
+export async function getWaveSource(): Promise<string> {
+  return invoke<string>("get_wave_source");
+}
+
+export async function setWaveSource(source: string): Promise<void> {
+  return invoke("set_wave_source", { source });
+}
+
+export async function getWaveProviders(): Promise<string> {
+  return invoke<string>("get_wave_providers");
+}
+
+export async function setWaveProviders(providers: string): Promise<void> {
+  return invoke("set_wave_providers", { providers });
+}
+
+export async function getRecommendationProviders(): Promise<string> {
+  return invoke<string>("get_recommendation_providers");
+}
+
+export async function setRecommendationProviders(providers: string): Promise<void> {
+  return invoke("set_recommendation_providers", { providers });
 }
 
 export async function resetSettings(): Promise<void> {
@@ -267,4 +356,56 @@ export async function resetSettings(): Promise<void> {
 
 export async function resetData(): Promise<void> {
   return invoke("reset_data");
+}
+
+export async function getUserProfile(): Promise<UserProfile | null> {
+  return invoke<UserProfile | null>("get_user_profile");
+}
+
+export async function getKnownUsers(): Promise<UserProfile[]> {
+  return invoke<UserProfile[]>("get_known_users");
+}
+
+export async function switchUser(name: string): Promise<void> {
+  return invoke("switch_user", { name });
+}
+
+export async function createUser(name: string): Promise<UserProfile> {
+  return invoke<UserProfile>("create_user", { name });
+}
+
+export async function exportUser(destination: string): Promise<string> {
+  return invoke<string>("export_user", { destination });
+}
+
+export async function importUser(source: string): Promise<UserProfile> {
+  return invoke<UserProfile>("import_user", { source });
+}
+
+export async function backupUser(): Promise<string> {
+  return invoke<string>("backup_user");
+}
+
+export async function selectUser(name: string, remember: boolean): Promise<void> {
+  return invoke("select_user", { name, remember });
+}
+
+export async function clearAutoLogin(): Promise<void> {
+  return invoke("clear_auto_login");
+}
+
+export async function getAutoLogin(): Promise<string | null> {
+  return invoke<string | null>("get_auto_login");
+}
+
+export async function deleteUser(name: string): Promise<void> {
+  return invoke("delete_user", { name });
+}
+
+export async function getLanguage(): Promise<string> {
+  return invoke<string>("get_language");
+}
+
+export async function setLanguage(language: string): Promise<void> {
+  return invoke("set_language", { language });
 }

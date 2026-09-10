@@ -1,15 +1,29 @@
 import { useEffect, useState } from "react";
 
 import { useApp } from "../store";
-import type { ProviderStatus } from "../api/types";
+import { PlatformIcon } from "../components/PlatformIcon";
+import type { ProviderStatus, UserProfile } from "../api/types";
 import * as api from "../api/commands";
+import { t } from "../i18n";
 
-type Tab = "services" | "playback" | "storage";
+type Tab = "services" | "playback" | "storage" | "users" | "recommendations";
 
 type ConfirmTarget = "settings" | "data" | null;
 
-const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg: string }> = {
-  soundcloud: {
+function formatDate(ms: number): string {
+  if (!ms) return "—";
+  return new Date(ms).toLocaleString();
+}
+
+const SERVICE_ICON_SIZE: Record<string, number> = {
+  soundcloud: 36, deezer: 38, yandex: 33, spotify: 54, youtube_music: 44,
+};
+
+const REC_ICON_SIZE: Record<string, number> = {
+  soundcloud: 40, deezer: 44, yandex: 33, spotify: 59, youtube_music: 32,
+};
+
+const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg: string }> = {  soundcloud: {
     key: "soundcloud",
     hint: "client_id — ключ из браузера. Вставь client_id для SoundCloud.",
     logo: "SC",
@@ -33,15 +47,22 @@ const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg
     logo: "SP",
     bg: "#1DB954",
   },
+  youtube_music: {
+    key: "you_tube_music",
+    hint: "Вставь cookie из браузера (SID, SSID, HSID, LOGIN_INFO и др.) — полные треки без 60-сек лимита.",
+    logo: "YT",
+    bg: "#FF0000",
+  },
 };
 
 function ServiceRow({ status }: { status: ProviderStatus }) {
-  const { showToast, refresh } = useApp();
+  const { showToast, refresh, lang } = useApp();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<"ok" | "fail" | null>(null);
   const meta = SERVICE_META[status.kind];
+  const isYoutubeMusic = status.kind === "you_tube_music";
 
   const connect = async () => {
     if (!value.trim()) return;
@@ -73,29 +94,103 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
     }
   };
 
+  const [oauthBusy, setOauthBusy] = useState(false);
+  const [spotifyLoginOpen, setSpotifyLoginOpen] = useState(false);
+  const [loginPolling, setLoginPolling] = useState(false);
+
+  // Автоматический auth flow: открыли окно → залогинились → приложение само
+  // заметило sp_dc, сохранило и закрыло окно. UI просто следит за статусом.
+  const oauthLogin = async () => {
+    setOauthBusy(true);
+    try {
+      await api.spotifyBrowserLogin();
+      setSpotifyLoginOpen(true);
+      setLoginPolling(true);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setOauthBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!loginPolling) return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const [statuses, open] = await Promise.all([
+          api.getProviderStatus(),
+          api.spotifyLoginWindowOpen(),
+        ]);
+        if (cancelled) return;
+        const spotify = statuses.find((s) => s.kind === "spotify");
+        if (spotify?.connected) {
+          setLoginPolling(false);
+          setSpotifyLoginOpen(false);
+          await refresh();
+          showToast("Spotify подключён");
+        } else if (!open) {
+          // Окно закрыли: либо вход отменён, либо сохранение уже прошло
+          setLoginPolling(false);
+          setSpotifyLoginOpen(false);
+          await refresh();
+        }
+      } catch {
+        // сеть/окно — продолжаем опрос
+      }
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loginPolling]);
+
+  const cancelSpotifyLogin = async () => {
+    setLoginPolling(false);
+    setSpotifyLoginOpen(false);
+    try {
+      await api.spotifyAuthCancel();
+    } catch {
+      // окно могло уже закрыться
+    }
+  };
+
   return (
     <div className="svc-row">
-      <div className="svc-logo" style={{ background: meta.bg, color: "#0B0B0C" }}>
-        {meta.logo}
+      <div className="svc-logo" style={{ background: "var(--elev)", width: 52, height: 52, borderRadius: 6 }}>
+        <PlatformIcon
+          kind={status.kind as "soundcloud" | "deezer" | "yandex" | "spotify" | "you_tube_music"}
+          size={SERVICE_ICON_SIZE[status.kind] ?? 36}
+        />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600 }}>{status.label}</div>
         <div className="set-desc" style={{ marginTop: 2 }}>
-          {status.connected
-            ? "Connected"
-            : status.has_credentials
-              ? "Key saved but not connected"
-              : "Not connected"}
+          {isYoutubeMusic
+            ? t(lang, "settings.connected")
+            : status.connected
+              ? t(lang, "settings.connected")
+              : status.has_credentials
+                ? t(lang, "settings.keySavedNotConnected")
+                : t(lang, "settings.notConnected")}
         </div>
       </div>
-      {status.connected ? (
+      {isYoutubeMusic ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span className="badge ok">
             <span className="bdot" />
-            Connected
+            {t(lang, "settings.connected")}
+          </span>
+        </div>
+      ) : status.connected ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="badge ok">
+            <span className="bdot" />
+            {t(lang, "settings.connected")}
           </span>
           <button className="btn btn-outline btn-sm" onClick={disconnect}>
-            Disconnect
+            {t(lang, "settings.disconnect")}
           </button>
         </div>
       ) : editing ? (
@@ -112,10 +207,10 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
             }}
           />
           <button className="btn btn-primary btn-sm" onClick={connect} disabled={busy}>
-            {busy ? "…" : "Connect"}
+            {busy ? "…" : t(lang, "settings.connect")}
           </button>
           <button className="btn btn-outline btn-sm" onClick={() => setEditing(false)}>
-            Cancel
+            {t(lang, "common.cancel")}
           </button>
         </div>
       ) : (
@@ -123,26 +218,555 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
           {status.has_credentials && (
             <span className="badge warn">
               <span className="bdot" />
-              Key invalid
+              {t(lang, "settings.keyInvalid")}
             </span>
           )}
           <button className="btn btn-outline btn-sm" onClick={() => setEditing(true)}>
-            Connect
+            {t(lang, "settings.connect")}
           </button>
+          {status.kind === "spotify" &&
+            (spotifyLoginOpen ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="badge warn">
+                  <span className="bdot" />
+                  {t(lang, "settings.youtubeLoginOpen")}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={cancelSpotifyLogin}
+                >
+                  {t(lang, "common.cancel")}
+                </button>
+              </div>
+            ) : (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={oauthLogin}
+                disabled={oauthBusy}
+                title={t(lang, "settings.spSearchHint")}
+              >
+                {oauthBusy ? t(lang, "settings.oauthBusy") : t(lang, "settings.oauthLogin")}
+              </button>
+            ))}
         </div>
       )}
       {result === "ok" && (
-        <span style={{ color: "var(--text)", fontSize: 12 }}>✓ Valid key</span>
+        <span style={{ color: "var(--text)", fontSize: 12 }}>{t(lang, "settings.validKey")}</span>
       )}
       {result === "fail" && (
-        <span style={{ color: "var(--red)", fontSize: 12 }}>✗ Invalid key</span>
+        <span style={{ color: "var(--red)", fontSize: 12 }}>{t(lang, "settings.invalidKey")}</span>
       )}
     </div>
   );
 }
 
+function UsersTab() {
+  const { showToast, refresh, lang } = useApp();
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [active, setActive] = useState<UserProfile | null>(null);
+  const [autoLogin, setAutoLogin] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const colors = ["#E1332D", "#4361EE", "#7209B7", "#F72585", "#1DB954", "#FF6B35", "#06D6A0", "#118AB2"];
+
+  const load = async () => {
+    try {
+      const [known, profile, auto] = await Promise.all([
+        api.getKnownUsers(),
+        api.getUserProfile(),
+        api.getAutoLogin(),
+      ]);
+      setUsers(known);
+      setActive(profile);
+      setAutoLogin(auto);
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const create = async () => {
+    const name = window.prompt(t(lang, "users.createName"), "");
+    if (!name || !name.trim()) return;
+    setBusy(true);
+    try {
+      await api.createUser(name.trim());
+      await load();
+      await refresh();
+      showToast(`${t(lang, "toast.createdUser")} ${name.trim()}`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const switchTo = async (name: string) => {
+    if (active?.display_name === name) return;
+    setBusy(true);
+    try {
+      await api.switchUser(name);
+      await load();
+      await refresh();
+      showToast(`${t(lang, "toast.switched")} ${name}`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (name: string) => {
+    if (!window.confirm(`${t(lang, "users.deleteConfirm1")} «${name}» ${t(lang, "users.deleteConfirm2")}`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.deleteUser(name);
+      if (autoLogin === name) setAutoLogin(null);
+      await load();
+      await refresh();
+      showToast(t(lang, "toast.deleted"));
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportUser = async () => {
+    const destination = window.prompt(t(lang, "users.exportPrompt"), "");
+    if (!destination || !destination.trim()) return;
+    setBusy(true);
+    try {
+      const path = await api.exportUser(destination.trim());
+      showToast(`${t(lang, "toast.exported")} ${path}`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importUser = async () => {
+    const source = window.prompt(t(lang, "users.importPrompt"), "");
+    if (!source || !source.trim()) return;
+    setBusy(true);
+    try {
+      const profile = await api.importUser(source.trim());
+      await load();
+      await refresh();
+      showToast(`${t(lang, "toast.imported")} ${profile.display_name}`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const backup = async () => {
+    setBusy(true);
+    try {
+      const path = await api.backupUser();
+      showToast(`${t(lang, "toast.backup")} ${path}`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearRemember = async () => {
+    try {
+      await api.clearAutoLogin();
+      setAutoLogin(null);
+      showToast(t(lang, "toast.autoLoginReset"));
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  return (
+    <>
+      <div className="sett-hd">
+        <div className="sett-title">{t(lang, "users.title")}</div>
+        <div className="sett-sub">{t(lang, "users.sub")}</div>
+      </div>
+
+      <div className="group">
+        <div className="group-hd">
+          <span className="group-title">{t(lang, "users.list")}</span>
+          <button className="btn btn-primary btn-sm" onClick={create} disabled={busy}>
+            {t(lang, "users.create")}
+          </button>
+        </div>
+        <div className="panel">
+          {users.map((u) => {
+            const isActive = active?.id === u.id;
+            return (
+              <div key={u.id} className="svc-row">
+                <div className="svc-logo" style={{ background: colors[users.indexOf(u) % colors.length], color: "#fff" }}>
+                  {u.display_name.slice(0, 1).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{u.display_name}</div>
+                  <div className="set-desc" style={{ marginTop: 2 }}>
+                    {t(lang, "users.created")}: {formatDate(u.created_at_ms)}
+                  </div>
+                </div>
+                {isActive ? (
+                  <span className="badge ok">
+                    <span className="bdot" />
+                    {t(lang, "users.active")}
+                  </span>
+                ) : (
+                  <div className="btns">
+                    <button className="btn btn-outline btn-sm" onClick={() => switchTo(u.display_name)} disabled={busy}>
+                      {t(lang, "users.open")}
+                    </button>
+                    <button className="btn btn-danger btn-sm" onClick={() => remove(u.display_name)} disabled={busy}>
+                      {t(lang, "users.delete")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {users.length === 0 && (
+            <div className="set-desc" style={{ padding: 12 }}>
+              {t(lang, "users.none")}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="group">
+        <div className="group-hd">
+          <span className="group-title">{t(lang, "users.autoLogin")}</span>
+        </div>
+        <div className="panel">
+          <div className="set-row">
+            <div className="set-cell">
+              <div className="set-title">{t(lang, "users.autoLoginTitle")}</div>
+              <div className="set-desc">
+                {autoLogin
+                  ? `${t(lang, "users.autoLogin.saved")} ${autoLogin}`
+                  : t(lang, "users.autoLogin.none")}
+              </div>
+            </div>
+            <div className="btns">
+              <button className="btn btn-outline btn-sm" onClick={clearRemember} disabled={!autoLogin}>
+                {t(lang, "users.autoLogin.reset")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="group">
+        <div className="group-hd">
+          <span className="group-title">{t(lang, "users.transfer")}</span>
+        </div>
+        <div className="panel">
+          <div className="set-row">
+            <div className="set-cell">
+              <div className="set-title">{t(lang, "users.export")}</div>
+              <div className="set-desc">{t(lang, "users.export.desc")}</div>
+            </div>
+            <div className="btns">
+              <button className="btn btn-ghost btn-sm" onClick={exportUser} disabled={busy}>
+                {t(lang, "users.exportAction")}
+              </button>
+            </div>
+          </div>
+          <div className="set-row">
+            <div className="set-cell">
+              <div className="set-title">{t(lang, "users.import")}</div>
+              <div className="set-desc">{t(lang, "users.import.desc")}</div>
+            </div>
+            <div className="btns">
+              <button className="btn btn-ghost btn-sm" onClick={importUser} disabled={busy}>
+                {t(lang, "users.importAction")}
+              </button>
+            </div>
+          </div>
+          <div className="set-row">
+            <div className="set-cell">
+              <div className="set-title">{t(lang, "users.backup")}</div>
+              <div className="set-desc">{t(lang, "users.backup.desc")}</div>
+            </div>
+            <div className="btns">
+              <button className="btn btn-outline btn-sm" onClick={backup} disabled={busy}>
+                {t(lang, "users.backupAction")}
+              </button>
+            </div>
+          </div>
+          {active && (
+            <div className="set-row">
+              <div className="set-cell">
+                <div className="set-title">{t(lang, "users.profile")}</div>
+                <div className="set-desc">
+                  ID: {active.id} · {t(lang, "users.formatVersion")}: {active.format_version} ·{" "}
+                  {t(lang, "users.updated")}: {formatDate(active.updated_at_ms)}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function PlaybackSourceBlock() {
+  const { showToast, lang, state } = useApp();
+  const [source, setSource] = useState<string>("youtube_music");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void api.getSpotifyPlaybackSource().then(setSource).catch(() => {});
+  }, []);
+
+  const isSpotifyConnected = state?.providers.some(
+    (p) => p.kind === "spotify" && p.connected,
+  );
+  const ytAvailable =
+    state?.providers.some((p) => p.kind === "youtube_music" && p.connected) ?? true;
+  const deezerAvailable =
+    state?.providers.some((p) => p.kind === "deezer" && p.connected) ?? false;
+  const autoAvailable = deezerAvailable || ytAvailable;
+
+  const choose = async (key: string) => {
+    setSaving(true);
+    try {
+      await api.setSpotifyPlaybackSource(key);
+      setSource(key);
+      showToast(t(lang, "settings.playbackSource.saved"));
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const options = [
+    {
+      key: "auto",
+      label: t(lang, "settings.playbackSource.auto"),
+      badge: "Deezer → YouTube Music",
+      available: autoAvailable,
+    },
+    {
+      key: "deezer",
+      label: t(lang, "settings.playbackSource.deezer"),
+      badge: null,
+      available: deezerAvailable,
+    },
+    {
+      key: "youtube_music",
+      label: t(lang, "settings.playbackSource.yt"),
+      badge: null,
+      available: ytAvailable,
+    },
+  ];
+
+  return (
+    <div className="group">
+      <div className="group-hd">
+        <span className="group-title">{t(lang, "settings.playbackSource")}</span>
+      </div>
+      <div className="panel">
+        <div className="svc-row" style={{ borderBottom: "none" }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>♪</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600 }}>{t(lang, "settings.playbackSource")}</div>
+            <div className="set-desc" style={{ marginTop: 2 }}>
+              {isSpotifyConnected
+                ? t(lang, "settings.playbackSource.sub")
+                : t(lang, "settings.notConnected") + " — Spotify"}
+            </div>
+          </div>
+        </div>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 20px 16px" }}
+        >
+          {options.map((opt) => (
+            <button
+              key={opt.key}
+              className="btn btn-outline btn-sm"
+              style={{
+                justifyContent: "space-between",
+                borderColor: source === opt.key ? "var(--border3)" : undefined,
+                color: source === opt.key ? "var(--text)" : undefined,
+                opacity: opt.available ? 1 : 0.45,
+              }}
+              disabled={saving || !opt.available || !isSpotifyConnected}
+              onClick={() => void choose(opt.key)}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {source === opt.key ? "◉" : "○"} {opt.label}
+              </span>
+              <span style={{ fontSize: 11, color: "var(--text3)" }}>
+                {opt.available ? (opt.badge ?? "") : t(lang, "settings.playbackSource.unavailable")}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PROVIDER_OPTIONS = [
+  { key: "soundcloud", label: "SoundCloud" },
+  { key: "deezer", label: "Deezer" },
+  { key: "yandex", label: "Yandex" },
+  { key: "spotify", label: "Spotify" },
+  { key: "you_tube_music", label: "YouTube Music" },
+];
+
+function RecommendationsTab() {
+  const { showToast, lang } = useApp();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [allProviders, setAllProviders] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    try {
+      const val = await api.getRecommendationProviders();
+      if (val === "all" || !val) {
+        setAllProviders(true);
+        setSelected(PROVIDER_OPTIONS.map((o) => o.key));
+      } else {
+        setAllProviders(false);
+        setSelected(val.split(","));
+      }
+    } catch {
+      setAllProviders(true);
+      setSelected(PROVIDER_OPTIONS.map((o) => o.key));
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const toggleProvider = (key: string) => {
+    if (allProviders) return;
+    setSelected((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const val = allProviders ? "all" : selected.join(",");
+      await api.setRecommendationProviders(val);
+      showToast(allProviders ? "Все платформы" : selected.join(", "));
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="sett-hd">
+        <div className="sett-title">{t(lang, "settings.recommendations")}</div>
+        <div className="sett-sub">{t(lang, "settings.recommendations.sub")}</div>
+      </div>
+      <div className="group">
+        <div className="group-hd">
+          <span className="group-title">{t(lang, "settings.recommendations")}</span>
+        </div>
+        <div className="panel">
+          <div className="svc-row">
+            <div style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 16 }}>★</span>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>{t(lang, "recommendations.allTogether")}</div>
+              <div className="set-desc" style={{ marginTop: 2 }}>
+                {t(lang, "recommendations.allConnected")}
+              </div>
+            </div>
+            <div className="chips" style={{ gap: 4, flexWrap: "wrap" }}>
+              <button
+                className={`chip ${allProviders ? "active" : ""}`}
+                style={allProviders ? { borderColor: "var(--border3)", color: "var(--text)" } : undefined}
+                onClick={() => {
+                  setAllProviders(true);
+                  setSelected(PROVIDER_OPTIONS.map((o) => o.key));
+                }}
+              >
+                {t(lang, "recommendations.modeAll")}
+              </button>
+              <button
+                className={`chip ${!allProviders ? "active" : ""}`}
+                style={!allProviders ? { borderColor: "var(--border3)", color: "var(--text)" } : undefined}
+                onClick={() => setAllProviders(false)}
+              >
+                {t(lang, "recommendations.modeCustom")}
+              </button>
+            </div>
+          </div>
+          {!allProviders &&
+            PROVIDER_OPTIONS.map((opt) => {
+              const on = selected.includes(opt.key);
+              const colors: Record<string, string> = {
+                soundcloud: "#F50", deezer: "#A238FF", yandex: "#FC0", spotify: "#1DB954", youtube_music: "#FF0000",
+              };
+              return (
+                <div key={opt.key} className="svc-row" style={{ borderBottom: "none" }}>
+                  <div style={{ width: 58, height: 58, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: colors[opt.key] }}>
+                    <PlatformIcon kind={opt.key as "soundcloud"|"deezer"|"yandex"|"spotify"|"you_tube_music"} size={REC_ICON_SIZE[opt.key] ?? 40} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{opt.label}</div>
+                    <div className="set-desc" style={{ marginTop: 2 }}>
+                      {on ? t(lang, "recommendations.on") : t(lang, "recommendations.off")}
+                    </div>
+                  </div>
+                  <button
+                    className={`chip ${on ? "active" : ""}`}
+                    style={on ? { borderColor: "var(--border3)", color: "var(--text)" } : { opacity: 0.6 }}
+                    onClick={() => toggleProvider(opt.key)}
+                  >
+                    {on ? t(lang, "recommendations.onShort") : t(lang, "recommendations.offShort")}
+                  </button>
+                </div>
+              );
+            })}
+          <div className="btns" style={{ justifyContent: "flex-end", padding: "12px 20px", borderTop: "1px solid var(--border)" }}>
+            <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
+              {saving ? "…" : t(lang, "common.save")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function Settings() {
-  const { state, showToast, refresh } = useApp();
+  const { state, showToast, refresh, lang } = useApp();
   const [tab, setTab] = useState<Tab>("services");
   const [confirm, setConfirm] = useState<ConfirmTarget>(null);
   const [downloadDir, setDownloadDir] = useState("");
@@ -289,8 +913,8 @@ export function Settings() {
     <div className="view">
       <div className="view-hd">
         <div>
-          <div className="view-title">Settings</div>
-          <div className="view-sub">Configure services, playback and storage.</div>
+          <div className="view-title">{t(lang, "settings.title")}</div>
+          <div className="view-sub">{t(lang, "settings.sub")}</div>
         </div>
       </div>
 
@@ -301,7 +925,7 @@ export function Settings() {
             className={`sett-item ${tab === "services" ? "active" : ""}`}
             onClick={() => setTab("services")}
           >
-            <span>Services</span>
+            <span>{t(lang, "settings.services")}</span>
             {state.providers.some((p) => !p.connected && p.has_credentials) && (
               <span className="sett-dot" />
             )}
@@ -310,13 +934,25 @@ export function Settings() {
             className={`sett-item ${tab === "playback" ? "active" : ""}`}
             onClick={() => setTab("playback")}
           >
-            <span>Playback</span>
+            <span>{t(lang, "settings.playback")}</span>
           </button>
           <button
             className={`sett-item ${tab === "storage" ? "active" : ""}`}
             onClick={() => setTab("storage")}
           >
-            <span>Storage</span>
+            <span>{t(lang, "settings.storage")}</span>
+          </button>
+          <button
+            className={`sett-item ${tab === "users" ? "active" : ""}`}
+            onClick={() => setTab("users")}
+          >
+            <span>{t(lang, "settings.users")}</span>
+          </button>
+          <button
+            className={`sett-item ${tab === "recommendations" ? "active" : ""}`}
+            onClick={() => setTab("recommendations")}
+          >
+            <span>{t(lang, "settings.recommendations")}</span>
           </button>
         </div>
 
@@ -324,12 +960,12 @@ export function Settings() {
           {tab === "services" && (
             <>
               <div className="sett-hd">
-                <div className="sett-title">Services</div>
-                <div className="sett-sub">Connect your music sources. Keys are validated and stored locally.</div>
+                <div className="sett-title">{t(lang, "settings.services")}</div>
+                <div className="sett-sub">{t(lang, "settings.services.sub")}</div>
               </div>
               <div className="group">
                 <div className="group-hd">
-                  <span className="group-title">Connected accounts</span>
+                  <span className="group-title">{t(lang, "settings.connectedAccounts")}</span>
                 </div>
                 <div className="panel">
                   {state.providers.map((p) => (
@@ -337,27 +973,57 @@ export function Settings() {
                   ))}
                 </div>
               </div>
+              <PlaybackSourceBlock />
               <div className="group">
                 <div className="group-hd">
-                  <span className="group-title">Spotify proxy</span>
+                  <span className="group-title">{t(lang, "settings.proxy")}</span>
                 </div>
                 <div className="panel">
                   <div className="set-row">
                     <div className="set-cell">
-                      <div className="set-title">Прокси</div>
+                      <div className="set-title">{t(lang, "settings.proxy")}</div>
                       <div className="set-desc" style={{ wordBreak: "break-all" }}>
-                        {spotifyProxy || "Не задан (прямое соединение)"}
+                        {spotifyProxy || t(lang, "settings.proxy.none")}
                       </div>
                     </div>
                     <div className="btns">
                       <button className="btn btn-ghost btn-sm" onClick={changeSpotifyProxy}>
-                        Изменить
+                        {t(lang, "settings.proxy.change")}
                       </button>
                       {spotifyProxyChanged && (
                         <button className="btn btn-outline btn-sm" onClick={resetSpotifyProxy}>
-                          Сбросить
+                          {t(lang, "settings.proxy.reset")}
                         </button>
                       )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="group">
+                <div className="group-hd">
+                  <span className="group-title">{t(lang, "settings.language")}</span>
+                </div>
+                <div className="panel">
+                  <div className="set-row">
+                    <div className="set-cell">
+                      <div className="set-title">{t(lang, "settings.language")}</div>
+                      <div className="set-desc">{t(lang, "settings.language.desc")}</div>
+                    </div>
+                    <div className="select">
+                      <select
+                        value={lang}
+                        onChange={async (e) => {
+                          try {
+                            await api.setLanguage(e.target.value);
+                            await refresh();
+                          } catch (error) {
+                            showToast(String(error), true);
+                          }
+                        }}
+                      >
+                        <option value="ru">Русский</option>
+                        <option value="en">English</option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -368,17 +1034,17 @@ export function Settings() {
           {tab === "playback" && (
             <>
               <div className="sett-hd">
-                <div className="sett-title">Playback</div>
+                <div className="sett-title">{t(lang, "settings.playback.title")}</div>
                 <div className="sett-sub">Repeat behavior.</div>
               </div>
               <div className="group">
                 <div className="group-hd">
-                  <span className="group-title">Repeat</span>
+                  <span className="group-title">{t(lang, "settings.repeat")}</span>
                 </div>
                 <div className="panel">
                   <div className="set-row">
                     <div className="set-cell">
-                      <div className="set-title">Repeat mode</div>
+                      <div className="set-title">{t(lang, "settings.repeatMode")}</div>
                       <div className="set-desc">Off / All / One.</div>
                     </div>
                     <div className="select">
@@ -394,9 +1060,9 @@ export function Settings() {
                           }
                         }}
                       >
-                        <option value="off">Off</option>
-                        <option value="all">All</option>
-                        <option value="one">One</option>
+                        <option value="off">{t(lang, "settings.repeat.off")}</option>
+                        <option value="all">{t(lang, "settings.repeat.all")}</option>
+                        <option value="one">{t(lang, "settings.repeat.one")}</option>
                       </select>
                     </div>
                   </div>
@@ -408,19 +1074,19 @@ export function Settings() {
           {tab === "storage" && (
             <>
               <div className="sett-hd">
-                <div className="sett-title">Storage</div>
-                <div className="sett-sub">Downloads and local data.</div>
+                <div className="sett-title">{t(lang, "settings.storage")}</div>
+                <div className="sett-sub">{t(lang, "settings.storage.sub")}</div>
               </div>
               <div className="group">
                 <div className="group-hd">
-                  <span className="group-title">Downloads</span>
+                  <span className="group-title">{t(lang, "settings.downloads")}</span>
                 </div>
                 <div className="panel">
                   <div className="set-row">
                     <div className="set-cell">
-                      <div className="set-title">Папка загрузок</div>
+                      <div className="set-title">{t(lang, "settings.downloadDir")}</div>
                       <div className="set-desc" style={{ wordBreak: "break-all" }}>
-                        {downloadDir || "Загрузка…"}
+                        {downloadDir || t(lang, "settings.loading")}
                       </div>
                     </div>
                     <div className="btns">
@@ -428,20 +1094,20 @@ export function Settings() {
                         className="btn btn-ghost btn-sm"
                         onClick={changeDownloadDir}
                       >
-                        Изменить
+                        {t(lang, "settings.proxy.change")}
                       </button>
                       {downloadDirChanged && (
                         <button className="btn btn-outline btn-sm" onClick={resetDownloadDir}>
-                          Сбросить
+                          {t(lang, "settings.proxy.reset")}
                         </button>
                       )}
                     </div>
                   </div>
                   <div className="set-row">
                     <div className="set-cell">
-                      <div className="set-title">Папка кэша треков</div>
+                      <div className="set-title">{t(lang, "settings.cacheDir")}</div>
                       <div className="set-desc" style={{ wordBreak: "break-all" }}>
-                        {cacheDir || "Загрузка…"}
+                        {cacheDir || t(lang, "settings.loading")}
                       </div>
                     </div>
                     <div className="btns">
@@ -449,7 +1115,7 @@ export function Settings() {
                         className="btn btn-ghost btn-sm"
                         onClick={changeCacheDir}
                       >
-                        Изменить
+                        {t(lang, "settings.proxy.change")}
                       </button>
                       {cacheDirChanged && (
                         <button className="btn btn-outline btn-sm" onClick={resetCacheDir}>
@@ -462,39 +1128,40 @@ export function Settings() {
               </div>
               <div className="group">
                 <div className="group-hd">
-                  <span className="group-title">Reset</span>
+                  <span className="group-title">{t(lang, "settings.reset")}</span>
                 </div>
                 <div className="panel">
                   <div className="set-row">
                     <div className="set-cell">
-                      <div className="set-title">Reset settings</div>
-                      <div className="set-desc">Restore default volume and server URL.</div>
+                      <div className="set-title">{t(lang, "settings.resetSettings")}</div>
+                      <div className="set-desc">{t(lang, "settings.resetSettingsDesc")}</div>
                     </div>
                     <button
                       className="btn btn-danger btn-sm"
                       onClick={() => setConfirm("settings")}
                     >
-                      Reset settings
+                      {t(lang, "settings.resetSettings")}
                     </button>
                   </div>
                   <div className="set-row">
                     <div className="set-cell">
-                      <div className="set-title">Reset application data</div>
-                      <div className="set-desc">
-                        Wipe library, playlists, queue and history. Credentials stay.
-                      </div>
+                      <div className="set-title">{t(lang, "settings.wipeData")}</div>
+                      <div className="set-desc">{t(lang, "settings.wipeDataDesc")}</div>
                     </div>
                     <button
                       className="btn btn-danger btn-sm"
                       onClick={() => setConfirm("data")}
                     >
-                      Wipe data
+                      {t(lang, "settings.wipeData")}
                     </button>
                   </div>
                 </div>
               </div>
             </>
           )}
+
+          {tab === "users" && <UsersTab />}
+          {tab === "recommendations" && <RecommendationsTab />}
         </div>
       </div>
 
@@ -513,20 +1180,20 @@ export function Settings() {
           >
             <div className="sett-title" style={{ fontSize: 18 }}>
               {confirm === "data"
-                ? "Wipe application data?"
-                : "Reset settings?"}
+                ? t(lang, "settings.confirmWipe")
+                : t(lang, "settings.confirmReset")}
             </div>
             <div className="set-desc">
               {confirm === "data"
-                ? "This will permanently delete all your playlists, queue, history and library. Credentials stay. Are you sure?"
-                : "This will restore default settings (volume, server URL). Are you sure?"}
+                ? t(lang, "settings.confirmWipeDesc")
+                : t(lang, "settings.confirmResetDesc")}
             </div>
             <div className="btns" style={{ justifyContent: "flex-end", marginTop: 4 }}>
               <button className="btn btn-outline" onClick={() => setConfirm(null)}>
-                Cancel
+                {t(lang, "common.cancel")}
               </button>
               <button className="btn btn-danger" onClick={doConfirm}>
-                Yes, do it
+                {t(lang, "settings.yes")}
               </button>
             </div>
           </div>

@@ -1,13 +1,15 @@
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
-import { artistLabel, trackKey, dedupe } from "../lib/utils";
+import { WaveSection } from "../components/WaveSection";
+import { trackKey, dedupe } from "../lib/utils";
+import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import { Artwork } from "../components/Artwork";
 import { PlaylistCover } from "../components/PlaylistCover";
 import * as api from "../api/commands";
 
 export function Home() {
-  const { state, playTracks, navigateTo, showToast } = useApp();
+  const { state, playTracks, navigateTo, showToast, lang } = useApp();
   if (!state) return null;
 
   const recent = dedupe(state.history.map((h) => h.track)).slice(0, 5);
@@ -45,34 +47,23 @@ export function Home() {
     }
   };
 
-  const playAll = async () => {
-    try {
-      await api.playTracks(state.library, 0);
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
   return (
     <div className="view">
       <div className="view-hd">
         <div>
-          <div className="view-title">Good evening</div>
-          <div className="view-sub">Music from SoundCloud, Yandex, Deezer and Spotify, together.</div>
-        </div>
-        <div className="btns">
-          <button className="btn btn-primary" onClick={playAll}>
-            ▶ Play all
-          </button>
+          <div className="view-title">{t(lang, "home.title")}</div>
+          <div className="view-sub">{t(lang, "home.sub")}</div>
         </div>
       </div>
+
+      <WaveSection />
 
       {recent.length > 0 && (
         <div className="section">
           <div className="sec-head">
-            <span className="sec-title">Continue Listening</span>
+            <span className="sec-title">{t(lang, "home.continue")}</span>
             <span className="sec-link" onClick={() => navigateTo("recent")}>
-              See all
+              {t(lang, "home.seeAll")}
             </span>
           </div>
           <div className="row-scroll">
@@ -98,15 +89,20 @@ export function Home() {
                   isPlaying={trackKey(track) === nowKey && isLive}
                 />
                 <div className="card-t">{track.title}</div>
-                <div
-                  className="card-s"
-                  style={{ cursor: track.artists[0] ? "pointer" : undefined }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (track.artists[0]) navigateTo("artist", { artist: track.artists[0], provider: track.provider });
-                  }}
-                >
-                  {artistLabel(track.artists)}
+                <div className="card-s">
+                  {track.artists.map((artist, i) => (
+                    <span
+                      key={`${artist}-${i}`}
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateTo("artist", { artist, provider: track.provider });
+                      }}
+                    >
+                      {artist}
+                      {i < track.artists.length - 1 ? ", " : ""}
+                    </span>
+                  ))}
                 </div>
               </div>
             ))}
@@ -117,9 +113,9 @@ export function Home() {
       {playlists.length > 0 && (
         <div className="section">
           <div className="sec-head">
-            <span className="sec-title">Your Playlists</span>
+            <span className="sec-title">{t(lang, "home.yourPlaylists")}</span>
             <span className="sec-link" onClick={() => navigateTo("playlists")}>
-              See all
+              {t(lang, "home.seeAll")}
             </span>
           </div>
           <div className="row-scroll">
@@ -137,7 +133,7 @@ export function Home() {
                   />
                   <button
                     className="card-play"
-                    title="Играть"
+                    title={t(lang, "common.play")}
                     onClick={(e) => {
                       e.stopPropagation();
                       void playPlaylist(p.id);
@@ -147,7 +143,7 @@ export function Home() {
                   </button>
                 </div>
                 <div className="card-t">{p.title}</div>
-                <div className="card-s">{p.tracks.length} tracks</div>
+                <div className="card-s">{p.tracks.length} {t(lang, "common.tracks")}</div>
               </div>
             ))}
           </div>
@@ -157,9 +153,9 @@ export function Home() {
       {library.length > 0 && (
         <div className="section">
           <div className="sec-head">
-            <span className="sec-title">From your Library</span>
-            <span className="sec-link" onClick={() => navigateTo("library")}>
-              See all
+            <span className="sec-title">{t(lang, "home.fromLibrary")}</span>
+            <span className="sec-link" onClick={() => navigateTo("favorites")}>
+              {t(lang, "home.seeAll")}
             </span>
           </div>
           <div className="panel" style={{ padding: "12px 8px" }}>
@@ -182,11 +178,8 @@ export function Home() {
       {library.length === 0 && recent.length === 0 && (
         <div className="empty">
           <div className="ico">♫</div>
-          <div className="t1">Nothing here yet</div>
-          <div className="t2">
-            Search for music to play, connect a source in Settings, or add tracks to your
-            library.
-          </div>
+          <div className="t1">{t(lang, "home.empty1")}</div>
+          <div className="t2">{t(lang, "home.empty2")}</div>
         </div>
       )}
     </div>

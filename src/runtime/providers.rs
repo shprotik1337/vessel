@@ -2,17 +2,17 @@ use crate::{
     config::AppConfig,
     provider::{
         ProviderRegistry, deezer::DeezerProvider, soundcloud::SoundCloudProvider,
-        spotify::SpotifyProvider, yandex::YandexProvider,
+        spotify::SpotifyProvider, yandex::YandexProvider, youtube::YouTubeMusicProvider,
     },
     secrets::{SecretKey, SecretStore},
 };
 
-pub(super) struct ProviderSetup {
-    pub(super) registry: ProviderRegistry,
-    pub(super) notices: Vec<String>,
+pub struct ProviderSetup {
+    pub registry: ProviderRegistry,
+    pub notices: Vec<String>,
 }
 
-pub(super) fn build_registry(config: &AppConfig, secrets: &SecretStore) -> ProviderSetup {
+pub fn build_registry(config: &AppConfig, secrets: &SecretStore) -> ProviderSetup {
     let mut registry = ProviderRegistry::default();
     let mut notices = Vec::new();
 
@@ -56,9 +56,45 @@ pub(super) fn build_registry(config: &AppConfig, secrets: &SecretStore) -> Provi
     {
         let proxy = config.spotify_proxy.as_deref();
         match SpotifyProvider::with_proxy(sp_dc, proxy) {
-            Ok(provider) => registry.register(provider),
+            Ok(mut provider) => {
+                if let Some(refresh) = load_secret(
+                    secrets,
+                    SecretKey::SpotifyOAuthRefreshToken,
+                    &mut notices,
+                ) {
+                    provider.set_oauth_refresh(&refresh);
+                }
+                if let Ok(resolver) = crate::provider::youtube::YoutubeResolver::new() {
+                    provider.set_youtube_resolver(resolver);
+                }
+                registry.register(provider);
+            }
             Err(error) => notices.push(format!("Spotify не настроен: {error}")),
         }
+    } else if config.spotify_enabled
+        && let Some(refresh) =
+            load_secret(secrets, SecretKey::SpotifyOAuthRefreshToken, &mut notices)
+                .filter(|value| !value.trim().is_empty())
+    {
+        // Если есть только OAuth refresh_token (без sp_dc) — создаём провайдера с ним
+        let proxy = config.spotify_proxy.as_deref();
+        match SpotifyProvider::with_proxy("oauth-only", proxy) {
+            Ok(mut provider) => {
+                provider.set_oauth_refresh(&refresh);
+                if let Ok(resolver) = crate::provider::youtube::YoutubeResolver::new() {
+                    provider.set_youtube_resolver(resolver);
+                }
+                registry.register(provider);
+            }
+            Err(error) => notices.push(format!("Spotify не настроен: {error}")),
+        }
+    }
+
+    // YouTube Music всегда включён: поиск и стримы работают анонимно
+    // (Kopuz-пайплайн: WEB_REMIX+decipher+pot), cookie не требуется.
+    match YouTubeMusicProvider::new() {
+        Ok(provider) => registry.register(provider),
+        Err(error) => notices.push(format!("YouTube Music не настроен: {error}")),
     }
 
     ProviderSetup { registry, notices }
@@ -109,3 +145,5 @@ mod tests {
         );
     }
 }
+
+

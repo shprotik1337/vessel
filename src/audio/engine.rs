@@ -34,6 +34,8 @@ pub struct AudioEngine {
     volume: Arc<AtomicU32>,
     played_samples: Arc<AtomicU64>,
     buffered_samples: Arc<AtomicU64>,
+    /// Длительность текущего трека от декодера (0 = неизвестна)
+    duration_ms: Arc<AtomicU64>,
     output_rate: u32,
     output_channels: usize,
     output_name: String,
@@ -61,6 +63,7 @@ impl AudioEngine {
         let volume = Arc::new(AtomicU32::new(volume_percent.min(100) as u32));
         let played_samples = Arc::new(AtomicU64::new(0));
         let buffered_samples = Arc::new(AtomicU64::new(0));
+        let duration_ms = Arc::new(AtomicU64::new(0));
 
         // В колбэке нельзя устраивать сходку с мьютексами, аудиодрайвер за такое этапирует звук в лагерь 🫩
         let stream = build_stream(
@@ -74,6 +77,7 @@ impl AudioEngine {
             Arc::clone(&volume),
             Arc::clone(&played_samples),
             Arc::clone(&buffered_samples),
+            Arc::clone(&duration_ms),
         )?;
         stream.play().context("не удалось запустить аудиовыход")?;
 
@@ -88,6 +92,7 @@ impl AudioEngine {
             volume,
             played_samples,
             buffered_samples,
+            duration_ms,
             output_rate,
             output_channels,
             output_name,
@@ -156,6 +161,7 @@ impl AudioEngine {
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.played_samples.store(0, Ordering::Release);
         self.buffered_samples.store(0, Ordering::Release);
+        self.duration_ms.store(0, Ordering::Release);
         if let Ok(mut current) = self.source.lock() {
             *current = None;
         }
@@ -177,6 +183,7 @@ impl AudioEngine {
                 self.buffered_samples.load(Ordering::Acquire),
                 samples_per_second,
             ),
+            duration_ms: self.duration_ms.load(Ordering::Acquire),
             paused: self.paused.load(Ordering::Acquire),
             volume_percent: self.volume.load(Ordering::Acquire) as u8,
             output_name: self.output_name.clone(),
@@ -202,6 +209,7 @@ impl AudioEngine {
         let events = self.event_tx.clone();
         let current_generation = Arc::clone(&self.generation);
         let buffered_samples = Arc::clone(&self.buffered_samples);
+        let duration_ms = Arc::clone(&self.duration_ms);
         let output_rate = self.output_rate;
         let output_channels = self.output_channels;
         let _ = events.send(AudioEvent::Buffering);
@@ -216,6 +224,7 @@ impl AudioEngine {
                 output_channels,
                 &chunks,
                 &buffered_samples,
+                &duration_ms,
             );
             if current_generation.load(Ordering::Acquire) != generation {
                 return;

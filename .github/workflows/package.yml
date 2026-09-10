@@ -1,10 +1,10 @@
-name: Пакеты
+﻿name: Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Версия из Cargo.toml без v
+        description: Версия релиза (например 1.0.0)
         required: true
         default: 1.0.0
         type: string
@@ -14,91 +14,60 @@ permissions:
 
 jobs:
   windows:
-    name: Scoop и Windows zip
+    name: Windows installer
     runs-on: windows-latest
     env:
       PACKAGE_VERSION: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
       - uses: dtolnay/rust-toolchain@stable
+
       - uses: Swatinem/rust-cache@v2
+
+      - name: Настройка Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Сверка версии
         shell: pwsh
         run: |
-          $cargoVersion = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
-          if ($cargoVersion -ne $env:PACKAGE_VERSION) { throw "Cargo.toml содержит $cargoVersion" }
-      - name: Сборка
-        run: cargo build --locked --release
-      - name: Проверка бинарника
-        run: |
-          target\release\vessel.exe --version
-          target\release\np.exe --version
-      - name: Упаковка
+          $tauri = Get-Content "apps/vessel-gui/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          if ($tauri.version -ne $env:PACKAGE_VERSION) {
+            throw "tauri.conf.json содержит $($tauri.version), ожидалась $env:PACKAGE_VERSION"
+          }
+
+      - name: Тесты
+        run: cargo test --lib --locked -j 2
+
+      - name: Сборка installer
+        working-directory: apps/vessel-gui
+        run: npm run tauri build
+
+      - name: Проверка артефакта
         shell: pwsh
-        run: .\packaging\windows\package.ps1 -Binary target\release\vessel.exe -NpBinary target\release\np.exe -Version $env:PACKAGE_VERSION
-      - uses: actions/upload-artifact@v7
-        with:
-          name: vessel-windows-x86_64-${{ inputs.version }}
-          path: |
-            dist/vessel-windows-x86_64.zip
-            dist/vessel.json
-          if-no-files-found: error
-          retention-days: 14
+        run: |
+          $path = "target/release/bundle/nsis/Vessel_${env:PACKAGE_VERSION}_x64-setup.exe"
+          if (-not (Test-Path $path)) { throw "installer не найден: $path" }
+          "{0:N1} MB" -f ((Get-Item $path).Length / 1MB)
 
-  linux:
-    name: Deb и Linux tar.gz
-    runs-on: ubuntu-latest
-    env:
-      PACKAGE_VERSION: ${{ inputs.version }}
-    steps:
-      - uses: actions/checkout@v7
+      - name: Публикация в Release
+        uses: softprops/action-gh-release@v2
         with:
-          persist-credentials: false
-      - name: Системные зависимости
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Сверка версии
-        run: |
-          cargo_version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-          test "$cargo_version" = "$PACKAGE_VERSION"
-      - name: Сборка
-        run: cargo build --locked --release
-      - name: Проверка бинарника
-        run: |
-          target/release/vessel --version
-          target/release/np --version
-      - name: Упаковка
-        run: bash packaging/linux/package.sh target/release/vessel target/release/np "$PACKAGE_VERSION"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: vessel-linux-x86_64-${{ inputs.version }}
-          path: |
-            dist/vessel-linux-x86_64.tar.gz
-            dist/vessel_${{ inputs.version }}_amd64.deb
-            dist/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 14
+          tag_name: v${{ inputs.version }}
+          name: Vessel ${{ inputs.version }}
+          body: |
+            ## Vessel ${{ inputs.version }}
 
-  release:
-    name: GitHub Release
-    needs: [windows, linux]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Публикация
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PACKAGE_VERSION: ${{ inputs.version }}
-        run: |
-          gh release create "v$PACKAGE_VERSION" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "vessel TUI $PACKAGE_VERSION" \
-            --notes "Первый публичный релиз TUI. np теперь сам поднимает фоновый плеер, а пакеты содержат оба бинарника."
-          gh release upload "v$PACKAGE_VERSION" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            Установщик Windows (NSIS). Запусти `Vessel_${{ inputs.version }}_x64-setup.exe` и следуй шагам установщика.
+
+            ### Требования
+            - Windows 10/11 x64
+            - WebView2 Runtime (предустановлен в Windows 11, [скачать для Windows 10](https://developer.microsoft.com/en-us/microsoft-edge/webview2/))
+          files: |
+            target/release/bundle/nsis/Vessel_${{ inputs.version }}_x64-setup.exe
+          draft: false
+          prerelease: false

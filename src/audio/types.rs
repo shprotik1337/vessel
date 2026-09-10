@@ -13,6 +13,8 @@ pub enum AudioEvent {
 pub struct AudioStatus {
     pub position_ms: u64,
     pub buffered_ms: u64,
+    /// Длительность трека, определённая декодером (0 = неизвестна)
+    pub duration_ms: u64,
     pub paused: bool,
     pub volume_percent: u8,
     pub output_name: String,

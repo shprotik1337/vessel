@@ -2,35 +2,49 @@ import { useState } from "react";
 
 import { useApp } from "../store";
 import { PlaylistCover } from "../components/PlaylistCover";
+import { PlatformIcon } from "../components/PlatformIcon";
 import { trackKey } from "../lib/utils";
+import { t } from "../i18n";
 import * as api from "../api/commands";
 
+type ImportStep =
+  | "none"
+  | "choose"
+  | "url"
+  | "provider"
+  | "target"
+  | "soundcloud-url";
+
 export function Playlists() {
-  const { state, navigateTo, showToast, refresh, playTracks } = useApp();
-  const [importOpen, setImportOpen] = useState(false);
+  const { state, navigateTo, showToast, refresh, playTracks, lang } = useApp();
+  const [importStep, setImportStep] = useState<ImportStep>("none");
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [likesProvider, setLikesProvider] = useState<"soundcloud" | "deezer" | "spotify">("deezer");
+  const [likesProfileUrl, setLikesProfileUrl] = useState("");
+  const [likesTarget, setLikesTarget] = useState<"favorites" | "playlist">("favorites");
+  const [likesPlaylistTitle, setLikesPlaylistTitle] = useState("");
 
   if (!state) return null;
 
   const createPlaylist = async () => {
-    const title = window.prompt("Playlist name:", "New Playlist");
+    const title = window.prompt(t(lang, "playlists.createName"), "New Playlist");
     if (!title || !title.trim()) return;
     try {
       await api.createPlaylist(title.trim());
       await refresh();
-      showToast(`Created: ${title.trim()}`);
+      showToast(`${t(lang, "common.created")} ${title.trim()}`);
     } catch (error) {
       showToast(String(error), true);
     }
   };
 
   const deletePl = async (id: string, title: string) => {
-    if (!window.confirm(`Delete "${title}"?`)) return;
+    if (!window.confirm(t(lang, "playlists.deleteConfirm").replace("{title}", title))) return;
     try {
       await api.deletePlaylist(id);
       await refresh();
-      showToast(`Deleted: ${title}`);
+      showToast(`${t(lang, "common.deleted")} ${title}`);
     } catch (error) {
       showToast(String(error), true);
     }
@@ -51,19 +65,76 @@ export function Playlists() {
     return tracks.some((t) => trackKey(t as never) === trackKey(state.now_playing!));
   };
 
+  const openImport = () => setImportStep("choose");
+  const closeImport = () => {
+    setImportStep("none");
+    setImportUrl("");
+    setLikesProfileUrl("");
+    setLikesPlaylistTitle("");
+  };
+
+  async function doImportUrl() {
+    const url = importUrl.trim();
+    if (!url) return;
+    setImporting(true);
+    try {
+      const pl = await api.importPlaylistUrl(url);
+      await refresh();
+      closeImport();
+      showToast(`${t(lang, "common.imported")} ${pl.title} (${pl.tracks.length} ${t(lang, "playlists.tracks")})`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function doImportLikes() {
+    if (likesProvider === "soundcloud" && !likesProfileUrl.trim()) {
+      showToast(t(lang, "playlists.likesProfileHint"), true);
+      return;
+    }
+    setImporting(true);
+    try {
+      const title =
+        likesTarget === "playlist"
+          ? likesPlaylistTitle.trim() || `Лайки ${likesProvider === "deezer" ? "Deezer" : likesProvider === "spotify" ? "Spotify" : "SoundCloud"}`
+          : undefined;
+      const count = await api.importLikes(
+        likesProvider,
+        likesTarget,
+        likesProvider === "soundcloud" ? likesProfileUrl.trim() : null,
+        title,
+      );
+      await refresh();
+      closeImport();
+      showToast(`${t(lang, "playlists.likesImported")} ${count}`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const providers = [
+    { key: "soundcloud", label: "SoundCloud" },
+    { key: "deezer", label: "Deezer" },
+    { key: "spotify", label: "Spotify" },
+  ] as const;
+
   return (
     <div className="view">
       <div className="view-hd">
         <div>
-          <div className="view-title">Playlists</div>
-          <div className="view-sub">{state.playlists.length} playlists</div>
+          <div className="view-title">{t(lang, "playlists.title")}</div>
+          <div className="view-sub">{state.playlists.length} {t(lang, "playlists.count")}</div>
         </div>
         <div className="btns">
-          <button className="btn btn-ghost" onClick={() => setImportOpen(true)}>
-            Import
+          <button className="btn btn-ghost" onClick={openImport}>
+            {t(lang, "playlists.import")}
           </button>
           <button className="btn btn-primary" onClick={createPlaylist}>
-            ＋ New
+            ＋ {t(lang, "playlists.new")}
           </button>
         </div>
       </div>
@@ -71,8 +142,8 @@ export function Playlists() {
       {state.playlists.length === 0 ? (
         <div className="empty">
           <div className="ico">♫</div>
-          <div className="t1">No playlists yet</div>
-          <div className="t2">Create a playlist or import one from SoundCloud, Deezer, Yandex or Spotify.</div>
+          <div className="t1">{t(lang, "playlists.empty1")}</div>
+          <div className="t2">{t(lang, "playlists.empty2")}</div>
         </div>
       ) : (
         <div className="grid">
@@ -94,7 +165,7 @@ export function Playlists() {
                 />
                 <button
                   className="card-play"
-                  title="Играть"
+                  title={t(lang, "common.play")}
                   onClick={(e) => {
                     e.stopPropagation();
                     void playPlaylist(p.id);
@@ -104,76 +175,230 @@ export function Playlists() {
                 </button>
               </div>
               <div className="card-t">{p.title}</div>
-              <div className="card-s">{p.tracks.length} tracks</div>
+              <div className="card-s">{p.tracks.length} {t(lang, "playlists.tracks")}</div>
             </div>
           ))}
         </div>
       )}
 
-      {importOpen && (
+      {importStep !== "none" && (
         <div className="ov show" onMouseDown={(e) => e.stopPropagation()}>
           <div
             className="playlist-picker-card"
-            style={{ width: 420 }}
+            style={{ width: 440 }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="playlist-picker-head">
-              <span className="ov-title">Import playlist</span>
-              <button className="ov-close" onClick={() => setImportOpen(false)}>
+              <span className="ov-title">
+                {importStep === "choose"
+                  ? t(lang, "playlists.importChoice")
+                  : importStep === "url"
+                    ? t(lang, "playlists.importTitle")
+                    : importStep === "provider"
+                      ? t(lang, "playlists.likesProvider")
+                      : importStep === "soundcloud-url"
+                        ? "SoundCloud"
+                        : t(lang, "playlists.likesTarget")}
+              </span>
+              <button className="ov-close" onClick={closeImport}>
                 ✕
               </button>
             </div>
             <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
-              <div className="set-desc">
-                Paste a playlist URL from SoundCloud, Deezer, Yandex Music or Spotify. It will be
-                imported and saved to your library.
-              </div>
-              <div className="input-row">
-                <input
-                  type="text"
-                  placeholder="https://soundcloud.com/user/sets/…"
-                  value={importUrl}
-                  onChange={(e) => setImportUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void doImport();
-                    if (e.key === "Escape") setImportOpen(false);
-                  }}
-                  autoFocus
-                />
-              </div>
-              <div className="btns" style={{ justifyContent: "flex-end" }}>
-                <button className="btn btn-outline" onClick={() => setImportOpen(false)}>
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={doImport}
-                  disabled={importing || !importUrl.trim()}
-                >
-                  {importing ? "Importing…" : "Import"}
-                </button>
-              </div>
+              {importStep === "choose" && (
+                <>
+                  <div className="set-desc">{t(lang, "playlists.importChoiceSub")}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button className="btn btn-primary" onClick={() => setImportStep("url")}>
+                      {t(lang, "playlists.importUrlOption")}
+                    </button>
+                    <button className="btn btn-outline" onClick={() => setImportStep("provider")}>
+                      {t(lang, "playlists.importLikesOption")}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {importStep === "url" && (
+                <>
+                  <div className="set-desc">{t(lang, "playlists.importDesc")}</div>
+                  <div className="input-row">
+                    <input
+                      type="text"
+                      placeholder="https://soundcloud.com/user/sets/…"
+                      value={importUrl}
+                      onChange={(e) => setImportUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void doImportUrl();
+                        if (e.key === "Escape") closeImport();
+                      }}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="btns" style={{ justifyContent: "space-between" }}>
+                    <button className="btn btn-ghost" onClick={() => setImportStep("choose")}>
+                      ← {t(lang, "playlists.back")}
+                    </button>
+                    <div className="btns">
+                      <button className="btn btn-outline" onClick={closeImport}>
+                        {t(lang, "common.cancel")}
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        onClick={doImportUrl}
+                        disabled={importing || !importUrl.trim()}
+                      >
+                        {importing ? t(lang, "playlists.importing") : t(lang, "playlists.import")}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {importStep === "provider" && (
+                <>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {providers.map((p) => (
+                      <button
+                        key={p.key}
+                        className="svc-row"
+                        style={{
+                          cursor: "pointer",
+                          color: "var(--text)",
+                          background: likesProvider === p.key ? "var(--track)" : "transparent",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          width: "100%",
+                          textAlign: "left",
+                          transition: "background .12s, border-color .12s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "var(--hover)";
+                          e.currentTarget.style.borderColor = "var(--text)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background =
+                            likesProvider === p.key ? "var(--track)" : "transparent";
+                          e.currentTarget.style.borderColor = "var(--border)";
+                        }}
+                        onClick={() => {
+                          setLikesProvider(p.key);
+                          setLikesProfileUrl("");
+                          setImportStep(p.key === "soundcloud" ? "soundcloud-url" : "target");
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 36,
+                            height: 36,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <PlatformIcon kind={p.key} size={26} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0, fontWeight: 600, color: "var(--text)" }}>
+                          {p.label}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="btns" style={{ justifyContent: "space-between" }}>
+                    <button className="btn btn-ghost" onClick={() => setImportStep("choose")}>
+                      ← {t(lang, "playlists.back")}
+                    </button>
+                    <button className="btn btn-outline" onClick={closeImport}>
+                      {t(lang, "common.cancel")}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {importStep === "soundcloud-url" && (
+                <>
+                  <div className="set-desc">{t(lang, "playlists.likesProfileHint")}</div>
+                  <div className="input-row">
+                    <input
+                      type="text"
+                      placeholder="https://soundcloud.com/username"
+                      value={likesProfileUrl}
+                      onChange={(e) => setLikesProfileUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") setImportStep("target");
+                      }}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="btns" style={{ justifyContent: "space-between" }}>
+                    <button className="btn btn-ghost" onClick={() => setImportStep("provider")}>
+                      ← {t(lang, "playlists.back")}
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      disabled={!likesProfileUrl.trim()}
+                      onClick={() => setImportStep("target")}
+                    >
+                      {t(lang, "common.save")}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {importStep === "target" && (
+                <>
+                  <div className="set-desc">{t(lang, "playlists.likesTarget")}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button
+                      className={`btn ${likesTarget === "favorites" ? "btn-primary" : "btn-outline"}`}
+                      onClick={() => setLikesTarget("favorites")}
+                    >
+                      {t(lang, "playlists.likesToFavorites")}
+                    </button>
+                    <button
+                      className={`btn ${likesTarget === "playlist" ? "btn-primary" : "btn-outline"}`}
+                      onClick={() => setLikesTarget("playlist")}
+                    >
+                      {t(lang, "playlists.likesToPlaylist")}
+                    </button>
+                    {likesTarget === "playlist" && (
+                      <div className="input-row">
+                        <input
+                          type="text"
+                          placeholder={t(lang, "playlists.likesPlaylistName")}
+                          value={likesPlaylistTitle}
+                          onChange={(e) => setLikesPlaylistTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void doImportLikes();
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="btns" style={{ justifyContent: "space-between" }}>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() =>
+                        setImportStep(likesProvider === "soundcloud" ? "soundcloud-url" : "provider")
+                      }
+                    >
+                      ← {t(lang, "playlists.back")}
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={doImportLikes}
+                      disabled={importing}
+                    >
+                      {importing ? t(lang, "playlists.importing") : t(lang, "playlists.import")}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
       )}
     </div>
   );
-
-  async function doImport() {
-    const url = importUrl.trim();
-    if (!url) return;
-    setImporting(true);
-    try {
-      const pl = await api.importPlaylistUrl(url);
-      await refresh();
-      setImportOpen(false);
-      setImportUrl("");
-      showToast(`Imported: ${pl.title} (${pl.tracks.length} tracks)`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setImporting(false);
-    }
-  }
 }

@@ -1,4 +1,4 @@
-use std::{
+﻿use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
@@ -34,6 +34,8 @@ type HmacSha1 = Hmac<Sha1>;
 
 const API: &str = "https://api.spotify.com/v1";
 const PATHFINDER: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
+/// Публичный client_id веб-плеера (для client-token и refresh-обмена).
+const SPOTIFY_OAUTH_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
 const SESSION_TOKEN_URL: &str = "https://open.spotify.com/api/token";
 const SERVER_TIME_URL: &str = "https://open.spotify.com/api/server-time";
 const CLIENT_TOKEN_URL: &str = "https://clienttoken.spotify.com/v1/clienttoken";
@@ -70,7 +72,14 @@ pub struct SpotifyProvider {
     cookie: String,
     access_token: Mutex<Option<(String, String, Instant)>>,
     totp_state: Mutex<Option<(String, Vec<u8>)>>,
+    /// OAuth refresh_token для получения access_token (вместо TOTP)
+    oauth_refresh: Mutex<Option<String>>,
+    /// Кэш OAuth-токена для Web API /v1 (device flow или refresh).
+    v1_token: Mutex<Option<(String, Instant)>>,
+    /// Резолвер Spotify → YouTube (для аудио без premium)
+    youtube: Option<super::youtube::YoutubeResolver>,
 }
+
 
 impl SpotifyProvider {
     pub fn new(value: impl AsRef<str>) -> Result<Self> {
@@ -79,29 +88,42 @@ impl SpotifyProvider {
 
     pub fn with_proxy(value: impl AsRef<str>, proxy: Option<&str>) -> Result<Self> {
         let value = value.as_ref().trim();
-        let cookie = normalize_cookie_string(value);
-        if cookie.is_empty() {
-            bail!("для Spotify нужна cookie sp_dc")
-        }
-        if !cookie.to_ascii_lowercase().contains("sp_dc=") {
-            bail!("в строке нет cookie sp_dc — вставь хотя бы sp_dc")
-        }
+        let oauth_guest = matches!(value, "oauth" | "oauth-only");
+        let cookie = if oauth_guest {
+            String::new()
+        } else {
+            let cookie = normalize_cookie_string(value);
+            if cookie.is_empty() {
+                bail!("для Spotify нужна cookie sp_dc")
+            }
+            if !cookie.to_ascii_lowercase().contains("sp_dc=") {
+                bail!("в строке нет cookie sp_dc — вставь хотя бы sp_dc")
+            }
+            cookie
+        };
         // Кладём sp_dc/sp_key в cookie jar, чтобы reqwest слал их автоматически
         // на все поддомены spotify.com (нужно для device flow на accounts.spotify.com).
         let jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
-        for url in [
-            "https://open.spotify.com/",
-            "https://accounts.spotify.com/",
-            "https://api.spotify.com/",
-            "https://spclient.wg.spotify.com/",
-        ] {
-            if let Ok(parsed) = Url::parse(url) {
-                jar.add_cookie_str(&format!("{cookie}; Domain=.spotify.com; Path=/"), &parsed);
+        if !cookie.is_empty() {
+            for url in [
+                "https://open.spotify.com/",
+                "https://accounts.spotify.com/",
+                "https://api.spotify.com/",
+                "https://spclient.wg.spotify.com/",
+            ] {
+                if let Ok(parsed) = Url::parse(url) {
+                    jar.add_cookie_str(&format!("{cookie}; Domain=.spotify.com; Path=/"), &parsed);
+                }
             }
         }
         let mut builder = Client::builder()
             .user_agent(BROWSER_UA)
-            .cookie_provider(jar.clone());
+            .cookie_provider(jar.clone())
+            // Без таймаутов «Вся музыка» в карточке артиста висит вечно
+            // при мёртвом соединении (прокси/сеть) — ни один запрос не
+            // может висеть дольше 30с, соединение — дольше 10с.
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30));
         if let Some(proxy) = proxy
             .map(str::trim)
             .filter(|proxy| !proxy.is_empty())
@@ -115,7 +137,22 @@ impl SpotifyProvider {
             cookie,
             access_token: Mutex::new(None),
             totp_state: Mutex::new(None),
+            oauth_refresh: Mutex::new(None),
+            v1_token: Mutex::new(None),
+            youtube: None,
         })
+    }
+
+    /// Задаёт OAuth refresh_token — тогда access_token берётся через него,
+    /// а не через TOTP-поток (sp_dc).
+    pub fn set_oauth_refresh(&self, refresh_token: &str) {
+        let value = refresh_token.trim().to_string();
+        *self.oauth_refresh.lock().unwrap() = (!value.is_empty()).then_some(value);
+    }
+
+    /// Подключает резолвер Spotify → YouTube для аудио без premium.
+    pub fn set_youtube_resolver(&mut self, resolver: super::youtube::YoutubeResolver) {
+        self.youtube = Some(resolver);
     }
 
     /// Получает (и кэширует) access_token через sp_dc.
@@ -135,6 +172,44 @@ impl SpotifyProvider {
     }
 
     async fn fetch_access_token(&self) -> Result<(String, String)> {
+        // Основной путь — TOTP через sp_dc: даёт web-player токен, который
+        // принимает Pathfinder (поиск/релизы/артисты). OAuth refresh —
+        // запасной путь, если sp_dc нет или TOTP недоступен.
+        if !self.cookie.is_empty() {
+            match self.fetch_access_token_totp().await {
+                Ok(tokens) => return Ok(tokens),
+                Err(error) => {
+                    crate::dlog!("[spotify] TOTP token failed, trying OAuth: {error:#}");
+                }
+            }
+        }
+
+        // Запасной путь — OAuth refresh_token
+        let refresh = self.oauth_refresh.lock().unwrap().clone();
+        if let Some(refresh) = refresh {
+            crate::dlog!("[spotify] refresh_token len={}", refresh.len());
+            if let Ok(token) = Self::access_token_from_refresh(&refresh).await {
+                // Пробуем получить client_token — Pathfinder без него отклоняет запрос
+                let client_token = match self
+                    .get_client_token_with_auth(SPOTIFY_OAUTH_CLIENT_ID, Some(&token))
+                    .await
+                {
+                    Ok(t) => t,
+                    Err(_) => String::new(),
+                };
+                return Ok((token, client_token));
+            }
+        }
+
+        // Ничего не вышло — честная ошибка с планом действий
+        bail!(
+            "Spotify недоступен: cookie sp_dc отсутствует или отклонена, OAuth-токен не работает. \
+             В Настройках нажми «Подключить» и залогинься в окне Spotify"
+        )
+    }
+
+    /// Web-player токен через TOTP (sp_dc cookie). Работает с Pathfinder и аудио.
+    async fn fetch_access_token_totp(&self) -> Result<(String, String)> {
         let (totp_secret, totp_ver) = self.get_totp_state().await?;
         let server_time = self.get_server_time().await?;
         let totp = generate_totp(&totp_secret, server_time);
@@ -182,16 +257,13 @@ impl SpotifyProvider {
             .and_then(Value::as_str)
             .unwrap_or("65b708073fc0480ea92a077233ca87bd");
 
-        // Client token нужен только для аудио (spclient). Если Spotify его не
-        // отдал — не проваливаем подключение, просто работаем без него.
         let client_token = match self.get_client_token(client_id).await {
             Ok(token) => token,
             Err(error) => {
-                eprintln!("[spotify] client token недоступен: {error:#}");
+                crate::dlog!("[spotify] client token недоступен: {error:#}");
                 String::new()
             }
         };
-
         Ok((access_token, client_token))
     }
 
@@ -225,106 +297,17 @@ impl SpotifyProvider {
         Ok(seconds.saturating_mul(1000))
     }
 
-    /// Получает OAuth-токен через device flow (работает с api.spotify.com/v1).
-    async fn device_flow_token(&self) -> Result<String> {
-        let auth = self
-            .http
-            .post(DEVICE_AUTH_URL)
-            .form(&[
-                ("client_id", DEVICE_CLIENT_ID),
-                ("scope", DEVICE_SCOPE),
-            ])
-            .header(USER_AGENT, HeaderValue::from_static(DEVICE_FLOW_USER_AGENT))
-            .send()
-            .await
-            .context("device auth request failed")?
-            .error_for_status()
-            .context("device auth rejected")?
-            .json::<Value>()
-            .await
-            .context("device auth json")?;
-        let device_code = auth
-            .get("device_code")
-            .and_then(Value::as_str)
-            .context("no device_code")?
-            .to_string();
-        let user_code = auth
-            .get("user_code")
-            .and_then(Value::as_str)
-            .context("no user_code")?
-            .to_string();
-        let verify_url = auth
-            .get("verification_uri_complete")
-            .and_then(Value::as_str)
-            .context("no verification_uri")?
-            .to_string();
-        let verify_url = Url::parse(&verify_url)?;
-
-        let verify_resp = self
-            .http
-            .get(verify_url)
-            .header(COOKIE, &self.cookie)
-            .send()
-            .await
-            .context("verify page")?
-            .error_for_status()
-            .context("verify page rejected")?;
-        let final_url = verify_resp.url().clone();
-        let flow_ctx_full = final_url
-            .query_pairs()
-            .find(|(k, _)| k == "flow_ctx")
-            .map(|(_, v)| v.into_owned())
-            .context("no flow_ctx")?;
-        let flow_ctx = flow_ctx_full.split(':').next().unwrap_or(&flow_ctx_full).to_string();
-
-        let html = verify_resp.text().await.context("verify page text")?;
-        let csrf = extract_csrf(&html).context("no csrf token")?;
-        let current_ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-            .to_string();
-        let flow_ctx_param = format!("{flow_ctx}:{current_ts}");
-        let referer_url = final_url.to_string();
-
-        self.http
-            .post(DEVICE_RESOLVE_URL)
-            .query(&[("flow_ctx", &flow_ctx_param)])
-            .json(&serde_json::json!({"code": user_code}))
-            .header("x-csrf-token", &csrf)
-            .header("referer", &referer_url)
-            .header("origin", "https://accounts.spotify.com")
-            .send()
-            .await
-            .context("resolve request")?
-            .error_for_status()
-            .context("resolve rejected")?;
-
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let token = self
-            .http
-            .post(DEVICE_TOKEN_URL)
-            .form(&[
-                ("client_id", DEVICE_CLIENT_ID),
-                ("device_code", &device_code),
-                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-            ])
-            .send()
-            .await
-            .context("token exchange")?
-            .error_for_status()
-            .context("token exchange rejected")?
-            .json::<Value>()
-            .await
-            .context("token json")?;
-        token
-            .get("access_token")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .context("no access_token in device flow")
+    async fn get_client_token(&self, client_id: &str) -> Result<String> {
+        self.get_client_token_with_auth(client_id, None).await
     }
 
-    async fn get_client_token(&self, client_id: &str) -> Result<String> {        let payload = serde_json::json!({
+    /// Версия client_token, где вместо cookie можно передать Bearer access_token.
+    async fn get_client_token_with_auth(
+        &self,
+        client_id: &str,
+        bearer: Option<&str>,
+    ) -> Result<String> {
+        let payload = serde_json::json!({
             "client_data": {
                 "client_version": CLIENT_VERSION,
                 "client_id": client_id,
@@ -332,7 +315,14 @@ impl SpotifyProvider {
             }
         });
         let body = serde_json::to_string(&payload).context("client token json")?;
-        let headers = client_token_headers(&self.cookie);
+        let mut headers = client_token_headers(&self.cookie);
+        if let Some(bearer) = bearer {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {bearer}"))
+                    .context("client token bearer")?,
+            );
+        }
         let response = self
             .http
             .post(CLIENT_TOKEN_URL)
@@ -372,6 +362,38 @@ impl SpotifyProvider {
             .json()
             .await
             .context("Spotify вернул непонятный JSON")
+    }
+
+    /// OAuth-токен для Web API /v1: ТОЛЬКО через refresh_token (PKCE-вход).
+    /// Device flow здесь недопустим: требует согласия в браузере, запросы
+    /// висят минутами и выглядят как зависание приложения. Нет токена —
+    /// честная ошибка с подсказкой.
+    async fn v1_access_token(&self) -> Result<String> {
+        if let Some((token, fetched_at)) = self.v1_token.lock().unwrap().as_ref()
+            && fetched_at.elapsed() < Duration::from_secs(25 * 60)
+        {
+            return Ok(token.clone());
+        }
+        let refresh = self.oauth_refresh.lock().unwrap().clone();
+        let Some(refresh) = refresh else {
+            bail!(
+                "нет OAuth-токена: в Настройках → Spotify нажми «Войти через OAuth» и подтверди доступ в браузере"
+            )
+        };
+        let token = match Self::access_token_from_refresh(&refresh).await {
+            Ok(token) => token,
+            Err(error) => {
+                let text = error.to_string();
+                if text.contains("invalid_grant") || text.contains("revoked") {
+                    bail!(
+                        "OAuth-токен протух: в Настройках → Spotify нажми «Войти через OAuth» заново"
+                    )
+                }
+                bail!("OAuth-токен не обновился: {text}")
+            }
+        };
+        *self.v1_token.lock().unwrap() = Some((token.clone(), Instant::now()));
+        Ok(token)
     }
 
     /// Запрос к внутреннему GraphQL Pathfinder API (работает с web-player токеном).
@@ -548,6 +570,10 @@ impl MusicProvider for SpotifyProvider {
         }
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn search(&self, query: &str, cursor: Option<&str>) -> Result<SearchPage> {
         let query = query.trim();
         if query.is_empty() {
@@ -607,6 +633,56 @@ impl MusicProvider for SpotifyProvider {
         Ok(items)
     }
 
+    /// Лайкнутые треки пользователя: Pathfinder fetchLibraryTracks.
+    /// Работает на sp_dc (тот же web-player токен, что и поиск) — никакого
+    /// Web API, никаких OAuth и квот. Пагинация по 50 с паузой 300мс.
+    async fn liked_tracks(&self, _profile_url: Option<&str>) -> Result<Vec<TrackRef>> {
+        const LIBRARY_TRACKS_HASH: &str =
+            "1cb5df9343e3e11ecca539ee85621136f8c1226768a9b7641012c4e6a2339872";
+        const PAGE: usize = 50;
+
+        let mut tracks = Vec::new();
+        let mut offset = 0usize;
+        loop {
+            let variables = serde_json::json!({ "limit": PAGE, "offset": offset });
+            let value = self
+                .pathfinder(
+                    "fetchLibraryTracks",
+                    LIBRARY_TRACKS_HASH,
+                    variables,
+                )
+                .await
+                .context("Spotify не отдал лайки (проверь вход через браузер)")?;
+            let Some(items) = value
+                .pointer("/data/me/library/tracks/items")
+                .and_then(Value::as_array)
+            else {
+                break;
+            };
+            let loaded = items.len();
+            for item in items {
+                // items[].track = { _uri, data: Track }; map_pf_track ждёт Track с uri
+                let Some(data) = item.pointer("/track/data") else { continue };
+                let mut track_value = data.clone();
+                if track_value.get("uri").is_none() {
+                    if let Some(uri) = item.pointer("/track/_uri") {
+                        track_value["uri"] = uri.clone();
+                    }
+                }
+                if let Some(track) = map_pf_track(&track_value) {
+                    tracks.push(track);
+                }
+            }
+            if loaded < PAGE {
+                break;
+            }
+            offset += loaded;
+            // Пауза между страницами: вежливо к API
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+        Ok(tracks)
+    }
+
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
         let variables = serde_json::json!({
             "uri": format!("spotify:artist:{artist_id}"),
@@ -630,7 +706,7 @@ impl MusicProvider for SpotifyProvider {
             .and_then(|s| s.get("url"))
             .and_then(Value::as_str)
             .and_then(|u| Url::parse(u).ok());
-        let popular_tracks: Vec<TrackRef> = artist
+let popular_tracks: Vec<TrackRef> = artist
             .get("discography")
             .and_then(|d| d.get("topTracks"))
             .and_then(|t| t.get("items"))
@@ -644,51 +720,37 @@ impl MusicProvider for SpotifyProvider {
                     .and_then(|t| map_pf_track(t))
             })
             .collect();
-        let releases: Vec<CollectionItem> = artist
-            .get("discography")
-            .and_then(|d| d.get("all"))
-            .and_then(|a| a.get("items"))
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|wrapper| {
-                let item = wrapper.get("releasedItem").and_then(|r| r.get("data")).unwrap_or(&wrapper);
-                let uri = jstr(item, &["uri"])?;
-                let id = pf_bare_id(uri)?;
-                let album_title = jstr(item, &["name"]).unwrap_or("Без названия").to_string();
-                let artwork_url = item
-                    .get("coverArt")
-                    .and_then(|c| c.get("sources"))
-                    .and_then(Value::as_array)
-                    .and_then(|sources| sources.iter().last())
-                    .and_then(|s| s.get("url"))
-                    .and_then(Value::as_str)
-                    .and_then(|u| Url::parse(u).ok());
-                let date = jstr(item, &["date", "isoString"]).unwrap_or_default();
-                let record = match jstr(item, &["type"]) {
-                    Some("SINGLE") => "Сингл",
-                    Some("EP") => "EP",
-                    _ => "Альбом",
-                };
-                let subtitle = if date.is_empty() {
-                    record.to_string()
-                } else {
-                    format!("{date} · {record}")
-                };
-                let web_url = Url::parse(&format!("{WEB_URL}/album/{id}")).expect("album url");
-                Some(CollectionItem {
-                    kind: CollectionKind::Album,
-                    provider: ProviderKind::Spotify,
-                    id,
-                    title: album_title,
-                    subtitle,
-                    artwork_url,
-                    web_url,
-                    track_count: 0,
-                })
-            })
-            .collect();
+
+        // Релизы лежат в discography.albums, singles, compilations (не all!).
+        // Совместные альбомы («Kai Angel & 9mice — HEAVY METAL») в overview
+        // отсутствуют — дополняем полным дискография-all запросом.
+        let discography = artist.get("discography").cloned().unwrap_or(Value::Null);
+        let mut releases = collect_discography_releases(&discography);
+        {
+            let variables = serde_json::json!({
+                "uri": format!("spotify:artist:{artist_id}"),
+                "offset": 0,
+                "limit": 50,
+            });
+            if let Ok(all_value) = self
+                .pathfinder("queryArtistDiscographyAll", ARTIST_DISCOGRAPHY_HASH, variables)
+                .await
+            {
+                let all = all_value
+                    .pointer("/data/artistUnion/discography")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                for release in collect_discography_releases(&all) {
+                    if !releases.iter().any(|r| r.id == release.id) {
+                        releases.push(release);
+                    }
+                }
+            }
+        }
+        // Единый порядок по дате выхода: новые → старые, альбомы и синглы
+        // вперемешку (как в Deezer/Yandex), а не группами по типу.
+        sort_releases_by_date(&mut releases);
+
         Ok(ArtistProfile {
             name,
             avatar_url,
@@ -700,59 +762,63 @@ impl MusicProvider for SpotifyProvider {
     async fn artist_all_tracks(&self, artist_id: &str) -> Result<Vec<TrackRef>> {
         let mut seen = std::collections::HashSet::new();
         let mut tracks = Vec::new();
-        let mut offset = 0usize;
-        loop {
-            let variables = serde_json::json!({
-                "uri": format!("spotify:artist:{artist_id}"),
-                "offset": offset,
+
+        // Релизы из полного discography-all: overview не содержит совместных
+        // альбомов («Kai Angel & 9mice — HEAVY METAL»), а all — содержит.
+        let variables = serde_json::json!({
+            "uri": format!("spotify:artist:{artist_id}"),
+            "offset": 0,
+            "limit": 50,
+        });
+        let Ok(all_value) = self
+            .pathfinder("queryArtistDiscographyAll", ARTIST_DISCOGRAPHY_HASH, variables)
+            .await
+        else {
+            return Ok(tracks);
+        };
+        let all_discography = all_value
+            .pointer("/data/artistUnion/discography")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let releases = collect_discography_releases(&all_discography);
+        if releases.is_empty() {
+            return Ok(tracks);
+        }
+        // Вся музыка идёт по свежим релизам: порядок как в карточке артиста
+        let mut releases = releases;
+        sort_releases_by_date(&mut releases);
+
+        for release in &releases {
+            let album_vars = serde_json::json!({
+                "uri": format!("spotify:album:{}", release.id),
+                "locale": "",
+                "offset": 0,
                 "limit": 50,
             });
-            let value = self
-                .pathfinder(
-                    "queryArtistDiscographyAll",
-                    ARTIST_DISCOGRAPHY_HASH,
-                    variables,
-                )
-                .await?;
-            let items = value
-                .pointer("/data/artistUnion/discography/all/items")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let loaded = items.len();
-            for wrapper in &items {
-                let item = wrapper
-                    .get("releasedItem")
-                    .and_then(|r| r.get("data"))
-                    .unwrap_or(wrapper);
-                // Проходим треки альбома через getAlbum
-                if let Some(uri) = jstr(item, &["uri"])
-                    && let Some(id) = pf_bare_id(uri)
-                {
-                    let album_vars = serde_json::json!({
-                        "uri": format!("spotify:album:{id}"),
-                        "locale": "",
-                        "offset": 0,
-                        "limit": 50,
-                    });
-                    if let Ok(album_value) = self
-                        .pathfinder("getAlbum", GET_ALBUM_HASH, album_vars)
-                        .await
-                    {
-                        let album_tracks = extract_album_tracks(&album_value);
-                        for track in album_tracks {
-                            if seen.insert(track.provider_key()) {
-                                tracks.push(track);
-                            }
+            match self
+                .pathfinder("getAlbum", GET_ALBUM_HASH, album_vars)
+                .await
+            {
+                Ok(album_value) => {
+                    let album_tracks = extract_album_tracks(&album_value);
+                    for mut track in album_tracks {
+                        // Обложку альбома — каждому треку
+                        if track.artwork_url.is_none() {
+                            track.artwork_url = release.artwork_url.clone();
+                        }
+                        if seen.insert(track.provider_key()) {
+                            tracks.push(track);
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(40)).await;
+                }
+                Err(e) => {
+                    crate::dlog!(
+                        "[spotify] getAlbum {} failed: {e:#}",
+                        release.id
+                    );
                 }
             }
-            if loaded < 50 {
-                break;
-            }
-            offset += loaded;
+            tokio::time::sleep(Duration::from_millis(40)).await;
         }
         Ok(tracks)
     }
@@ -854,6 +920,14 @@ impl MusicProvider for SpotifyProvider {
         if let Some(source) = crate::provider::cache::cached_source(track) {
             return Ok(source);
         }
+        // Spotify-аудио через YouTube (без premium)
+        if let Some(youtube) = &self.youtube {
+            match youtube.resolve_track(track).await {
+                Ok(source) => return Ok(source),
+                Err(error) => crate::dlog!("[spotify] YouTube resolve failed: {error:#}"),
+            }
+        }
+        // Fallback: оригинальный Spotify-поток (требует premium)
         let path = self.prepare_full_track(&track.id).await?;
         full_cache_source(&path)
     }
@@ -893,9 +967,19 @@ impl SpotifyProvider {
             .and_then(Value::as_str)
             .and_then(|u| Url::parse(u).ok());
         let mut tracks = extract_album_tracks(&value);
-        // Догружаем остальные треки альбома
+        // Обложка альбома — каждому треку (в tracksV2 трек приходит без coverArt)
+        for track in &mut tracks {
+            if track.artwork_url.is_none() {
+                track.artwork_url = cover_url.clone();
+            }
+        }
+        // Догружаем остальные треки альбома (totalCount из tracksV2)
+        let total = value
+            .pointer("/data/albumUnion/tracksV2/totalCount")
+            .and_then(Value::as_u64)
+            .unwrap_or(tracks.len() as u64);
         let mut offset = 50usize;
-        loop {
+        while (offset as u64) < total {
             let variables = serde_json::json!({
                 "uri": format!("spotify:album:{id}"),
                 "locale": "",
@@ -909,12 +993,19 @@ impl SpotifyProvider {
                 break;
             };
             let more = extract_album_tracks(&next_value);
-            let loaded = more.len();
+            let mut loaded = more.len();
+            let mut more = more;
+            for track in &mut more {
+                if track.artwork_url.is_none() {
+                    track.artwork_url = cover_url.clone();
+                }
+            }
             tracks.extend(more);
-            if loaded < 50 {
+            if loaded == 0 {
                 break;
             }
             offset += loaded;
+            let _ = &mut loaded;
         }
         Ok(ImportedPlaylist {
             title,
@@ -925,6 +1016,7 @@ impl SpotifyProvider {
         })
     }
 
+
     /// Проверяет, что sp_dc действительно авторизован.
     pub async fn probe(&self) -> Result<()> {
         let (token, _) = self.fetch_access_token().await?;
@@ -933,6 +1025,195 @@ impl SpotifyProvider {
         }
         Ok(())
     }
+
+    /// Для отладки: refresh → access → /v1/me.
+    pub async fn debug_refresh_to_v1_me(&self) -> Result<(u16, String)> {
+        let refresh = self.oauth_refresh.lock().unwrap().clone()
+            .context("нет refresh")?;
+        let token = Self::access_token_from_refresh(&refresh).await
+            .context("refresh отклонён Spotify")?;
+        let url = Url::parse("https://api.spotify.com/v1/me")?;
+        let response = self.http.get(url)
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .send().await?;
+        let status = response.status().as_u16();
+        let text = response.text().await.unwrap_or_default();
+        Ok((status, text))
+    }
+
+    /// Для отладки: pathfinder с явным хешем.
+    pub async fn pathfinder_by_name(&self, operation: &str, variables: Value) -> Result<Value> {
+        let hash = match operation {
+            "queryArtistDiscographyAll" => ARTIST_DISCOGRAPHY_HASH,
+            "queryArtistOverview" => ARTIST_OVERVIEW_HASH,
+            "getAlbum" => GET_ALBUM_HASH,
+            "fetchPlaylist" => FETCH_PLAYLIST_HASH,
+            other => bail!("нет хеша для операции {other}"),
+        };
+        self.pathfinder(operation, hash, variables).await
+    }
+
+    /// Получает свежий access_token из refresh_token.
+    pub async fn access_token_from_refresh(refresh_token: &str) -> Result<String> {
+        let params = [
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+            ("client_id", SPOTIFY_OAUTH_CLIENT_ID),
+        ];
+        let client = reqwest::Client::new();
+        let resp = client
+            .post("https://accounts.spotify.com/api/token")
+            .form(&params)
+            .send()
+            .await
+            .context("Spotify не ответил на refresh")?;
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            bail!("Spotify отклонил refresh ({status}): {body}")
+        }
+        let value: Value = serde_json::from_str(&body)
+            .with_context(|| format!("Spotify вернул непонятный refresh: {body}"))?;
+        value
+            .get("access_token")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .context("Spotify не вернул access_token")
+    }
+}
+
+/// Ключ сортировки релизов: дата из начала subtitle
+/// («2026-05-29 · Сингл» → "2026-05-29", «2024 · EP» → "2024").
+/// Релизы без даты уходят в конец (пустой ключ).
+fn release_date_key(subtitle: &str) -> String {
+    let date_part = subtitle.split(" · ").next().unwrap_or("").trim();
+    let starts_with_year = date_part
+        .chars()
+        .take(4)
+        .all(|c| c.is_ascii_digit())
+        && date_part.len() >= 4;
+    if starts_with_year {
+        date_part.to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// Единый порядок релизов: по дате выпуска, новые → старые.
+/// ISO-даты сравниваются строково — «2026-05-29» > «2026» > «2024-09-13».
+fn sort_releases_by_date(releases: &mut [CollectionItem]) {
+    releases.sort_by(|a, b| {
+        release_date_key(&b.subtitle).cmp(&release_date_key(&a.subtitle))
+    });
+}
+
+/// Один release-объект Pathfinder (uri/name/coverArt/date/type/tracks) →
+/// CollectionItem. Общая логика для overview-групп и discography/all.
+fn pf_release_to_item(item: &Value, seen: &mut std::collections::HashSet<String>) -> Option<CollectionItem> {
+    let id = jstr(item, &["uri"]).and_then(pf_bare_id)?;
+    if !seen.insert(id.clone()) {
+        return None;
+    }
+    let title = jstr(item, &["name"]).unwrap_or("Без названия").to_string();
+    let artwork_url = item
+        .get("coverArt")
+        .and_then(|c| c.get("sources"))
+        .and_then(Value::as_array)
+        .and_then(|sources| sources.iter().last())
+        .and_then(|s| s.get("url"))
+        .and_then(Value::as_str)
+        .and_then(|u| Url::parse(u).ok());
+    let year = item.pointer("/date/year").and_then(Value::as_u64);
+    let month = item.pointer("/date/month").and_then(Value::as_u64);
+    let day = item.pointer("/date/day").and_then(Value::as_u64);
+    let date = match (year, month, day) {
+        (Some(y), Some(m), Some(d)) => format!("{y:04}-{m:02}-{d:02}"),
+        (Some(y), Some(m), None) => format!("{y:04}-{m:02}"),
+        (Some(y), None, None) => format!("{y:04}"),
+        _ => String::new(),
+    };
+    let record = match jstr(item, &["type"]) {
+        Some("SINGLE") => "Сингл",
+        Some("EP") => "EP",
+        Some("COMPILATION") => "Сборник",
+        _ => "Альбом",
+    };
+    let subtitle = if date.is_empty() {
+        record.to_string()
+    } else {
+        format!("{date} · {record}")
+    };
+    let track_count = item
+        .pointer("/tracks/totalCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let web_url = Url::parse(&format!("{WEB_URL}/album/{id}")).expect("album url");
+    Some(CollectionItem {
+        kind: CollectionKind::Album,
+        provider: ProviderKind::Spotify,
+        id,
+        title,
+        subtitle,
+        artwork_url,
+        web_url,
+        track_count,
+    })
+}
+
+/// Собирает релизы артиста из overview artistUnion.discography:
+/// albums + singles + compilations. Каждая группа — items[].releases.items[].
+fn collect_discography_releases(discography: &Value) -> Vec<CollectionItem> {
+    let mut releases = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for key in ["albums", "singles", "compilations"] {
+        let Some(group) = discography.get(key) else { continue };
+        let Some(items) = group.get("items").and_then(Value::as_array) else { continue };
+        for wrapper in items {
+            let Some(inner) = wrapper.get("releases").and_then(|r| r.get("items")).and_then(Value::as_array) else { continue };
+            for item in inner {
+                if let Some(release) = pf_release_to_item(item, &mut seen) {
+                    releases.push(release);
+                }
+            }
+        }
+    }
+    // Совместные релизы («Kai Angel & 9mice — Heavy Metal») в overview
+    // отсутствуют: Spotify кладёт их только в «appears on» и в полный
+    // discography/all (структура: items[].releases.items[], как у групп).
+    for key in ["appearsOn"] {
+        if let Some(items) = discography
+            .get(key)
+            .and_then(|group| group.get("items"))
+            .and_then(Value::as_array)
+        {
+            for wrapper in items {
+                if let Some(inner) = wrapper.get("releases").and_then(|r| r.get("items")).and_then(Value::as_array) {
+                    for item in inner {
+                        if let Some(release) = pf_release_to_item(item, &mut seen) {
+                            releases.push(release);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Плоский дискография-all (queryArtistDiscographyAll): items[].releases.items[]
+    if let Some(items) = discography
+        .get("all")
+        .and_then(|all| all.get("items"))
+        .and_then(Value::as_array)
+    {
+        for wrapper in items {
+            if let Some(inner) = wrapper.get("releases").and_then(|r| r.get("items")).and_then(Value::as_array) {
+                for item in inner {
+                    if let Some(release) = pf_release_to_item(item, &mut seen) {
+                        releases.push(release);
+                    }
+                }
+            }
+        }
+    }
+    releases
 }
 
 /// Скачивает TOTP-секреты и выбирает самую свежую версию.
@@ -997,29 +1278,84 @@ fn generate_totp(secret: &[u8], timestamp_ms: i64) -> String {
 
 /// Достаёт треки из ответа getAlbum: data.albumUnion.discs.items[].items[].item
 fn extract_album_tracks(value: &Value) -> Vec<TrackRef> {
-    let discs = value
-        .pointer("/data/albumUnion/discs/items")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    // Треки альбома лежат в tracksV2.items[].track (плоский объект:
+    // uri, name, duration.totalMilliseconds, artists.items[].profile.name).
+    // Старый путь discs.items[].items[].item.data больше не наполняется.
     let mut out = Vec::new();
-    for disc in discs {
-        let items = disc
-            .get("items")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        for entry in items {
-            let track = entry
-                .get("item")
-                .and_then(|t| t.get("data"))
-                .unwrap_or(&entry);
-            if let Some(t) = map_pf_track(track) {
+    if let Some(items) = value
+        .pointer("/data/albumUnion/tracksV2/items")
+        .and_then(Value::as_array)
+    {
+        for wrapper in items {
+            let track = wrapper.get("track").unwrap_or(wrapper);
+            if let Some(t) = map_album_track(track) {
                 out.push(t);
             }
         }
     }
     out
+}
+
+/// Маппер трека из tracksV2 (getAlbum) — отличается от map_pf_track
+/// структурой duration/artists.
+fn map_album_track(track: &Value) -> Option<TrackRef> {
+    let uri = jstr(track, &["uri"])?;
+    let id = pf_bare_id(uri)?;
+    if !uri.contains(":track:") {
+        return None;
+    }
+    let title = jstr(track, &["name"]).unwrap_or("Без названия").to_string();
+    let artists: Vec<String> = track
+        .pointer("/artists/items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|artist| {
+            artist
+                .pointer("/profile/name")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+    let duration_ms = track
+        .pointer("/duration/totalMilliseconds")
+        .and_then(Value::as_u64);
+    let artwork_url = value_cover_art(track).or_else(|| {
+        // обложку альбома подставит вызывающий код через with_cover
+        None
+    });
+    let explicit = track
+        .pointer("/contentRating/label")
+        .and_then(Value::as_str)
+        .is_some_and(|l| l == "EXPLICIT");
+    let web_url = Url::parse(&format!("{WEB_URL}/track/{id}")).expect("track url");
+    Some(TrackRef {
+        provider: ProviderKind::Spotify,
+        id,
+        title,
+        artists,
+        duration_ms,
+        artwork_url,
+        web_url,
+        capability: PlaybackCapability::Full,
+        genres: Vec::new(),
+        explicit,
+        drm: true,
+            isrc: None,
+    })
+}
+
+/// coverArt.sources[].url из объекта, если он есть (для getAlbum-ответа).
+fn value_cover_art(track: &Value) -> Option<Url> {
+    track
+        .pointer("/album/coverArt/sources")
+        .or_else(|| track.pointer("/coverArt/sources"))?
+        .as_array()?
+        .iter()
+        .filter_map(|s| s.get("url").and_then(Value::as_str))
+        .next_back()
+        .and_then(|u| Url::parse(u).ok())
 }
 
 /// Достаёт треки из ответа fetchPlaylist: data.playlistV2.content.items[].itemV2.data
@@ -1106,7 +1442,9 @@ fn extract_pathfinder_tracks(value: &Value) -> Vec<TrackRef> {
 }
 
 fn map_pf_track(item: &Value) -> Option<TrackRef> {
-    let uri = jstr(item, &["uri"])?;
+    let uri = jstr(item, &["uri"])
+        // В library-выдаче uri лежит в родительском объекте (_uri)
+        .or_else(|| jstr(item, &["_uri"]))?;
     let id = pf_bare_id(uri)?;
     let title = jstr(item, &["name"]).unwrap_or("Без названия").to_string();
     let artists: Vec<String> = item
@@ -1127,7 +1465,12 @@ fn map_pf_track(item: &Value) -> Option<TrackRef> {
     let duration_ms = item
         .get("duration")
         .and_then(|d| d.get("totalMilliseconds"))
-        .and_then(Value::as_u64);
+        .and_then(Value::as_u64)
+        // В плейлистах (fetchPlaylist) длительность лежит в trackDuration
+        .or_else(|| {
+            item.pointer("/trackDuration/totalMilliseconds")
+                .and_then(Value::as_u64)
+        });
     let artwork_url = item
         .get("albumOfTrack")
         .and_then(|a| a.get("coverArt"))
@@ -1143,6 +1486,15 @@ fn map_pf_track(item: &Value) -> Option<TrackRef> {
         .and_then(Value::as_str)
         .map(|label| label.eq_ignore_ascii_case("explicit"))
         .unwrap_or(false);
+    // ISRC в web-player лежит в разных местах в зависимости от query
+    // (track.isrc, externalIds.isrc). Пустые строки игнорируем.
+    let isrc = [item.get("isrc"), item.pointer("/externalIds/isrc")]
+        .into_iter()
+        .flatten()
+        .find_map(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     let web_url = Url::parse(&format!("{WEB_URL}/track/{id}")).expect("track url");
     Some(TrackRef {
         provider: ProviderKind::Spotify,
@@ -1156,6 +1508,7 @@ fn map_pf_track(item: &Value) -> Option<TrackRef> {
         genres: Vec::new(),
         explicit,
         drm: true,
+        isrc,
     })
 }
 
@@ -1515,6 +1868,7 @@ fn map_track(track: ApiTrack) -> Option<TrackRef> {
         genres: Vec::new(),
         explicit: track.explicit.unwrap_or(false),
         drm: true,
+            isrc: None,
     })
 }
 
@@ -1677,6 +2031,18 @@ struct ApiImage {
     url: String,
 }
 
+/// Страница /v1/me/tracks: items[].track (ApiTrack) + total.
+#[derive(Deserialize)]
+struct LikedPage {
+    items: Vec<LikedItem>,
+    total: usize,
+}
+
+#[derive(Deserialize)]
+struct LikedItem {
+    track: ApiTrack,
+}
+
 #[derive(Deserialize)]
 struct ApiPlaylistItem {
     id: Option<String>,
@@ -1818,421 +2184,5 @@ mod tests {
         assert_eq!(source.capability, PlaybackCapability::Full);
         assert_eq!(source.mime_type.as_deref(), Some("audio/ogg"));
         assert_eq!(source.url.scheme(), "file");
-    }
-
-    /// Отладочный тест: читает sp_dc из SPOTIFY_SP_DC, прогоняет TOTP-поток
-    /// и печатает сырые ответы. Запуск: SPOTIFY_SP_DC=... cargo test -p vessel-core --lib provider::spotify::tests::live_totp_flow -- --ignored --nocapture
-    #[tokio::test]
-    #[ignore]
-    async fn live_totp_flow() {
-        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-
-        match provider.fetch_access_token().await {
-            Ok((access, client)) => {
-                println!("OK access_token.len={} client_token.len={}", access.len(), client.len());
-                println!("client_token prefix: {}", &client[..client.len().min(40)]);
-            }
-            Err(error) => {
-                println!("ERR: {error:#}");
-            }
-        }
-    }
-
-    /// Перебирает варианты заголовков для clienttoken endpoint.
-    #[tokio::test]
-    #[ignore]
-    async fn live_client_token_variants() {
-        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-        // Получаем access token напрямую, не через fetch_access_token (он сам запрашивает client token)
-        let (totp_secret, totp_ver) = provider.get_totp_state().await.expect("totp");
-        let server_time = provider.get_server_time().await.expect("server time");
-        let totp = generate_totp(&totp_secret, server_time);
-        let url = Url::parse_with_params(
-            SESSION_TOKEN_URL,
-            &[
-                ("reason", "init"),
-                ("productType", "web-player"),
-                ("totp", &totp),
-                ("totpServer", &totp),
-                ("totpVer", &totp_ver),
-            ],
-        )
-        .unwrap();
-        let resp = provider
-            .http
-            .get(url)
-            .headers(browser_headers())
-            .header(COOKIE, &provider.cookie)
-            .send()
-            .await
-            .expect("session request");
-        let value: Value = resp.json().await.expect("session json");
-        let client_id = value
-            .get("clientId")
-            .and_then(Value::as_str)
-            .expect("clientId")
-            .to_string();
-        println!("[session] clientId={client_id}");
-
-        let payload = serde_json::json!({
-            "client_data": {
-                "client_version": CLIENT_VERSION,
-                "client_id": client_id,
-                "js_sdk_data": {}
-            }
-        });
-        let body = serde_json::to_string(&payload).unwrap();
-        println!("[client-token-body] {body}");
-
-        let mut full = reqwest::header::HeaderMap::new();
-        full.insert("accept", "application/json".parse().unwrap());
-        full.insert("accept-language", "en-US".parse().unwrap());
-        full.insert("content-type", "application/json".parse().unwrap());
-        full.insert("origin", "https://open.spotify.com".parse().unwrap());
-        full.insert("priority", "u=1, i".parse().unwrap());
-        full.insert("referer", "https://open.spotify.com/".parse().unwrap());
-        full.insert("sec-ch-ua", r#""Not)A;Brand";v="99", "Google Chrome";v="138", "Chromium";v="138""#.parse().unwrap());
-        full.insert("sec-ch-ua-mobile", "?0".parse().unwrap());
-        full.insert("sec-ch-ua-platform", "\"Windows\"".parse().unwrap());
-        full.insert("sec-fetch-dest", "empty".parse().unwrap());
-        full.insert("sec-fetch-mode", "cors".parse().unwrap());
-        full.insert("sec-fetch-site", "same-site".parse().unwrap());
-        full.insert("user-agent", BROWSER_UA.parse().unwrap());
-        full.insert("spotify-app-version", CLIENT_VERSION.parse().unwrap());
-        full.insert("app-platform", "WebPlayer".parse().unwrap());
-        full.insert("Cookie", provider.cookie.parse().unwrap());
-
-        let resp = provider.http.post(CLIENT_TOKEN_URL).headers(full).body(body).send().await.unwrap();
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        println!("[full-dotify] status={status} len={} body={}", text.len(), &text[..text.len().min(300)]);
-    }
-
-    /// Тестирует поиск треков и коллекций с реальным токеном.
-    #[tokio::test]
-    #[ignore]
-    async fn live_search() {
-        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-
-        let (access, client_token) = provider.fetch_access_token().await.expect("auth");
-        println!("access_token ok, client_token ok len={}", client_token.len());
-
-        // Поиск треков БЕЗ client-token
-        let url = Url::parse_with_params(
-            "https://api.spotify.com/v1/search",
-            &[("q", "carti"), ("type", "track"), ("limit", "5"), ("offset", "0")],
-        ).unwrap();
-        let resp = provider.http.get(url.clone())
-            .header("Authorization", format!("Bearer {access}"))
-            .send().await.unwrap();
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        println!("[search-tracks-no-client-token] status={status} body={}", &text[..text.len().min(300)]);
-
-        // Поиск треков С client-token
-        let resp = provider.http.get(url)
-            .header("Authorization", format!("Bearer {access}"))
-            .header("client-token", &client_token)
-            .send().await.unwrap();
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        println!("[search-tracks-with-client-token] status={status} body={}", &text[..text.len().min(300)]);
-
-        // Pathfinder API
-        let resp = provider.http.post("https://api-partner.spotify.com/pathfinder/v1/query")
-            .header("Authorization", format!("Bearer {access}"))
-            .header("client-token", &client_token)
-            .json(&serde_json::json!({
-                "variables": { "uri": "spotify:track:4uLU6hMCjMI75M1A2tKUQC", "locale": "" },
-                "extensions": { "persistedQuery": { "version": 1, "sha256Hash": "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294" } }
-            }))
-            .send().await.unwrap();
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        println!("[pathfinder-getTrack] status={status} body={}", &text[..text.len().min(400)]);
-
-        // Pathfinder full query search (без persisted hash)
-        let resp = provider.http.post("https://api-partner.spotify.com/pathfinder/v1/query")
-            .header("Authorization", format!("Bearer {access}"))
-            .header("client-token", &client_token)
-            .json(&serde_json::json!({
-                "query": "query($query: String!) { searchTracks(query: $query, first: 5) { items { id name uri artists { name } album { name images { url } } durationMs } } }",
-                "variables": { "query": "carti" }
-            }))
-            .send().await.unwrap();
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        println!("[pathfinder-raw-search] status={status} body={}", &text[..text.len().min(500)]);
-    }
-
-    /// Тестирует device flow OAuth.
-    #[tokio::test]
-    #[ignore]
-    async fn live_device_flow() {
-        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-
-        let auth = provider.http.post(DEVICE_AUTH_URL)
-            .form(&[("client_id", DEVICE_CLIENT_ID), ("scope", DEVICE_SCOPE)])
-            .header(USER_AGENT, HeaderValue::from_static(DEVICE_FLOW_USER_AGENT))
-            .send().await.unwrap();
-        let status = auth.status();
-        let text = auth.text().await.unwrap_or_default();
-        println!("[device-auth] status={status} body={}", &text[..text.len().min(400)]);
-        let auth: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
-        let device_code = auth.get("device_code").and_then(Value::as_str).unwrap_or("").to_string();
-        let user_code = auth.get("user_code").and_then(Value::as_str).unwrap_or("").to_string();
-        let verify = auth.get("verification_uri_complete").and_then(Value::as_str).unwrap_or("").to_string();
-        println!("[device-auth] user_code={user_code} verify={verify}");
-
-        let verify_resp = provider.http.get(Url::parse(&verify).unwrap())
-            .header(COOKIE, &provider.cookie)
-            .send().await.unwrap();
-        let status = verify_resp.status();
-        let final_url = verify_resp.url().clone();
-        let html = verify_resp.text().await.unwrap_or_default();
-        println!("[verify] status={status} final_url={final_url} html_len={}", html.len());
-        let flow_ctx = final_url.query_pairs().find(|(k, _)| k == "flow_ctx").map(|(_, v)| v.into_owned());
-        println!("[verify] flow_ctx={flow_ctx:?}");
-        let csrf = extract_csrf(&html);
-        println!("[verify] csrf={csrf:?}");
-
-        if let (Some(flow_ctx_full), Some(csrf)) = (flow_ctx, csrf) {
-            let flow_ctx = flow_ctx_full.split(':').next().unwrap_or(&flow_ctx_full).to_string();
-            let current_ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs().to_string();
-            let flow_ctx_param = format!("{flow_ctx}:{current_ts}");
-            let resolve = provider.http.post(DEVICE_RESOLVE_URL)
-                .query(&[("flow_ctx", &flow_ctx_param)])
-                .json(&serde_json::json!({"code": user_code}))
-                .header("x-csrf-token", &csrf)
-                .header("referer", final_url.as_str())
-                .header("origin", "https://accounts.spotify.com")
-                .send().await.unwrap();
-            let status = resolve.status();
-            let text = resolve.text().await.unwrap_or_default();
-            println!("[resolve] status={status} body={}", &text[..text.len().min(300)]);
-        }
-
-        if !device_code.is_empty() {
-            let token = provider.http.post(DEVICE_TOKEN_URL)
-                .form(&[
-                    ("client_id", DEVICE_CLIENT_ID),
-                    ("device_code", &device_code),
-                    ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                ])
-                .send().await.unwrap();
-            let status = token.status();
-            let text = token.text().await.unwrap_or_default();
-            println!("[token-exchange] status={status} body={}", &text[..text.len().min(400)]);
-        }
-    }
-
-    /// Тестирует поиск через Pathfinder API.
-    #[tokio::test]
-    #[ignore]
-    async fn live_pathfinder_search() {        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-
-        match provider.search("carti", None).await {
-            Ok(page) => {
-                println!("[search-tracks] count={}", page.tracks.len());
-                for t in page.tracks.iter().take(5) {
-                    println!("  - {} — {} ({})", t.title, t.display_artist(), t.id);
-                }
-            }
-            Err(e) => println!("[search-tracks] ERR: {e:#}"),
-        }
-
-        match provider.search_collections("carti", CollectionKind::Artist).await {
-            Ok(items) => {
-                println!("[search-artists] count={}", items.len());
-                for i in items.iter().take(5) {
-                    println!("  - {} ({})", i.title, i.id);
-                }
-            }
-            Err(e) => println!("[search-artists] ERR: {e:#}"),
-        }
-
-        match provider.search_collections("carti", CollectionKind::Album).await {
-            Ok(items) => {
-                println!("[search-albums] count={}", items.len());
-                for i in items.iter().take(5) {
-                    println!("  - {} — {} ({})", i.title, i.subtitle, i.id);
-                }
-            }
-            Err(e) => println!("[search-albums] ERR: {e:#}"),
-        }
-
-        match provider.search_collections("carti", CollectionKind::Playlist).await {
-            Ok(items) => {
-                println!("[search-playlists] count={}", items.len());
-                for i in items.iter().take(5) {
-                    println!("  - {} — {} ({})", i.title, i.subtitle, i.id);
-                }
-            }
-            Err(e) => println!("[search-playlists] ERR: {e:#}"),
-        }
-    }
-
-    /// Тестирует получение URL аудио через spclient.
-    #[tokio::test]
-    #[ignore]
-    async fn live_audio() {
-        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-        let (access, client_token) = provider.fetch_access_token().await.expect("auth");
-
-        let track_id = "1s9DTymg5UQrdorZf43JQm";
-
-        // Путь 1: Dotify track-playback
-        for host in ["gue1-spclient"] {
-            for fmt in ["file_ids_mp4", "file_ids_ogg", "file_ids_aac"] {
-                let url = format!("https://{host}.spotify.com/track-playback/v1/media/spotify:track:{track_id}?manifestFileFormat={fmt}");
-                let resp = provider.http.get(&url)
-                    .header("Authorization", format!("Bearer {access}"))
-                    .header("client-token", &client_token)
-                    .header("Cookie", &provider.cookie)
-                    .send().await.unwrap();
-                let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                println!("[track-playback-{fmt}] status={status} len={}", text.len());
-                if text.len() > 0 && text.len() < 2500 {
-                    println!("  body={text}");
-                }
-            }
-        }
-
-        // Путь 2: storage-resolve с реальным file_id
-        for format in ["11", "10"] {
-            let file_id = if format == "11" { "d969ffb9c93ea5d4dd12300bab63b98f0b22b632" } else { "24b8548e7c559f9dfc821e61a67beb986c7ccb00" };
-            let url = format!("https://gue1-spclient.spotify.com/storage-resolve/v2/files/audio/interactive/{format}/{file_id}?version=10000000&product=9&platform=39&alt=json");
-            let resp = provider.http.get(&url)
-                .header("Authorization", format!("Bearer {access}"))
-                .header("client-token", &client_token)
-                .header("Cookie", &provider.cookie)
-                .send().await.unwrap();
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            println!("[storage-resolve-{format}] status={status} len={}", text.len());
-            if text.len() > 0 && text.len() < 3000 {
-                println!("  body={text}");
-            }
-        }
-
-        // Путь 3: Pathfinder getTrack (уже работает)
-        let value = provider.pathfinder("getTrack", GET_TRACK_HASH, serde_json::json!({"uri": format!("spotify:track:{track_id}")})).await.unwrap();
-        println!("[getTrack] OK");
-
-        // Путь 4: playplay license endpoint
-        let file_id = "d969ffb9c93ea5d4dd12300bab63b98f0b22b632";
-        let url = format!("https://gew4-spclient.spotify.com/playplay/v1/key/{file_id}");
-        // Протобуф PlayPlayLicenseRequest: version=5, token(bytes), interactivity=1, content_type=1
-        // version(field1, varint)=5
-        // token(field2, bytes)=PLAYPLAY_TOKEN (16 bytes)
-        // interactivity(field4, varint)=1 (INTERACTIVE)
-        // content_type(field5, varint)=1 (AUDIO_TRACK)
-        let mut proto = Vec::new();
-        proto.push(0x08); proto.push(5); // field1 varint = 5
-        let token = hex::decode("02811027c51620c0fd36cd1de59e227a").unwrap();
-        proto.push(0x12); proto.push(token.len() as u8); // field2 length-delimited
-        proto.extend_from_slice(&token);
-        proto.push(0x20); proto.push(1); // field4 varint = 1 (INTERACTIVE)
-        proto.push(0x28); proto.push(1); // field5 varint = 1 (AUDIO_TRACK)
-        let resp = provider.http.post(&url)
-            .header("Authorization", format!("Bearer {access}"))
-            .header("client-token", &client_token)
-            .header("Cookie", &provider.cookie)
-            .header("Accept", "application/x-protobuf")
-            .header("Content-Type", "application/x-protobuf")
-            .body(proto)
-            .send().await.unwrap();
-        let status = resp.status();
-        let bytes = resp.bytes().await.unwrap_or_default();
-        println!("[playplay] status={status} len={} bytes={:?}", bytes.len(), &bytes[..bytes.len().min(64)]);
-        // Деобфускация ключа — для старой Playplay-схемы просто xor с INIT_VALUE
-        // (это надо проверить, но INIT_VALUE = 8df84f8c610a1ab4c449a214fb08305e)
-    }
-
-    /// Тестирует получение аудио-ключа через librespot.
-    #[tokio::test]
-    #[ignore]
-    async fn live_librespot_audio_key() {
-        use librespot_core::authentication::Credentials;
-        use librespot_core::config::SessionConfig;
-        use librespot_core::{FileId, SpotifyId};
-
-        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-        let device_token = provider.device_flow_token().await.expect("device flow");
-        println!("[librespot] device token len={}", device_token.len());
-
-        let track_id = "1s9DTymg5UQrdorZf43JQm";
-        let file_id_hex = "d969ffb9c93ea5d4dd12300bab63b98f0b22b632";
-
-        let session = librespot_core::Session::new(SessionConfig::default(), None);
-        let creds = Credentials::with_access_token(device_token);
-        match session.connect(creds, false).await {
-            Ok(()) => println!("[librespot] session connected (device flow)"),
-            Err(e) => {
-                println!("[librespot] session connect (device flow) ERR: {e:#}");
-            }
-        }
-        let track = match SpotifyId::from_base62(track_id) {
-            Ok(id) => id,
-            Err(e) => { println!("[librespot] SpotifyId ERR: {e:#}"); return; }
-        };
-        for file_id_hex in ["d969ffb9c93ea5d4dd12300bab63b98f0b22b632", "24b8548e7c559f9dfc821e61a67beb986c7ccb00"] {
-            let file_id = FileId::from_raw(&hex::decode(file_id_hex).unwrap_or_default());
-            match session.audio_key().request(track, file_id).await {
-                Ok(key) => println!("[librespot] audio key OK ({}): {:?}", file_id_hex, key.0),
-                Err(e) => println!("[librespot] audio key ERR ({}): {e:#}", file_id_hex),
-            }
-        }
-
-        // Попробуем с TOTP-токеном
-        let (access_token, _) = provider.fetch_access_token().await.expect("totp token");
-        println!("[librespot] totp token len={}", access_token.len());
-        let session2 = librespot_core::Session::new(SessionConfig::default(), None);
-        let creds2 = Credentials::with_access_token(access_token);
-        match session2.connect(creds2, false).await {
-            Ok(()) => println!("[librespot] session connected (totp)"),
-            Err(e) => {
-                println!("[librespot] session connect (totp) ERR: {e:#}");
-                return;
-            }
-        }
-        let file_id2 = FileId::from_raw(&hex::decode(file_id_hex).unwrap_or_default());
-        match session2.audio_key().request(track, file_id2).await {
-            Ok(key) => println!("[librespot] audio key (totp) OK: {:?}", key.0),
-            Err(e) => println!("[librespot] audio key (totp) ERR: {e:#}"),
-        }
-
-        // Проверим статус аккаунта через accountAttributes
-        let attrs = provider.pathfinder("accountAttributes", "4fbd57be3c6ec2157adcc5b8573ec571f61412de23bbb798d8f6a156b7d34cdf", serde_json::json!({})).await;
-        match attrs {
-            Ok(v) => println!("[accountAttributes] {}", serde_json::to_string_pretty(&v).unwrap_or_default()),
-            Err(e) => println!("[accountAttributes] ERR: {e:#}"),
-        }
-    }
-
-    /// Тестирует полный конвейер подготовки трека.
-    #[tokio::test]
-    #[ignore]
-    async fn live_prepare_full_track() {
-        let token = std::env::var("SPOTIFY_SP_DC").expect("нет SPOTIFY_SP_DC");
-        let provider = SpotifyProvider::new(&token).unwrap();
-        let track_id = "1s9DTymg5UQrdorZf43JQm";
-        match provider.prepare_full_track(track_id).await {
-            Ok(path) => {
-                let meta = std::fs::metadata(&path).ok();
-                println!("[prepare] OK path={} len={:?}", path.display(), meta.map(|m| m.len()));
-                let bytes = std::fs::read(&path).unwrap_or_default();
-                println!("[prepare] magic={:?}", &bytes[..bytes.len().min(16)]);
-            }
-            Err(e) => println!("[prepare] ERR: {e:#}"),
-        }
     }
 }

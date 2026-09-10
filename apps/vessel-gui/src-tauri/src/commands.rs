@@ -1,13 +1,14 @@
-use std::path::PathBuf;
+﻿use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use vessel_core::{
     credentials::CredentialKind,
     model::{Playlist, RepeatMode, SearchProvider, TrackRef},
+    secrets::SecretKey,
     storage::HistoryEntry,
 };
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use crate::GuiCore;
 
@@ -24,7 +25,8 @@ fn provider_kind_from_str(value: &str) -> Result<vessel_core::model::ProviderKin
         "yandex" | "yandex_music" => Ok(ProviderKind::YandexMusic),
         "deezer" => Ok(ProviderKind::Deezer),
         "spotify" => Ok(ProviderKind::Spotify),
-        _ => Err(format!("неизвестный провайдер: {value}")),
+        "youtube_music" | "you_tube_music" | "youtube" => Ok(ProviderKind::YouTubeMusic),
+        _ => Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ: {value}")),
     }
 }
 
@@ -34,7 +36,8 @@ fn credential_kind_from_str(value: &str) -> Result<CredentialKind, String> {
         "yandex" => Ok(CredentialKind::YandexToken),
         "deezer" => Ok(CredentialKind::DeezerArl),
         "spotify" => Ok(CredentialKind::SpotifySpDc),
-        _ => Err(format!("неизвестный провайдер: {value}")),
+        "youtube" | "youtube_music" => Ok(CredentialKind::YouTubeCookie),
+        _ => Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ: {value}")),
     }
 }
 
@@ -43,7 +46,7 @@ fn repeat_from_str(value: &str) -> Result<RepeatMode, String> {
         "off" => Ok(RepeatMode::Off),
         "all" => Ok(RepeatMode::All),
         "one" => Ok(RepeatMode::One),
-        _ => Err(format!("неизвестный repeat: {value}")),
+        _ => Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ repeat: {value}")),
     }
 }
 
@@ -59,7 +62,7 @@ pub async fn search(
     };
     if registry.is_empty() {
         return Err(
-            "Сначала добавь SoundCloud client_id или Yandex OAuth в Настройках".to_string(),
+            "РЎРЅР°С‡Р°Р»Р° РґРѕР±Р°РІСЊ SoundCloud client_id РёР»Рё Yandex OAuth РІ РќР°СЃС‚СЂРѕР№РєР°С…".to_string(),
         );
     }
     let query = query.trim().to_string();
@@ -75,7 +78,8 @@ pub async fn search(
         Some("yandex") => SearchProvider::YandexMusic,
         Some("deezer") => SearchProvider::Deezer,
         Some("spotify") => SearchProvider::Spotify,
-        Some(other) => return Err(format!("неизвестный провайдер: {other}")),
+        Some("youtube_music") => SearchProvider::YouTubeMusic,
+        Some(other) => return Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ: {other}")),
     };
     let pages = registry.search(&query, selection).await;
     let (tracks, failures) = vessel_core::runtime::merge_pages(pages);
@@ -93,7 +97,7 @@ pub async fn search_collections(
         "playlists" | "playlist" => CollectionKind::Playlist,
         "albums" | "album" => CollectionKind::Album,
         "artists" | "artist" => CollectionKind::Artist,
-        other => return Err(format!("неизвестный тип коллекции: {other}")),
+        other => return Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ С‚РёРї РєРѕР»Р»РµРєС†РёРё: {other}")),
     };
     let query = query.trim().to_string();
     if query.is_empty() {
@@ -104,23 +108,45 @@ pub async fn search_collections(
         core.runtime.provider_registry()
     };
     if registry.is_empty() {
-        return Err("Сначала добавь ключ провайдера в Настройках".to_string());
+        return Err("РЎРЅР°С‡Р°Р»Р° РґРѕР±Р°РІСЊ РєР»СЋС‡ РїСЂРѕРІР°Р№РґРµСЂР° РІ РќР°СЃС‚СЂРѕР№РєР°С…".to_string());
     }
     let kinds = [
         vessel_core::model::ProviderKind::SoundCloud,
         vessel_core::model::ProviderKind::YandexMusic,
         vessel_core::model::ProviderKind::Deezer,
         vessel_core::model::ProviderKind::Spotify,
+        vessel_core::model::ProviderKind::YouTubeMusic,
     ];
+    // РџР°СЂР°Р»Р»РµР»СЊРЅРѕ: РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅС‹Р№ РѕР±С…РѕРґ РїРѕРґРІРµС€РёРІР°Р» РІРєР»Р°РґРєРё РЅР° ~7 СЃРµРє
+    let query = query.clone();
+    let jobs = kinds
+        .into_iter()
+        .filter_map(|kind| registry.get(kind).map(|provider| (kind, provider)))
+        .map(|(provider_kind, provider)| {
+            let query = query.clone();
+            async move {
+                match provider.search_collections(&query, kind).await {
+                    Ok(found) => {
+                        vessel_core::dlog!(
+                            "[search_collections] {provider_kind:?} {kind:?}: {} С€С‚.",
+                            found.len()
+                        );
+                        found
+                    }
+                    Err(error) => {
+                        vessel_core::dlog!("[search_collections] {provider_kind:?}: {error:#}");
+                        Vec::new()
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let results = futures_util::future::join_all(jobs).await;
     let mut items = Vec::new();
-    for provider_kind in kinds {
-        let Some(provider) = registry.get(provider_kind) else {
-            continue;
-        };
-        if let Ok(found) = provider.search_collections(&query, kind).await {
-            items.extend(found);
-        }
+    for found in results {
+        items.extend(found);
     }
+    vessel_core::dlog!("[search_collections] РёС‚РѕРіРѕ {} РґР»СЏ '{}' ({kind:?})", items.len(), query);
     Ok(items)
 }
 
@@ -138,7 +164,7 @@ pub async fn artist_profile(
     };
     let provider_impl = registry
         .get(kind)
-        .ok_or_else(|| "провайдер не подключён".to_string())?;
+        .ok_or_else(|| "РїСЂРѕРІР°Р№РґРµСЂ РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ".to_string())?;
     provider_impl
         .artist_profile(artist_id.trim())
         .await
@@ -158,7 +184,7 @@ pub async fn artist_all_tracks(
     };
     let provider_impl = registry
         .get(kind)
-        .ok_or_else(|| "провайдер не подключён".to_string())?;
+        .ok_or_else(|| "РїСЂРѕРІР°Р№РґРµСЂ РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ".to_string())?;
     provider_impl
         .artist_all_tracks(artist_id.trim())
         .await
@@ -238,6 +264,48 @@ pub async fn set_spotify_proxy(core: CoreState<'_>, path: Option<String>) -> Res
     Ok(())
 }
 
+/// РўРµРєСѓС‰РёР№ РёСЃС‚РѕС‡РЅРёРє Р°СѓРґРёРѕ РґР»СЏ Spotify-С‚СЂРµРєРѕРІ ("youtube_music" | "deezer" | "").
+#[tauri::command]
+pub async fn get_spotify_playback_source(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    let source = core.runtime.spotify_playback_source();
+    Ok(source.as_str().to_string())
+}
+
+/// РЎРјРµРЅРёС‚СЊ РёСЃС‚РѕС‡РЅРёРє Р°СѓРґРёРѕ РґР»СЏ Spotify-С‚СЂРµРєРѕРІ (Р±РµР· РїРµСЂРµР·Р°РїСѓСЃРєР°).
+/// Auto РїСЂРѕРІРµСЂСЏРµС‚СЃСЏ РїРѕ С†РµРїРѕС‡РєРµ: РЅСѓР¶РµРЅ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ РёСЃС‚РѕС‡РЅРёРє РёР· РЅРµС‘.
+#[tauri::command]
+pub async fn set_spotify_playback_source(core: CoreState<'_>, source: String) -> Result<(), String> {
+    use vessel_core::runtime::playback_resolver::PlaybackSourceKind;
+    let Some(kind) = PlaybackSourceKind::from_str(&source) else {
+        return Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє: {source}"));
+    };
+    let mut core = lock(&core);
+    // РСЃС‚РѕС‡РЅРёРє РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅР°СЃС‚СЂРѕРµРЅ вЂ” РёРЅР°С‡Рµ С‚СЂРµРєРё РїСЂРѕСЃС‚Рѕ РЅРµ Р·Р°РёРіСЂР°СЋС‚
+    let available = match kind {
+        PlaybackSourceKind::Auto => kind
+            .chain()
+            .iter()
+            .any(|s| core.runtime.provider_registry().get(s.provider_kind()).is_some()),
+        other => core
+            .runtime
+            .provider_registry()
+            .get(other.provider_kind())
+            .is_some(),
+    };
+    if !available {
+        return Err(format!(
+            "РёСЃС‚РѕС‡РЅРёРє {} РЅРµРґРѕСЃС‚СѓРїРµРЅ вЂ” РїРѕРґРєР»СЋС‡Рё С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ РёР·: Deezer, YouTube Music",
+            kind.label()
+        ));
+    }
+    core.runtime.set_spotify_playback_source(kind);
+    // РЎРёРЅС…СЂРѕРЅРёР·РёСЂСѓРµРј core.config вЂ” persist СЃРѕС…СЂР°РЅСЏРµС‚ РёРјРµРЅРЅРѕ РµРіРѕ
+    core.config.spotify_playback_source = Some(kind.as_str().to_string());
+    core.app.config_dirty = true;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn download_track(
     core: CoreState<'_>,
@@ -248,7 +316,7 @@ pub async fn download_track(
         core.runtime.provider_registry()
     };
     let Some(provider) = registry.get(track.provider) else {
-        return Err("провайдер не подключён".to_string());
+        return Err("РїСЂРѕРІР°Р№РґРµСЂ РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ".to_string());
     };
     let source = provider
         .download_source(&track)
@@ -279,7 +347,7 @@ pub async fn download_track_to_cache(
         core.runtime.provider_registry()
     };
     let Some(provider) = registry.get(track.provider) else {
-        return Err("провайдер не подключён".to_string());
+        return Err("РїСЂРѕРІР°Р№РґРµСЂ РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ".to_string());
     };
     if vessel_core::provider::cache::is_cached(&track) {
         if let Some(path) = vessel_core::provider::cache::cached_track_path(&track) {
@@ -346,7 +414,7 @@ pub async fn download_all_to_cache(
 pub async fn play(core: CoreState<'_>, track: TrackRef) -> Result<(), String> {
     let mut core = lock(&core);
     if !track.capability.can_play() {
-        return Err("Этот трек недоступен для воспроизведения".to_string());
+        return Err("Р­С‚РѕС‚ С‚СЂРµРє РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ РІРѕСЃРїСЂРѕРёР·РІРµРґРµРЅРёСЏ".to_string());
     }
     core.app.gui_play_tracks(vec![track], 0);
     Ok(())
@@ -360,11 +428,11 @@ pub async fn play_tracks(
 ) -> Result<(), String> {
     let mut core = lock(&core);
     if tracks.is_empty() {
-        return Err("нет треков".to_string());
+        return Err("РЅРµС‚ С‚СЂРµРєРѕРІ".to_string());
     }
     let start = start.min(tracks.len() - 1);
     if !tracks[start].capability.can_play() {
-        return Err("Выбранный трек недоступен для воспроизведения".to_string());
+        return Err("Р’С‹Р±СЂР°РЅРЅС‹Р№ С‚СЂРµРє РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ РІРѕСЃРїСЂРѕРёР·РІРµРґРµРЅРёСЏ".to_string());
     }
     core.app.gui_play_tracks(tracks, start);
     Ok(())
@@ -380,7 +448,7 @@ pub async fn toggle_playback(core: CoreState<'_>) -> Result<(), String> {
 pub async fn next(core: CoreState<'_>) -> Result<(), String> {
     let mut core = lock(&core);
     if core.app.queue.is_empty() {
-        return Err("очередь пуста".to_string());
+        return Err("РѕС‡РµСЂРµРґСЊ РїСѓСЃС‚Р°".to_string());
     }
     core.app.control_next();
     Ok(())
@@ -390,7 +458,7 @@ pub async fn next(core: CoreState<'_>) -> Result<(), String> {
 pub async fn previous(core: CoreState<'_>) -> Result<(), String> {
     let mut core = lock(&core);
     if core.app.queue.is_empty() {
-        return Err("очередь пуста".to_string());
+        return Err("РѕС‡РµСЂРµРґСЊ РїСѓСЃС‚Р°".to_string());
     }
     core.app.control_previous();
     Ok(())
@@ -398,8 +466,10 @@ pub async fn previous(core: CoreState<'_>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn seek(core: CoreState<'_>, position_ms: u64) -> Result<(), String> {
+    vessel_core::dlog!("[seek] invoke position_ms={}", position_ms);
     let mut core = lock(&core);
     core.app.gui_seek_to(position_ms);
+    vessel_core::dlog!("[seek] effect queued");
     Ok(())
 }
 
@@ -453,7 +523,7 @@ pub async fn play_next(core: CoreState<'_>, track: TrackRef) -> Result<(), Strin
 pub async fn remove_from_queue(core: CoreState<'_>, index: usize) -> Result<(), String> {
     let mut core = lock(&core);
     if index >= core.app.queue.len() {
-        return Err("индекс вне очереди".to_string());
+        return Err("РёРЅРґРµРєСЃ РІРЅРµ РѕС‡РµСЂРµРґРё".to_string());
     }
     core.app.gui_remove_from_queue(index);
     Ok(())
@@ -467,7 +537,7 @@ pub async fn move_queue_item(
 ) -> Result<(), String> {
     let mut core = lock(&core);
     if from >= core.app.queue.len() || to >= core.app.queue.len() {
-        return Err("индекс вне очереди".to_string());
+        return Err("РёРЅРґРµРєСЃ РІРЅРµ РѕС‡РµСЂРµРґРё".to_string());
     }
     core.app.gui_move_queue_item(from, to);
     Ok(())
@@ -482,7 +552,7 @@ pub async fn reorder_library(
     let mut core = lock(&core);
     let len = core.app.library.len();
     if from >= len || to >= len {
-        return Err("индекс вне библиотеки".to_string());
+        return Err("РёРЅРґРµРєСЃ РІРЅРµ Р±РёР±Р»РёРѕС‚РµРєРё".to_string());
     }
     let mut order: Vec<String> = core
         .app
@@ -505,9 +575,9 @@ pub async fn reorder_queue(
 ) -> Result<(), String> {
     let mut core = lock(&core);
     if tracks.is_empty() && !core.app.queue.is_empty() {
-        return Err("пустой порядок очереди".to_string());
+        return Err("РїСѓСЃС‚РѕР№ РїРѕСЂСЏРґРѕРє РѕС‡РµСЂРµРґРё".to_string());
     }
-    // Текущий трек всегда первый в очереди, остальные — в порядке из UI.
+    // РўРµРєСѓС‰РёР№ С‚СЂРµРє РІСЃРµРіРґР° РїРµСЂРІС‹Р№ РІ РѕС‡РµСЂРµРґРё, РѕСЃС‚Р°Р»СЊРЅС‹Рµ вЂ” РІ РїРѕСЂСЏРґРєРµ РёР· UI.
     let now_key = core.app.now_playing.as_ref().map(|t| t.provider_key());
     let mut reordered = tracks;
     if let Some(now_key) = now_key {
@@ -543,7 +613,7 @@ pub async fn get_playlists(core: CoreState<'_>) -> Result<Vec<Playlist>, String>
 
 #[tauri::command]
 pub async fn preview_playlist_url(core: CoreState<'_>, url: String) -> Result<Playlist, String> {
-    let parsed = url::Url::parse(&url).map_err(|e| format!("Неверный URL: {e}"))?;
+    let parsed = url::Url::parse(&url).map_err(|e| format!("РќРµРІРµСЂРЅС‹Р№ URL: {e}"))?;
     let registry = {
         let core = lock(&core);
         core.runtime.provider_registry()
@@ -564,13 +634,13 @@ pub async fn save_imported_playlist(
     playlist: Playlist,
 ) -> Result<(), String> {
     let mut core = lock(&core);
-    // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
+    // Р”СѓР±Р»Рё РїРѕ СЃСЃС‹Р»РєРµ РЅРµР»СЊР·СЏ: РѕРґРёРЅ РїР»РµР№Р»РёСЃС‚/Р°Р»СЊР±РѕРј вЂ” РѕРґРЅР° Р·Р°РїРёСЃСЊ
     if playlist
         .source_url
         .as_ref()
         .is_some_and(|url| core.app.playlists.iter().any(|p| p.source_url.as_ref() == Some(url)))
     {
-        return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+        return Err("Р­С‚РѕС‚ РїР»РµР№Р»РёСЃС‚ СѓР¶Рµ РґРѕР±Р°РІР»РµРЅ РІ Р±РёР±Р»РёРѕС‚РµРєСѓ".to_string());
     }
     if core
         .app
@@ -578,7 +648,7 @@ pub async fn save_imported_playlist(
         .iter()
         .any(|p| p.source_url.is_none() && p.title == playlist.title && playlist.source_url.is_none())
     {
-        return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+        return Err("Р­С‚РѕС‚ РїР»РµР№Р»РёСЃС‚ СѓР¶Рµ РґРѕР±Р°РІР»РµРЅ РІ Р±РёР±Р»РёРѕС‚РµРєСѓ".to_string());
     }
     core.storage
         .save_playlist(&playlist)
@@ -589,7 +659,7 @@ pub async fn save_imported_playlist(
     Ok(())
 }
 
-/// Пишет position для всех плейлистов в порядке app.playlists.
+/// РџРёС€РµС‚ position РґР»СЏ РІСЃРµС… РїР»РµР№Р»РёСЃС‚РѕРІ РІ РїРѕСЂСЏРґРєРµ app.playlists.
 fn persist_playlist_order(core: &mut GuiCore) {
     let order: Vec<String> = core
         .app
@@ -598,7 +668,7 @@ fn persist_playlist_order(core: &mut GuiCore) {
         .map(|p| p.id.to_string())
         .collect();
     if let Err(error) = core.storage.save_playlists_order(&order) {
-        eprintln!("[vessel] save_playlists_order: {error}");
+        vessel_core::dlog!("[vessel] save_playlists_order: {error}");
     }
 }
 
@@ -620,7 +690,7 @@ pub async fn reorder_playlists(
     Ok(())
 }
 
-/// Ключ трека в формате фронтенда: provider (snake_case) + id.
+/// РљР»СЋС‡ С‚СЂРµРєР° РІ С„РѕСЂРјР°С‚Рµ С„СЂРѕРЅС‚РµРЅРґР°: provider (snake_case) + id.
 fn frontend_track_key(track: &TrackRef) -> String {
     use vessel_core::model::ProviderKind;
     let provider = match track.provider {
@@ -628,6 +698,7 @@ fn frontend_track_key(track: &TrackRef) -> String {
         ProviderKind::YandexMusic => "yandex_music",
         ProviderKind::Deezer => "deezer",
         ProviderKind::Spotify => "spotify",
+        ProviderKind::YouTubeMusic => "youtube_music",
     };
     format!("{}:{}", provider, track.id.trim())
 }
@@ -681,8 +752,8 @@ pub async fn import_playlist_url(
     core: CoreState<'_>,
     url: String,
 ) -> Result<Playlist, String> {
-    let parsed = url::Url::parse(&url).map_err(|e| format!("Неверный URL: {e}"))?;
-    // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
+    let parsed = url::Url::parse(&url).map_err(|e| format!("РќРµРІРµСЂРЅС‹Р№ URL: {e}"))?;
+    // Р”СѓР±Р»Рё РїРѕ СЃСЃС‹Р»РєРµ РЅРµР»СЊР·СЏ: РѕРґРёРЅ РїР»РµР№Р»РёСЃС‚/Р°Р»СЊР±РѕРј вЂ” РѕРґРЅР° Р·Р°РїРёСЃСЊ
     {
         let core = lock(&core);
         if core
@@ -691,7 +762,7 @@ pub async fn import_playlist_url(
             .iter()
             .any(|p| p.source_url.as_ref() == Some(&parsed))
         {
-            return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+            return Err("Р­С‚РѕС‚ РїР»РµР№Р»РёСЃС‚ СѓР¶Рµ РґРѕР±Р°РІР»РµРЅ РІ Р±РёР±Р»РёРѕС‚РµРєСѓ".to_string());
         }
     }
     let registry = {
@@ -726,7 +797,7 @@ pub async fn create_playlist(core: CoreState<'_>, title: String) -> Result<Playl
         .iter()
         .find(|p| p.id == id)
         .cloned()
-        .ok_or_else(|| "плейлист не создался".to_string())?;
+        .ok_or_else(|| "РїР»РµР№Р»РёСЃС‚ РЅРµ СЃРѕР·РґР°Р»СЃСЏ".to_string())?;
     persist_playlist_order(&mut core);
     Ok(playlist)
 }
@@ -807,7 +878,7 @@ pub async fn play_playlist(core: CoreState<'_>, id: String) -> Result<(), String
     let mut core = lock(&core);
     let id = uuid::Uuid::parse_str(&id).map_err(|e| e.to_string())?;
     if !core.app.gui_play_playlist(id) {
-        return Err("плейлист не найден или пуст".to_string());
+        return Err("РїР»РµР№Р»РёСЃС‚ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё РїСѓСЃС‚".to_string());
     }
     Ok(())
 }
@@ -832,6 +903,230 @@ pub async fn get_provider_status(core: CoreState<'_>) -> Result<Vec<crate::Provi
     Ok(crate::provider_statuses(&core))
 }
 
+pub async fn youtube_oauth_begin(core: CoreState<'_>) -> Result<String, String> {
+    use vessel_core::provider::youtube::YouTubeMusicProvider;
+    let provider = YouTubeMusicProvider::new().map_err(|e| format!("{e:#}"))?;
+    let (user_code, _verification_url) = provider
+        .oauth_begin()
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    let mut core = lock(&core);
+    core.youtube_oauth = Some(std::sync::Arc::new(provider));
+    Ok(user_code)
+}
+
+#[tauri::command]
+pub async fn youtube_oauth_finish(core: CoreState<'_>) -> Result<(), String> {
+    let provider = {
+        let mut core = lock(&core);
+        core.youtube_oauth
+            .take()
+            .ok_or_else(|| "OAuth РЅРµ Р±С‹Р» РЅР°С‡Р°С‚".to_string())?
+    };
+    let refresh_token = provider.oauth_complete().await.map_err(|e| format!("{e:#}"))?;
+    let mut core = lock(&core);
+    core.runtime
+        .save_credential(CredentialKind::YouTubeOAuthRefresh, &refresh_token)
+        .map_err(|e| e.to_string())?;
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+/// РћС‚РєСЂС‹РІР°РµС‚ РѕРєРЅРѕ WebView СЃ YouTube РґР»СЏ РІС…РѕРґР°. РџРѕСЃР»Рµ Р»РѕРіРёРЅР° СЋР·РµСЂ Р¶РјС‘С‚ В«Р—Р°Р±СЂР°С‚СЊ cookiesВ».
+#[tauri::command]
+pub async fn youtube_browser_login(app: AppHandle) -> Result<(), String> {
+    // РЈР¶Рµ РµСЃС‚СЊ РѕРєРЅРѕ вЂ” С„РѕРєСѓСЃРёСЂСѓРµРј РµРіРѕ
+    if let Some(window) = app.get_webview_window("youtube_login") {
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let url = WebviewUrl::External(
+        url::Url::parse("https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/")
+            .map_err(|e| e.to_string())?,
+    );
+    WebviewWindowBuilder::new(&app, "youtube_login", url)
+        .title("YouTube вЂ” РІС…РѕРґ")
+        .inner_size(900.0, 700.0)
+        .min_inner_size(600.0, 500.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Р—Р°Р±РёСЂР°РµС‚ РІСЃРµ cookies (РІРєР»СЋС‡Р°СЏ httpOnly) РёР· WebView2 РѕРєРЅР° Рё СЃРѕС…СЂР°РЅСЏРµС‚ РёС… РєР°Рє YouTube cookie.
+#[tauri::command]
+pub async fn youtube_capture_cookies(
+    app: AppHandle,
+    core: CoreState<'_>,
+) -> Result<String, String> {
+    let cookie = crate::webview_cookies::collect_youtube_cookies(&app).map_err(|e| e.to_string())?;
+    if cookie.trim().is_empty() {
+        return Err("РЅРµ РЅР°С€С‘Р» cookies РІ РѕРєРЅРµ вЂ” РІРѕР№РґРё РІ Р°РєРєР°СѓРЅС‚ Рё РїРѕРІС‚РѕСЂРё".to_string());
+    }
+    let mut core = lock(&core);
+    core.app.youtube_music_enabled = true;
+    core.runtime
+        .save_credential(CredentialKind::YouTubeCookie, &cookie)
+        .map_err(|e| e.to_string())?;
+    core.app.config_dirty = true;
+    // Р—Р°РєСЂС‹РІР°РµРј РѕРєРЅРѕ РІС…РѕРґР°
+    if let Some(window) = app.get_webview_window("youtube_login") {
+        let _ = window.close();
+    }
+    Ok(cookie.len().to_string())
+}
+
+/// РћС‚РєСЂС‹РІР°РµС‚ РѕРєРЅРѕ WebView СЃ Spotify РґР»СЏ РІС…РѕРґР° Рё Р·Р°РїСѓСЃРєР°РµС‚ С„РѕРЅРѕРІС‹Р№
+/// РјРѕРЅРёС‚РѕСЂРёРЅРі cookies: РєР°Рє С‚РѕР»СЊРєРѕ sp_dc РїРѕСЏРІР»СЏРµС‚СЃСЏ (СЋР·РµСЂ Р·Р°Р»РѕРіРёРЅРёР»СЃСЏ),
+/// credential СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ Рё РѕРєРЅРѕ Р·Р°РєСЂС‹РІР°РµС‚СЃСЏ СЃР°РјРѕ. РћС‚РґРµР»СЊРЅР°СЏ РєРЅРѕРїРєР°
+/// В«Р—Р°Р±СЂР°С‚СЊ cookieВ» Р±РѕР»СЊС€Рµ РЅРµ РЅСѓР¶РЅР°.
+#[tauri::command]
+pub async fn spotify_browser_login(app: AppHandle, core: CoreState<'_>) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("spotify_login") {
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let url = WebviewUrl::External(
+        url::Url::parse("https://accounts.spotify.com/en/login?continue=https://open.spotify.com/")
+            .map_err(|e| e.to_string())?,
+    );
+    WebviewWindowBuilder::new(&app, "spotify_login", url)
+        .title("Spotify вЂ” РІС…РѕРґ")
+        .inner_size(900.0, 700.0)
+        .min_inner_size(600.0, 500.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    spawn_spotify_cookie_watcher(app, core);
+    Ok(())
+}
+
+/// Р¤РѕРЅРѕРІР°СЏ Р·Р°РґР°С‡Р°: РѕРїСЂР°С€РёРІР°РµС‚ cookies РѕРєРЅР° РІС…РѕРґР°, Р¶РґС‘С‚ sp_dc. РџРѕСЏРІРёР»СЃСЏ вЂ”
+/// РІР°Р»РёРґРёСЂСѓРµРј (РїСЂРѕР±СѓРµРј device-flow refresh, РЅРѕ РѕРЅ РЅРµ РѕР±СЏР·Р°С‚РµР»РµРЅ), СЃРѕС…СЂР°РЅСЏРµРј,
+/// Р·Р°РєСЂС‹РІР°РµРј РѕРєРЅРѕ. РћС€РёР±РєР° РІР°Р»РёРґР°С†РёРё РќР• С„Р°С‚Р°Р»СЊРЅР°: cookies РІСЃС‘ СЂР°РІРЅРѕ СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ,
+/// Р° СЃС‚Р°С‚СѓСЃ В«РїРѕРґРєР»СЋС‡РµРЅРѕ/РЅРµС‚В» РїРѕРєР°Р¶РµС‚ provider status.
+fn spawn_spotify_cookie_watcher(app: AppHandle, core: CoreState<'_>) {
+    let core: Arc<Mutex<GuiCore>> = core.inner().clone();
+    tokio::spawn(async move {
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2000);
+        // РњР°РєСЃРёРјСѓРј 15 РјРёРЅСѓС‚: СЋР·РµСЂ РјРѕР¶РµС‚ РїСЂРѕСЃС‚Рѕ СѓР№С‚Рё вЂ” С‚РѕРіРґР° AUTH_CANCELLED
+        for _attempt in 0..450u32 {
+            tokio::time::sleep(POLL_INTERVAL).await;
+            let Some(window) = app.get_webview_window("spotify_login") else {
+                vessel_core::dlog!("[spotify] auth window closed without login вЂ” cancelled");
+                return;
+            };
+            if window.is_visible().unwrap_or(false) == false {
+                continue;
+            }
+            let cookie = match tauri::async_runtime::spawn_blocking({
+                let app = app.clone();
+                move || crate::webview_cookies::collect_spotify_cookies(&app)
+            })
+            .await
+            {
+                Ok(Ok(cookie)) => cookie,
+                Ok(Err(_)) => continue, // sp_dc РµС‰С‘ РЅРµС‚ вЂ” Р¶РґРµРј, СЌС‚Рѕ РЅРµ РѕС€РёР±РєР°
+                Err(_) => continue,
+            };
+            let cookie_line: String = {
+                let mut parts = Vec::new();
+                for part in cookie.split(';') {
+                    let part = part.trim();
+                    if part.to_ascii_lowercase().starts_with("sp_dc=")
+                        || part.to_ascii_lowercase().starts_with("sp_key=")
+                    {
+                        parts.push(part.to_string());
+                    }
+                }
+                parts.join("; ")
+            };
+            if !cookie_line.to_ascii_lowercase().contains("sp_dc=") {
+                continue;
+            }
+            vessel_core::dlog!(
+                "[spotify] sp_dc detected ({} bytes) — saving",
+                cookie_line.len()
+            );
+            // sp_dc сохраняем сразу: поиск/артисты/плеер оживают моментально.
+            // Лайки идут через Pathfinder fetchLibraryTracks на том же sp_dc —
+            // OAuth не нужен вовсе.
+            {
+                let mut core = core
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let _ = core.runtime
+                    .save_credential(CredentialKind::SpotifySpDc, &cookie_line);
+                core.app.spotify_enabled = true;
+                core.app.config_dirty = true;
+                core.app.status_message = "Spotify подключён".to_string();
+            }
+
+            if let Some(window) = app.get_webview_window("spotify_login") {
+                let _ = window.close();
+            }
+            vessel_core::dlog!("[spotify] authenticated: credential saved, window closed");
+            return;
+        }
+        vessel_core::dlog!("[spotify] auth watcher timed out (15 min) — cancelled");
+    });
+}
+
+/// РћС‚РєСЂС‹С‚Рѕ Р»Рё РѕРєРЅРѕ РІС…РѕРґР° Spotify (РґР»СЏ UI-РїРѕР»Р»РёРЅРіР° Р°РІС‚РѕРїРѕРґРєР»СЋС‡РµРЅРёСЏ).
+#[tauri::command]
+pub async fn spotify_login_window_open(app: AppHandle) -> Result<bool, String> {
+    Ok(app.get_webview_window("spotify_login").is_some())
+}
+
+/// РћС‚РјРµРЅСЏРµС‚ РІС…РѕРґ РІ Spotify: Р·Р°РєСЂС‹РІР°РµС‚ РѕРєРЅРѕ, РјРѕРЅРёС‚РѕСЂРёРЅРі РѕСЃС‚Р°РЅРѕРІРёС‚СЃСЏ СЃР°Рј.
+#[tauri::command]
+pub async fn spotify_auth_cancel(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("spotify_login") {
+        let _ = window.close();
+    }
+    vessel_core::dlog!("[spotify] auth cancelled by user");
+    Ok(())
+}
+
+/// Р СѓС‡РЅРѕР№ Р·Р°Р±РѕСЂ cookies вЂ” СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚СЊ СЃРѕ СЃС‚Р°СЂС‹Рј UI. РќРѕРІР°СЏ РєРЅРѕРїРєР° РЅРµ
+/// РёСЃРїРѕР»СЊР·СѓРµС‚ СЌС‚РѕС‚ РїСѓС‚СЊ (РјРѕРЅРёС‚РѕСЂРёРЅРі Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРёР№), РЅРѕ РєРѕРјР°РЅРґР° РѕСЃС‚Р°РІР»РµРЅР°,
+/// С‡С‚РѕР±С‹ РЅРёС‡РµРіРѕ РЅРµ СЃР»РѕРјР°С‚СЊ Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ СЃ РѕС‚РєСЂС‹С‚С‹Рј СЃС‚Р°СЂС‹Рј РѕРєРЅРѕРј.
+#[tauri::command]
+pub async fn spotify_capture_cookies(
+    app: AppHandle,
+    core: CoreState<'_>,
+) -> Result<String, String> {
+    use vessel_core::provider::spotify::SpotifyProvider;
+
+    let cookie = crate::webview_cookies::collect_spotify_cookies(&app).map_err(|e| e.to_string())?;
+    // Р”РѕСЃС‚Р°С‘Рј С‚РѕР»СЊРєРѕ sp_dc / sp_key вЂ” РёС… Р¶РґС‘С‚ РїСЂРѕРІР°Р№РґРµСЂ.
+    let cookie_line = {
+        let mut parts = Vec::new();
+        for part in cookie.split(';') {
+            let part = part.trim();
+            if part.to_ascii_lowercase().starts_with("sp_dc=")
+                || part.to_ascii_lowercase().starts_with("sp_key=")
+            {
+                parts.push(part.to_string());
+            }
+        }
+        parts.join("; ")
+    };
+    if !cookie_line.to_ascii_lowercase().contains("sp_dc=") {
+        return Err("РЅРµ РЅР°Р№РґРµРЅР° cookie sp_dc вЂ” РІРѕР№РґРё РІ Р°РєРєР°СѓРЅС‚ Spotify Рё РїРѕРІС‚РѕСЂРё".to_string());
+    }
+
+    let mut core = lock(&core);
+    core.runtime
+        .save_credential(CredentialKind::SpotifySpDc, &cookie_line)
+        .map_err(|e| e.to_string())?;
+    core.app.spotify_enabled = true;
+    core.app.config_dirty = true;
+    if let Some(window) = app.get_webview_window("spotify_login") {
+        let _ = window.close();
+    }
+    Ok("sp_dc сохранён".to_string())
+}
+
 #[tauri::command]
 pub async fn save_credential(
     core: CoreState<'_>,
@@ -841,7 +1136,7 @@ pub async fn save_credential(
     let kind = credential_kind_from_str(&provider)?;
     let value = value.trim();
     if value.is_empty() {
-        return Err("ключ пустой".to_string());
+        return Err("РєР»СЋС‡ РїСѓСЃС‚РѕР№".to_string());
     }
     let mut core = lock(&core);
     core.runtime
@@ -860,6 +1155,12 @@ pub async fn save_credential(
         CredentialKind::SpotifySpDc => {
             core.app.spotify_enabled = true;
         }
+        CredentialKind::SpotifyOAuthRefreshToken => {
+            core.app.spotify_enabled = true;
+        }
+        CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {
+            core.app.youtube_music_enabled = true;
+        }
     }
     core.app.config_dirty = true;
     Ok(())
@@ -874,7 +1175,7 @@ pub async fn probe_credential(
     let kind = provider_kind_from_str(&provider)?;
     let value = value.trim();
     if value.is_empty() {
-        return Err("ключ пустой".to_string());
+        return Err("РєР»СЋС‡ РїСѓСЃС‚РѕР№".to_string());
     }
     let proxy = {
         let core = lock(&core);
@@ -884,6 +1185,37 @@ pub async fn probe_credential(
         Ok(()) => Ok(true),
         Err(error) => Err(format!("{error:#}")),
     }
+}
+
+#[tauri::command]
+pub async fn set_provider_enabled(
+    core: CoreState<'_>,
+    provider: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    let kind = match provider.as_str() {
+        // YouTube Music РІСЃРµРіРґР° РІРєР»СЋС‡С‘РЅ вЂ” РІС‹РєР»СЋС‡РёС‚СЊ РЅРµР»СЊР·СЏ
+        "youtube_music" | "youtube" => {
+            core.app.youtube_music_enabled = true;
+            return Ok(());
+        }
+        "soundcloud" => vessel_core::model::ProviderKind::SoundCloud,
+        "yandex" => vessel_core::model::ProviderKind::YandexMusic,
+        "deezer" => vessel_core::model::ProviderKind::Deezer,
+        "spotify" => vessel_core::model::ProviderKind::Spotify,
+        other => return Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ: {other}")),
+    };
+    core.runtime.set_provider_enabled(kind, enabled);
+    match kind {
+        vessel_core::model::ProviderKind::SoundCloud => core.app.soundcloud_enabled = enabled,
+        vessel_core::model::ProviderKind::YandexMusic => core.app.yandex_enabled = enabled,
+        vessel_core::model::ProviderKind::Deezer => core.app.deezer_enabled = enabled,
+        vessel_core::model::ProviderKind::Spotify => core.app.spotify_enabled = enabled,
+        vessel_core::model::ProviderKind::YouTubeMusic => core.app.youtube_music_enabled = enabled,
+    }
+    core.app.config_dirty = true;
+    Ok(())
 }
 
 #[tauri::command]
@@ -906,6 +1238,10 @@ pub async fn remove_credential(core: CoreState<'_>, provider: String) -> Result<
         CredentialKind::SpotifySpDc => {
             core.app.spotify_enabled = false;
         }
+        CredentialKind::SpotifyOAuthRefreshToken => {
+            core.app.spotify_enabled = false;
+        }
+        CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {}
     }
     core.app.config_dirty = true;
     Ok(())
@@ -922,12 +1258,112 @@ pub async fn get_related(
         core.runtime.provider_registry()
     };
     let Some(provider) = registry.get(track.provider) else {
-        return Err("провайдер трека не подключён".to_string());
+        return Err("РїСЂРѕРІР°Р№РґРµСЂ С‚СЂРµРєР° РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ".to_string());
     };
     provider
         .related(&track, limit.unwrap_or(20))
         .await
         .map_err(|e| format!("{e:#}"))
+}
+
+/// Р’РѕР·РІСЂР°С‰Р°РµС‚ СЂРµРєРѕРјРµРЅРґР°С†РёРё РґР»СЏ В«РњРѕРµР№ РІРѕР»РЅС‹В» / РїСѓСЃС‚РѕРіРѕ Search.
+/// source: "favorites" | "playlists".
+/// Р•СЃР»Рё source == "playlists" Рё РїРµСЂРµРґР°РЅ playlist_id вЂ” РІРѕР»РЅР° СЃС‚СЂРѕРёС‚СЃСЏ РёР· С‚СЂРµРєРѕРІ СЌС‚РѕРіРѕ РїР»РµР№Р»РёСЃС‚Р°.
+/// providers: "all" РёР»Рё "soundcloud,deezer,yandex,spotify".
+#[tauri::command]
+pub async fn get_wave_recommendations(
+    core: CoreState<'_>,
+    source: String,
+    size: Option<usize>,
+    playlist_id: Option<uuid::Uuid>,
+    providers: Option<String>,
+) -> Result<Vec<TrackRef>, String> {
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    if registry.is_empty() {
+        return Err("РЎРЅР°С‡Р°Р»Р° РґРѕР±Р°РІСЊ SoundCloud client_id РёР»Рё Yandex OAuth РІ РќР°СЃС‚СЂРѕР№РєР°С…".to_string());
+    }
+    let storage = {
+        let core = lock(&core);
+        core.storage.clone()
+    };
+    let src = vessel_core::recommendation::RecommendationSource::normalize(&source);
+    let filter = providers.as_deref();
+    let result = if src == vessel_core::recommendation::RecommendationSource::Playlists {
+        if let Some(pid) = playlist_id {
+            vessel_core::recommendation::recommend_from_playlist(&registry, &storage, pid, size.unwrap_or(20), filter).await
+        } else {
+            vessel_core::recommendation::recommend(&registry, &storage, src, size.unwrap_or(20), filter).await
+        }
+    } else {
+        vessel_core::recommendation::recommend(&registry, &storage, src, size.unwrap_or(20), filter).await
+    };
+    Ok(result.tracks)
+}
+
+/// РўРµРєСѓС‰РёР№ РІС‹Р±СЂР°РЅРЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє В«РњРѕРµР№ РІРѕР»РЅС‹В» ("favorites" | "playlists").
+#[tauri::command]
+pub async fn get_wave_source(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    Ok(core
+        .config
+        .wave_source
+        .clone()
+        .unwrap_or_else(|| "favorites".to_string()))
+}
+
+/// РЎРѕС…СЂР°РЅСЏРµС‚ РІС‹Р±СЂР°РЅРЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє В«РњРѕРµР№ РІРѕР»РЅС‹В».
+#[tauri::command]
+pub async fn set_wave_source(core: CoreState<'_>, source: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    let normalized = vessel_core::recommendation::RecommendationSource::normalize(&source).as_str();
+    core.config.wave_source = Some(normalized.to_string());
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+/// Р’С‹Р±СЂР°РЅРЅС‹Рµ РїСЂРѕРІР°Р№РґРµСЂС‹ В«РњРѕРµР№ РІРѕР»РЅС‹В» ("all" РёР»Рё "soundcloud,deezer,yandex,spotify").
+#[tauri::command]
+pub async fn get_wave_providers(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    Ok(core.config.wave_providers.clone().unwrap_or_else(|| "all".to_string()))
+}
+
+/// РЎРѕС…СЂР°РЅСЏРµС‚ РІС‹Р±СЂР°РЅРЅС‹Рµ РїСЂРѕРІР°Р№РґРµСЂС‹ В«РњРѕРµР№ РІРѕР»РЅС‹В».
+#[tauri::command]
+pub async fn set_wave_providers(core: CoreState<'_>, providers: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    let normalized = if providers.trim().is_empty() {
+        "all".to_string()
+    } else {
+        providers.trim().to_string()
+    };
+    core.config.wave_providers = Some(normalized);
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+/// Р’С‹Р±СЂР°РЅРЅС‹Рµ РїСЂРѕРІР°Р№РґРµСЂС‹ РґР»СЏ СЂРµРєРѕРјРµРЅРґР°С†РёР№ РІ РїРѕРёСЃРєРµ (РѕС‚РґРµР»СЊРЅРѕ РѕС‚ РІРѕР»РЅС‹).
+#[tauri::command]
+pub async fn get_recommendation_providers(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    Ok(core.config.recommendation_providers.clone().unwrap_or_else(|| "all".to_string()))
+}
+
+/// РЎРѕС…СЂР°РЅСЏРµС‚ РІС‹Р±СЂР°РЅРЅС‹Рµ РїСЂРѕРІР°Р№РґРµСЂС‹ РґР»СЏ СЂРµРєРѕРјРµРЅРґР°С†РёР№ РІ РїРѕРёСЃРєРµ.
+#[tauri::command]
+pub async fn set_recommendation_providers(core: CoreState<'_>, providers: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    let normalized = if providers.trim().is_empty() {
+        "all".to_string()
+    } else {
+        providers.trim().to_string()
+    };
+    core.config.recommendation_providers = Some(normalized);
+    core.app.config_dirty = true;
+    Ok(())
 }
 
 #[tauri::command]
@@ -959,3 +1395,243 @@ pub async fn reset_data(core: CoreState<'_>) -> Result<(), String> {
     core.app.config_dirty = true;
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_user_profile(core: CoreState<'_>) -> Result<Option<vessel_core::user::UserProfile>, String> {
+    let core = lock(&core);
+    Ok(core.app.user_profile.clone())
+}
+
+#[tauri::command]
+pub async fn get_known_users(core: CoreState<'_>) -> Result<Vec<vessel_core::user::UserProfile>, String> {
+    let core = lock(&core);
+    core.users.known_users().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn switch_user(core: CoreState<'_>, name: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    // РЎРѕС…СЂР°РЅСЏРµРј С‚РµРєСѓС‰РµРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РїРµСЂРµРґ РїРµСЂРµРєР»СЋС‡РµРЅРёРµРј
+    if let Err(e) = core.storage.save_queue(&core.app.queue_snapshot()) {
+        vessel_core::dlog!("[vessel] save_queue on switch: {e}");
+    }
+    for playlist in &core.app.playlists {
+        if let Err(e) = core.storage.save_playlist(playlist) {
+            vessel_core::dlog!("[vessel] save_playlist on switch: {e}");
+        }
+    }
+    core.users.switch_user(&name).map_err(|e| e.to_string())?;
+    let storage = core.users.storage().clone();
+    core.storage = storage;
+    core.app.user_profile = Some(core.users.active_user().profile.clone());
+    // РџРµСЂРµР·Р°РіСЂСѓР¶Р°РµРј РґР°РЅРЅС‹Рµ РЅРѕРІРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+    core.app.library = core.storage.library_tracks().map_err(|e| e.to_string())?;
+    core.app.playlists = core.storage.list_playlists().map_err(|e| e.to_string())?;
+    let queue = core.storage.load_queue().map_err(|e| e.to_string())?;
+    core.app.queue = queue.tracks;
+    core.app.queue_index = queue.current_index;
+    core.app.now_playing = queue.current_index.and_then(|i| core.app.queue.get(i).cloned());
+    core.app.home_tracks = core
+        .storage
+        .recent_history(24)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| e.track)
+        .collect();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_user(core: CoreState<'_>, name: String) -> Result<vessel_core::user::UserProfile, String> {
+    let mut core = lock(&core);
+    core.users.create_user(&name).map_err(|e| e.to_string())?;
+    let storage = core.users.storage().clone();
+    core.storage = storage;
+    core.app.user_profile = Some(core.users.active_user().profile.clone());
+    core.app.library.clear();
+    core.app.playlists.clear();
+    core.app.queue.clear();
+    core.app.queue_index = None;
+    core.app.now_playing = None;
+    Ok(core.users.active_user().profile.clone())
+}
+
+#[tauri::command]
+pub async fn export_user(core: CoreState<'_>, destination: String) -> Result<String, String> {
+    let core = lock(&core);
+    let dest = PathBuf::from(&destination);
+    let exported = core.users.export_user(&dest).map_err(|e| e.to_string())?;
+    Ok(exported.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn import_user(core: CoreState<'_>, source: String) -> Result<vessel_core::user::UserProfile, String> {
+    let mut core = lock(&core);
+    let src = PathBuf::from(&source);
+    core.users.import_user(&src).map_err(|e| e.to_string())?;
+    let storage = core.users.storage().clone();
+    core.storage = storage;
+    core.app.user_profile = Some(core.users.active_user().profile.clone());
+    core.app.library = core.storage.library_tracks().map_err(|e| e.to_string())?;
+    core.app.playlists = core.storage.list_playlists().map_err(|e| e.to_string())?;
+    Ok(core.users.active_user().profile.clone())
+}
+
+#[tauri::command]
+pub async fn backup_user(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    let path = core.users.active_user().backup().map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Р’С‹Р±РѕСЂ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїСЂРё СЃС‚Р°СЂС‚Рµ. Р•СЃР»Рё remember=true вЂ” СЃРѕС…СЂР°РЅСЏРµС‚ РІС‹Р±РѕСЂ РІ config
+/// (auto_login_user), С‡С‚РѕР±С‹ Р±РѕР»СЊС€Рµ РЅРµ СЃРїСЂР°С€РёРІР°С‚СЊ.
+#[tauri::command]
+pub async fn select_user(core: CoreState<'_>, name: String, remember: bool) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.users.switch_user(&name).map_err(|e| e.to_string())?;
+    let storage = core.users.storage().clone();
+    core.storage = storage;
+    core.app.user_profile = Some(core.users.active_user().profile.clone());
+    core.app.library = core.storage.library_tracks().map_err(|e| e.to_string())?;
+    core.app.playlists = core.storage.list_playlists().map_err(|e| e.to_string())?;
+    let queue = core.storage.load_queue().map_err(|e| e.to_string())?;
+    core.app.queue = queue.tracks;
+    core.app.queue_index = queue.current_index;
+    core.app.now_playing = queue.current_index.and_then(|i| core.app.queue.get(i).cloned());
+    core.app.home_tracks = core
+        .storage
+        .recent_history(24)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| e.track)
+        .collect();
+    if remember {
+        core.config.auto_login_user = Some(name);
+    } else {
+        core.config.auto_login_user = None;
+    }
+    core.app.config_dirty = true;
+    core.needs_user_selection = false;
+    Ok(())
+}
+
+/// РЎР±СЂР°СЃС‹РІР°РµС‚ Р°РІС‚Рѕ-РІС…РѕРґ: РїСЂРё СЃР»РµРґСѓСЋС‰РµРј СЃС‚Р°СЂС‚Рµ РІС‹Р±РѕСЂ РїРѕСЏРІРёС‚СЃСЏ СЃРЅРѕРІР°.
+#[tauri::command]
+pub async fn clear_auto_login(core: CoreState<'_>) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.auto_login_user = None;
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+/// Р’РѕР·РІСЂР°С‰Р°РµС‚ С‚РµРєСѓС‰РёР№ Р°РІС‚Рѕ-РІС…РѕРґ (РёРјСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР»Рё null).
+#[tauri::command]
+pub async fn get_auto_login(core: CoreState<'_>) -> Result<Option<String>, String> {
+    let core = lock(&core);
+    Ok(core.config.auto_login_user.clone())
+}
+
+/// РЈРґР°Р»СЏРµС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ (РЅРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ Р°РєС‚РёРІРЅРѕРіРѕ).
+#[tauri::command]
+pub async fn delete_user(core: CoreState<'_>, name: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    if core.config.auto_login_user.as_deref() == Some(name.as_str()) {
+        core.config.auto_login_user = None;
+        core.app.config_dirty = true;
+    }
+    core.users.delete_user(&name).map_err(|e| e.to_string())
+}
+
+/// Р’РѕР·РІСЂР°С‰Р°РµС‚ С‚РµРєСѓС‰РёР№ СЏР·С‹Рє РёРЅС‚РµСЂС„РµР№СЃР° ("ru" | "en").
+#[tauri::command]
+pub async fn get_language(core: CoreState<'_>) -> Result<String, String> {
+    let core = lock(&core);
+    Ok(core.config.language.clone())
+}
+
+/// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ СЏР·С‹Рє РёРЅС‚РµСЂС„РµР№СЃР° ("ru" | "en").
+#[tauri::command]
+pub async fn set_language(core: CoreState<'_>, language: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    let normalized = match language.as_str() {
+        "en" | "english" | "English" => "en".to_string(),
+        _ => "ru".to_string(),
+    };
+    core.config.language = normalized;
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+/// РРјРїРѕСЂС‚ Р»Р°Р№РєРѕРІ РёР· РїР»Р°С‚С„РѕСЂРјС‹.
+/// target: "favorites" | "playlist" (СЃРѕР·РґР°С‚СЊ РЅРѕРІС‹Р№ РїР»РµР№Р»РёСЃС‚)
+/// profile_url РЅСѓР¶РµРЅ РґР»СЏ SoundCloud (https://soundcloud.com/username).
+#[tauri::command]
+pub async fn import_likes(
+    core: CoreState<'_>,
+    provider: String,
+    target: String,
+    profile_url: Option<String>,
+    playlist_title: Option<String>,
+) -> Result<usize, String> {
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let kind = provider_kind_from_str(&provider)?;
+    let Some(provider_impl) = registry.get(kind) else {
+        return Err(format!("{} РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ", kind.label()));
+    };
+    let tracks = provider_impl
+        .liked_tracks(profile_url.as_deref())
+        .await
+        .map_err(|e| format!("{e:#}"))?;
+    if tracks.is_empty() {
+        return Err("Р»Р°Р№РєРѕРІ РЅРµ РЅР°Р№РґРµРЅРѕ".to_string());
+    }
+
+    let mut core = lock(&core);
+    match target.as_str() {
+        "favorites" => {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or_default();
+            let mut added = 0;
+            for track in &tracks {
+                if core.storage.like_track(track, now_ms).is_ok() {
+                    added += 1;
+                }
+            }
+            core.app.library = core.storage.library_tracks().map_err(|e| e.to_string())?;
+            core.app.config_dirty = true;
+            Ok(added)
+        }
+        "playlist" => {
+            let title = playlist_title
+                .filter(|t| !t.trim().is_empty())
+                .map(|t| t.trim().to_string())
+                .unwrap_or_else(|| format!("Р›Р°Р№РєРё {}", kind.label()));
+            let mut playlist = vessel_core::model::Playlist::new(title, now_ms());
+            for track in tracks {
+                playlist.push_unique(track);
+            }
+            core.storage
+                .save_playlist(&playlist)
+                .map_err(|e| e.to_string())?;
+            core.app.playlists.insert(0, playlist.clone());
+            core.app.playlists_dirty = true;
+            Ok(playlist.tracks.len())
+        }
+        _ => Err("РЅРµРёР·РІРµСЃС‚РЅР°СЏ С†РµР»СЊ РёРјРїРѕСЂС‚Р°".to_string()),
+    }
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+

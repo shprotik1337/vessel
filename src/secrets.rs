@@ -17,6 +17,9 @@ pub enum SecretKey {
     YandexToken,
     DeezerArl,
     SpotifySpDc,
+    SpotifyOAuthRefreshToken,
+    YouTubeCookie,
+    YouTubeOAuthRefresh,
 }
 
 impl SecretKey {
@@ -30,6 +33,9 @@ impl SecretKey {
             Self::YandexToken => "yandex-token",
             Self::DeezerArl => "deezer-arl",
             Self::SpotifySpDc => "spotify-sp-dc",
+            Self::SpotifyOAuthRefreshToken => "spotify-oauth-refresh",
+            Self::YouTubeCookie => "youtube-cookie",
+            Self::YouTubeOAuthRefresh => "youtube-oauth-refresh",
         }
     }
 }

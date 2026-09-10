@@ -30,6 +30,7 @@ pub(super) fn build_stream(
     volume: Arc<AtomicU32>,
     played_samples: Arc<AtomicU64>,
     buffered_samples: Arc<AtomicU64>,
+    duration_ms: Arc<AtomicU64>,
 ) -> Result<Stream> {
     macro_rules! typed_stream {
         ($sample:ty) => {
@@ -43,6 +44,7 @@ pub(super) fn build_stream(
                 volume,
                 played_samples,
                 buffered_samples,
+                duration_ms,
             )
         };
     }
@@ -75,6 +77,7 @@ fn sobrat_stream_dlya_tipa<T>(
     volume: Arc<AtomicU32>,
     played_samples: Arc<AtomicU64>,
     buffered_samples: Arc<AtomicU64>,
+    _duration_ms: Arc<AtomicU64>,
 ) -> Result<Stream>
 where
     T: SizedSample + FromSample<f32>,

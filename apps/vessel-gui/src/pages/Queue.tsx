@@ -2,12 +2,13 @@ import { useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { artistLabel, formatTime, trackKey, providerLabel } from "../lib/utils";
+import { t } from "../i18n";
 import { Artwork } from "../components/Artwork";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
 export function Queue() {
-  const { state, playTracks, showToast, refresh } = useApp();
+  const { state, playTracks, showToast, refresh, lang } = useApp();
 
   if (!state) return null;
 
@@ -32,7 +33,7 @@ export function Queue() {
     try {
       await api.clearQueue();
       await refresh();
-      showToast("Queue cleared");
+      showToast(t(lang, "queue.cleared"));
     } catch (error) {
       showToast(String(error), true);
     }
@@ -137,7 +138,7 @@ export function Queue() {
       <span
         className="qx"
         onClick={() => removeAt(realIndex)}
-        title="Remove"
+        title={t(lang, "queue.remove")}
         style={{ cursor: "pointer", color: "var(--text3)", fontSize: 15, textAlign: "center" }}
       >
         ✕
@@ -149,13 +150,13 @@ export function Queue() {
     <div className="view">
       <div className="view-hd">
         <div>
-          <div className="view-title">Queue</div>
-          <div className="view-sub">{queue.length} tracks</div>
+          <div className="view-title">{t(lang, "queue.title")}</div>
+          <div className="view-sub">{queue.length} {t(lang, "common.tracks")}</div>
         </div>
         <div className="btns">
           {queue.length > 0 && (
             <button className="btn btn-ghost" onClick={clearAll}>
-              Clear
+              {t(lang, "queue.clear")}
             </button>
           )}
         </div>
@@ -164,14 +165,14 @@ export function Queue() {
       {queue.length === 0 ? (
         <div className="empty">
           <div className="ico">☰</div>
-          <div className="t1">Queue is empty</div>
-          <div className="t2">Play a track or add one from search results.</div>
+          <div className="t1">{t(lang, "queue.empty1")}</div>
+          <div className="t2">{t(lang, "queue.empty2")}</div>
         </div>
       ) : (
         <>
           <div className="queue-sec">
             <div className="qsec-hd">
-              <span className="qsec-title">Now Playing</span>
+              <span className="qsec-title">{t(lang, "queue.nowPlaying")}</span>
             </div>
             {current ? (
               <div
@@ -202,15 +203,15 @@ export function Queue() {
                 <span className="c-time">{formatTime(current.duration_ms)}</span>
               </div>
             ) : (
-              <div className="set-desc" style={{ padding: "8px 2px" }}>Nothing playing</div>
+              <div className="set-desc" style={{ padding: "8px 2px" }}>{t(lang, "queue.nothingPlaying")}</div>
             )}
           </div>
 
           <div className="queue-sec">
             <div className="qsec-hd">
-              <span className="qsec-title">Up Next</span>
+              <span className="qsec-title">{t(lang, "queue.upNext")}</span>
               <span style={{ fontSize: 12, color: "var(--text3)" }}>
-                {queue.length - (currentIndex != null ? 1 : 0)} tracks
+                {queue.length - (currentIndex != null ? 1 : 0)} {t(lang, "common.tracks")}
               </span>
             </div>
             <div

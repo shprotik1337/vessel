@@ -116,6 +116,12 @@ pub struct WaveSettings {
     pub novelty: f64,
     pub max_artist_streak: usize,
     pub language_rotation: Vec<String>,
+    /// Приоритет провайдеров для поиска кандидатов (пусто = по умолчанию).
+    /// Если задан — используется вместо стандартного provider_order.
+    pub provider_priority: Vec<ProviderKind>,
+    /// Принудительно отключить native_related (чтобы волна смешивала провайдеров,
+    /// а не упиралась в related() основного провайдера).
+    pub mixed_providers: bool,
 }
 
 impl Default for WaveSettings {
@@ -133,6 +139,8 @@ impl Default for WaveSettings {
             novelty: 0.35,
             max_artist_streak: 2,
             language_rotation: Vec::new(),
+            provider_priority: Vec::new(),
+            mixed_providers: false,
         }
     }
 }
@@ -154,6 +162,11 @@ impl WaveSettings {
     }
 
     pub fn provider_order(&self) -> Vec<ProviderKind> {
+        // Если задан явный приоритет провайдеров — используем его как есть
+        // (позволяет смешивать, например, SoundCloud + Deezer).
+        if !self.provider_priority.is_empty() {
+            return self.provider_priority.clone();
+        }
         let mut providers = vec![self.primary_provider];
         if self.source_mode == WaveSourceMode::FallbackSoft {
             for provider in [ProviderKind::YandexMusic, ProviderKind::SoundCloud] {

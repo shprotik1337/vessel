@@ -5,6 +5,7 @@ import { TrackRow } from "../components/TrackRow";
 import { PlaylistCover } from "../components/PlaylistCover";
 import { Artwork } from "../components/Artwork";
 import { trackKey, providerLabel, formatDuration } from "../lib/utils";
+import { t } from "../i18n";
 import type { CollectionItem, Playlist, TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
@@ -14,14 +15,16 @@ const PROVIDERS: { key: string; label: string }[] = [
   { key: "deezer", label: "Deezer" },
   { key: "yandex", label: "Yandex" },
   { key: "spotify", label: "Spotify" },
+  { key: "youtube_music", label: "YouTube Music" },
 ];
 
-// провайдеры сериализуются в snake_case: sound_cloud / yandex_music / deezer / spotify
+// провайдеры сериализуются в snake_case: sound_cloud / yandex_music / deezer / spotify / youtube_music
 const PROVIDER_VALUE: Record<string, string> = {
   soundcloud: "sound_cloud",
   yandex: "yandex_music",
   deezer: "deezer",
   spotify: "spotify",
+  youtube_music: "you_tube_music",
 };
 
 const TABS = ["tracks", "playlists", "artists", "albums"];
@@ -33,7 +36,7 @@ interface PreviewState {
 }
 
 export function Search() {
-  const { state, playTracks, navigateTo, showToast, refresh } = useApp();
+  const { state, playTracks, navigateTo, showToast, refresh, lang } = useApp();
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState("all");
   const [category, setCategory] = useState("tracks");
@@ -44,12 +47,38 @@ export function Search() {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [recs, setRecs] = useState<TrackRef[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
   const debounce = useRef<number | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Рекомендации при пустом поиске — всегда из избранного, с учётом выбранных провайдеров
+  useEffect(() => {
+    if (query.trim()) {
+      setRecs([]);
+      return;
+    }
+    let cancelled = false;
+    setRecsLoading(true);
+    void (async () => {
+      try {
+        const providers = await api.getRecommendationProviders().catch(() => "all");
+        const result = await api.getWaveRecommendations("favorites", 20, null, providers);
+        if (!cancelled) setRecs(result);
+      } catch {
+        // тихо — поиск без рекомендаций тоже норм
+      } finally {
+        if (!cancelled) setRecsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [query]);
+
+  const recsNowKey = state?.now_playing ? trackKey(state.now_playing) : null;
 
   useEffect(() => {
     if (debounce.current) window.clearTimeout(debounce.current);
@@ -74,12 +103,12 @@ export function Search() {
             setMessage(
               outcome.failures.length > 0
                 ? outcome.failures.join("; ")
-                : "Nothing found",
+                : t(lang, "search.noResults"),
             );
           } else {
             setMessage(
               outcome.failures.length > 0
-                ? `Found: ${outcome.tracks.length}, some sources unavailable`
+                ? `${t(lang, "common.found")} ${outcome.tracks.length}, ${t(lang, "search.someUnavailable")}`
                 : null,
             );
           }
@@ -91,9 +120,24 @@ export function Search() {
                 ? "albums"
                 : "artists";
           const found = await api.searchCollections(q, kind);
+          console.log(
+            `[search] collections kind=${kind} total=${found.length} providers=`,
+            found.reduce<Record<string, number>>((acc, c) => {
+              acc[c.provider] = (acc[c.provider] ?? 0) + 1;
+              return acc;
+            }, {}),
+          );
           setCollections(found);
           setResults([]);
-          setMessage(found.length === 0 ? "Nothing found" : null);
+          setMessage(
+            found.length === 0
+              ? `0 коллекций · kind=${kind} · провайдеры: ${JSON.stringify(
+                  Object.keys(
+                    (state?.providers ?? []).filter((p) => p.connected),
+                  ),
+                )}`
+              : null,
+          );
         }
       } catch (err) {
         setError(String(err));
@@ -123,7 +167,7 @@ export function Search() {
     try {
       const pl = await api.importPlaylistUrl(url);
       await refresh();
-      showToast(`Добавлено: ${pl.title} (${pl.tracks.length} треков)`);
+      showToast(`${t(lang, "search.added")} ${pl.title} (${pl.tracks.length} ${t(lang, "common.tracks")})`);
     } catch (err) {
       showToast(String(err), true);
     } finally {
@@ -158,7 +202,7 @@ export function Search() {
     try {
       await api.saveImportedPlaylist(pl);
       await refresh();
-      showToast(`Добавлено: ${pl.title} (${pl.tracks.length} треков)`);
+      showToast(`${t(lang, "search.added")} ${pl.title} (${pl.tracks.length} ${t(lang, "common.tracks")})`);
       setPreview(null);
     } catch (err) {
       showToast(String(err), true);
@@ -173,7 +217,7 @@ export function Search() {
       <div className="view">
         <div style={{ marginBottom: 18 }}>
           <button className="btn btn-outline btn-sm" onClick={() => setPreview(null)}>
-            ← Назад
+            {t(lang, "common.back")}
           </button>
         </div>
         {preview.loading || !pl ? (
@@ -197,13 +241,13 @@ export function Search() {
                 }}
               >
                 <span className="kicker">
-                  {preview.provider ? providerLabel(preview.provider) : "Плейлист"}
+                  {preview.provider ? providerLabel(preview.provider) : t(lang, "search.preview")}
                 </span>
                 <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
                   {pl.title}
                 </div>
                 <div className="meta-line">
-                  <span>{pl.tracks.length} треков</span>
+                  <span>{pl.tracks.length} {t(lang, "common.tracks")}</span>
                   <span className="meta-sep">·</span>
                   <span>{formatDuration(totalMs)}</span>
                 </div>
@@ -213,17 +257,17 @@ export function Search() {
                       className="btn btn-primary btn-sm"
                       onClick={() => void playTracks(pl.tracks, 0)}
                     >
-                      ▶ Играть
+                      ▶ {t(lang, "common.play")}
                     </button>
                   )}
                   {pl.source_url && !owned && (
                     <button className="btn btn-ghost btn-sm" onClick={addPreviewed}>
-                      Добавить в библиотеку
+                      {t(lang, "search.addToLibrary")}
                     </button>
                   )}
                   {owned && (
                     <span className="badge ok" style={{ padding: "6px 10px" }}>
-                      ✓ Уже в библиотеке
+                      ✓ {t(lang, "search.alreadyInLibrary")}
                     </span>
                   )}
                 </div>
@@ -233,7 +277,7 @@ export function Search() {
               {pl.tracks.length === 0 ? (
                 <div className="empty">
                   <div className="ico">♫</div>
-                  <div className="t1">Пустой плейлист</div>
+                  <div className="t1">{t(lang, "search.emptyPlaylist")}</div>
                 </div>
               ) : (
                 <div className="tracklist">
@@ -298,17 +342,17 @@ export function Search() {
                     void addToLibrary(item.web_url);
                   }}
                 >
-                  {adding === item.web_url ? "…" : "＋ Добавить"}
+                  {adding === item.web_url ? "…" : `＋ ${t(lang, "search.add")}`}
                 </button>
               )}
               {owned && (
                 <span className="badge ok" style={{ position: "absolute", left: 8, bottom: 8, background: "rgba(11,11,12,.88)" }}>
-                  ✓ В библиотеке
+                  ✓ {t(lang, "search.inLibrary")}
                 </span>
               )}
               <button
                 className="card-play"
-                title="Играть"
+                title={t(lang, "common.play")}
                 onClick={(e) => {
                   e.stopPropagation();
                   void playCollection(item);
@@ -333,7 +377,7 @@ export function Search() {
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search tracks, artists, albums…"
+          placeholder={t(lang, "search.placeholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           autoComplete="off"
@@ -349,7 +393,13 @@ export function Search() {
             className={`tab ${category === tab ? "active" : ""}`}
             onClick={() => setCategory(tab)}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === "tracks"
+              ? t(lang, "search.tracks")
+              : tab === "playlists"
+                ? t(lang, "search.playlists")
+                : tab === "albums"
+                  ? t(lang, "search.albums")
+                  : t(lang, "search.artists")}
           </button>
         ))}
       </div>
@@ -388,14 +438,42 @@ export function Search() {
         </div>
       )}
 
-      {!loading && !query.trim() && (
+      {!loading && !query.trim() && recsLoading && (
+        <div className="tracklist">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="skel" />
+          ))}
+        </div>
+      )}
+
+      {!loading && !query.trim() && !recsLoading && recs.length > 0 && (
+        <>
+          <div className="sec-head" style={{ marginBottom: 14 }}>
+            <span className="sec-title">{t(lang, "wave.recommended")}</span>
+          </div>
+          <div className="tracklist">
+            {recs.map((track, i) => (
+              <TrackRow
+                key={`${track.provider}:${track.id}`}
+                track={track}
+                index={i}
+                nowKey={recsNowKey}
+                onPlay={(t) => {
+                  const idx = recs.findIndex((r) => trackKey(r) === trackKey(t));
+                  playTracks(recs, idx < 0 ? 0 : idx);
+                }}
+                onArtistClick={(name, provider) => navigateTo("artist", { artist: name, provider })}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {!loading && !query.trim() && recs.length === 0 && !recsLoading && (
         <div className="empty">
           <div className="ico">⌕</div>
-          <div className="t1">Search everything</div>
-          <div className="t2">
-            Every connected service becomes one library. Results show which source a track is
-            fetched from.
-          </div>
+          <div className="t1">{t(lang, "search.everything")}</div>
+          <div className="t2">{t(lang, "search.emptyDesc")}</div>
         </div>
       )}
 
@@ -406,8 +484,8 @@ export function Search() {
         !error && (
           <div className="empty">
             <div className="ico">?</div>
-            <div className="t1">No results</div>
-            <div className="t2">{message ?? "Try a different spelling."}</div>
+            <div className="t1">{t(lang, "search.noResults")}</div>
+            <div className="t2">{t(lang, "search.tryDifferent")}</div>
           </div>
         )}
 
@@ -418,15 +496,15 @@ export function Search() {
         !error && (
           <div className="empty">
             <div className="ico">?</div>
-            <div className="t1">No results</div>
-            <div className="t2">{message ?? "Try a different spelling."}</div>
+            <div className="t1">{t(lang, "search.noResults")}</div>
+            <div className="t2">{t(lang, "search.tryDifferent")}</div>
           </div>
         )}
 
       {!loading && category === "tracks" && results.length > 0 && (
         <>
           <div className="group-title" style={{ margin: "4px 0 8px" }}>
-            Tracks {message ? ` · ${message}` : ""}
+            {t(lang, "search.tracks")} {message ? ` · ${message}` : ""}
           </div>
           <div className="tracklist">
             {results.map((track, i) => (
@@ -447,11 +525,11 @@ export function Search() {
         <>
           <div className="group-title" style={{ margin: "4px 0 8px" }}>
             {category === "playlists"
-              ? "Playlists"
+              ? t(lang, "search.playlists")
               : category === "albums"
-                ? "Albums"
-                : "Artists"}{" "}
-            · {filteredCollections.length}
+                ? t(lang, "search.albums")
+                : t(lang, "search.artists")}{" "}
+            · {filteredCollections.length} {JSON.stringify(collections.reduce((a: Record<string, number>, c: CollectionItem) => { a[c.provider] = (a[c.provider] ?? 0) + 1; return a; }, {}))}
           </div>
           <div className="grid">{filteredCollections.map(renderCollectionCard)}</div>
         </>

@@ -1,11 +1,12 @@
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
 import { trackKey, relativeTime } from "../lib/utils";
+import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
 export function Recent() {
-  const { state, playTracks, showToast, refresh, navigateTo } = useApp();
+  const { state, playTracks, showToast, refresh, navigateTo, lang } = useApp();
   if (!state) return null;
 
   const nowKey = state.now_playing ? trackKey(state.now_playing) : null;
@@ -30,7 +31,7 @@ export function Recent() {
     try {
       await api.clearHistory();
       await refresh();
-      showToast("History cleared");
+      showToast(t(lang, "recent.cleared"));
     } catch (error) {
       showToast(String(error), true);
     }
@@ -40,13 +41,13 @@ export function Recent() {
     <div className="view">
       <div className="view-hd">
         <div>
-          <div className="view-title">Recently Played</div>
-          <div className="view-sub">{uniqueHistory.length} tracks</div>
+          <div className="view-title">{t(lang, "recent.title")}</div>
+          <div className="view-sub">{uniqueHistory.length} {t(lang, "common.tracks")}</div>
         </div>
         <div className="btns">
           {uniqueHistory.length > 0 && (
             <button className="btn btn-ghost" onClick={clearAll}>
-              Clear
+              {t(lang, "recent.clear")}
             </button>
           )}
         </div>
@@ -55,8 +56,8 @@ export function Recent() {
       {uniqueHistory.length === 0 ? (
         <div className="empty">
           <div className="ico">⏱</div>
-          <div className="t1">Nothing played yet</div>
-          <div className="t2">Play some tracks to see them here.</div>
+          <div className="t1">{t(lang, "recent.empty1")}</div>
+          <div className="t2">{t(lang, "recent.empty2")}</div>
         </div>
       ) : (
         <div className="tracklist">

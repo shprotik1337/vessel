@@ -9,7 +9,7 @@ mod search;
 mod source_url;
 mod track_details;
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use url::Url;
 
@@ -95,6 +95,48 @@ impl MusicProvider for SoundCloudProvider {
 
     async fn download_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
         zagruzit_progressivnyi(&self.client, track).await
+    }
+
+    async fn liked_tracks(&self, profile_url: Option<&str>) -> Result<Vec<TrackRef>> {
+        // SoundCloud: лайки пользователя = GET /users/{id}/likes.
+        // Нужен URL профиля (https://soundcloud.com/username) — из него достаём id.
+        let username = profile_url
+            .and_then(|url| {
+                let url = url.trim();
+                let idx = url.rfind('/')?;
+                let name = url[idx + 1..].trim();
+                if name.is_empty() { None } else { Some(name.to_string()) }
+            })
+            .context("для импорта лайков SoundCloud укажи URL профиля, например https://soundcloud.com/username")?;
+        let user: models::ScUser = self
+            .client
+            .get_json(self.client.v2_url(&["users", &username])?, &[])
+            .await
+            .context("не удалось найти пользователя SoundCloud по URL профиля")?;
+        if user.id.is_empty() {
+            bail!("SoundCloud не вернул id пользователя")
+        }
+        let mut tracks = Vec::new();
+        let mut url = self.client.v2_url(&["users", &user.id, "likes"])?;
+        loop {
+            let page: models::ScCollection<models::ScTrack> = self
+                .client
+                .get_json(
+                    url,
+                    &[
+                        ("limit", "50".to_string()),
+                        ("linked_partitioning", "true".to_string()),
+                        ("access", "playable,preview".to_string()),
+                    ],
+                )
+                .await?;
+            tracks.extend(page.collection.into_iter().filter_map(normalizovat_track));
+            match page.next_href {
+                Some(next) => url = Url::parse(&next)?,
+                None => break,
+            }
+        }
+        Ok(tracks)
     }
 }
 

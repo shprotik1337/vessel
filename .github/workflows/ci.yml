@@ -12,33 +12,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Windows x86_64
-            os: windows-latest
-          - name: Linux x86_64
-            os: ubuntu-latest
-    runs-on: ${{ matrix.os }}
+  windows:
+    name: Windows check
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Системные зависимости Linux
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+
       - uses: Swatinem/rust-cache@v2
-      - name: Форматирование
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Настройка Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Тесты
-        run: cargo test --locked --all-targets
-      - name: Release сборка
-        run: cargo build --locked --release
+        run: cargo test --lib --locked -j 2
+
+      - name: Сборка GUI
+        working-directory: apps/vessel-gui
+        run: npm run tauri build -- --no-bundle

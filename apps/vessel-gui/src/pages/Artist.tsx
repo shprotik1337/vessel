@@ -5,6 +5,7 @@ import { TrackRow } from "../components/TrackRow";
 import { Artwork } from "../components/Artwork";
 import { PlaylistCover } from "../components/PlaylistCover";
 import { trackKey, providerLabel, formatDuration, artistLabel } from "../lib/utils";
+import { t } from "../i18n";
 import type { ArtistProfile, CollectionItem, Playlist, TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
@@ -19,7 +20,7 @@ interface ArtistProps {
 }
 
 export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
-  const { state, playTracks, showToast, goBack, navigateTo, refresh } = useApp();
+  const { state, playTracks, showToast, goBack, navigateTo, refresh, lang } = useApp();
   const [profile, setProfile] = useState<ArtistProfile | null>(null);
   const [allTracks, setAllTracks] = useState<TrackRef[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -72,14 +73,19 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
             null;
           target = match ? { provider: match.provider, id: match.id } : null;
           if (!target && found.length === 0) {
-            setError("Артист не найден");
+            setError(t(lang, "artist.notFound"));
           }
         }
         if (!target) return;
         const profile = await api.artistProfile(target.provider, target.id);
         if (cancelled) return;
         setProfile(profile);
-        if (mode === "tracks" || mode === "profile") {
+        // Профиль показываем сразу, треки грузим в фоне (могут быть десятки
+        // browse-запросов — не блокируем карточку артиста).
+        // Для YouTube Music секции «Вся музыка» нет — только популярное и релизы.
+        setLoading(false);
+        const isYtMusic = target.provider === "you_tube_music";
+        if (!isYtMusic && (mode === "tracks" || mode === "profile")) {
           const tracksKey = `${target.provider}|${target.id}`;
           if (tracksRequested.current === tracksKey) return;
           tracksRequested.current = tracksKey;
@@ -87,7 +93,11 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
             const tracks = await api.artistAllTracks(target.provider, target.id);
             if (!cancelled) setAllTracks(tracks);
           } catch (err) {
-            if (!cancelled) showToast(String(err), true);
+            if (!cancelled) {
+              // Ошибка — показываем честный «пусто», а не вечные скелетоны
+              setAllTracks([]);
+              showToast(String(err), true);
+            }
           }
         }
       } catch (err) {
@@ -122,7 +132,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
       <div className="view">
         <div style={{ marginBottom: 18 }}>
           <button className="btn btn-outline btn-sm" onClick={() => setPreview(null)}>
-            ← Назад
+            {t(lang, "common.back")}
           </button>
         </div>
         {preview.loading || !pl ? (
@@ -148,13 +158,13 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 <span className="kicker">
                   {preview.provider
                     ? providerLabel(preview.provider)
-                    : "Плейлист"}
+                    : t(lang, "artist.playlist")}
                 </span>
                 <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
                   {pl.title}
                 </div>
                 <div className="meta-line">
-                  <span>{pl.tracks.length} треков</span>
+                  <span>{pl.tracks.length} {t(lang, "common.tracks")}</span>
                   <span className="meta-sep">·</span>
                   <span>{formatDuration(totalMs)}</span>
                 </div>
@@ -164,17 +174,17 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                       className="btn btn-primary btn-sm"
                       onClick={() => void playTracks(pl.tracks, 0)}
                     >
-                      ▶ Играть
+                      ▶ {t(lang, "artist.play")}
                     </button>
                   )}
                   {pl.source_url && !owned && (
                     <button className="btn btn-ghost btn-sm" onClick={addPreviewed}>
-                      Добавить в библиотеку
+                      {t(lang, "artist.addToLibrary")}
                     </button>
                   )}
                   {owned && (
                     <span className="badge ok" style={{ padding: "6px 10px" }}>
-                      ✓ Уже в библиотеке
+                      ✓ {t(lang, "artist.alreadyInLibrary")}
                     </span>
                   )}
                 </div>
@@ -200,7 +210,11 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                       }
                     }}
                   >
-                    {opt === "custom" ? "Custom order" : opt === "title" ? "Title" : "Artist"}
+                    {opt === "custom"
+                      ? t(lang, "artist.customOrder")
+                      : opt === "title"
+                        ? t(lang, "artist.titleSort")
+                        : t(lang, "artist.artistSort")}
                     {previewSort === opt && opt !== "custom" && (previewDir === "asc" ? " ↑" : " ↓")}
                   </button>
                 ))}
@@ -210,7 +224,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
               {pl.tracks.length === 0 ? (
                 <div className="empty">
                   <div className="ico">♫</div>
-                  <div className="t1">Пустой плейлист</div>
+                  <div className="t1">{t(lang, "artist.emptyPlaylist")}</div>
                 </div>
               ) : (
                 <div className="tracklist">
@@ -241,8 +255,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
   const header = (back: boolean) => (
     <div style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 12 }}>
       {back && (
-        <button className="btn btn-outline btn-sm" onClick={goBack} title="Back">
-          ← Назад
+        <button className="btn btn-outline btn-sm" onClick={goBack} title={t(lang, "common.back")}>
+          {t(lang, "common.back")}
         </button>
       )}
       {profile && (
@@ -271,7 +285,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
         />
         <button
           className="card-play"
-          title="Играть"
+          title={t(lang, "common.play")}
           onClick={(e) => {
             e.stopPropagation();
             void playRelease(release);
@@ -291,8 +305,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
       {mode === "profile" && (
         <>
           <div style={{ marginBottom: 18 }}>
-            <button className="btn btn-outline btn-sm" onClick={goBack} title="Back">
-              ← Назад
+            <button className="btn btn-outline btn-sm" onClick={goBack} title={t(lang, "common.back")}>
+              {t(lang, "common.back")}
             </button>
           </div>
 
@@ -308,7 +322,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
           {error && !loading && (
             <div className="empty">
               <div className="ico">?</div>
-              <div className="t1">Артист не найден</div>
+              <div className="t1">{t(lang, "artist.notFound")}</div>
               <div className="t2">{error}</div>
             </div>
           )}
@@ -353,7 +367,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                     minWidth: 0,
                   }}
                 >
-                  <span className="kicker">Артист</span>
+                  <span className="kicker">{t(lang, "artist.artist")}</span>
                   <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
                     {profile.name}
                   </div>
@@ -363,7 +377,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
               {popular.length > 0 && (
                 <div className="section">
                   <div className="sec-head">
-                    <span className="sec-title">Популярное</span>
+                    <span className="sec-title">{t(lang, "artist.popular")}</span>
                   </div>
                   <div className="tracklist">
                     {popular.map((track, i) => (
@@ -385,13 +399,13 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
               {releases.length > 0 && (
                 <div className="section">
                   <div className="sec-head">
-                    <span className="sec-title">Релизы</span>
+                    <span className="sec-title">{t(lang, "artist.releases")}</span>
                     {releases.length > INITIAL_RELEASES && (
                       <span
                         className="sec-link"
                         onClick={() => navigateTo("artist-releases")}
                       >
-                        Показать все ({releases.length})
+                        {t(lang, "artist.showAll")} ({releases.length})
                       </span>
                     )}
                   </div>
@@ -401,21 +415,26 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 </div>
               )}
 
-              {allTracks != null && allTracks.length > 0 && (
+              {/* В YouTube Music секции «Вся музыка» нет — только популярное и релизы */}
+              {provider !== "you_tube_music" &&
+                (allTracks == null || allTracks.length > 0) && (
                 <div className="section">
                   <div className="sec-head">
-                    <span className="sec-title">Музыка</span>
-                    {allTracks.length > INITIAL_TRACKS && (
+                    <span className="sec-title">{t(lang, "artist.music")}</span>
+                    {allTracks != null && allTracks.length > INITIAL_TRACKS && (
                       <span
                         className="sec-link"
                         onClick={() => navigateTo("artist-tracks")}
                       >
-                        Показать все ({allTracks.length})
+                        {t(lang, "artist.showAll")} ({allTracks.length})
                       </span>
                     )}
                   </div>
-                  {allTracks.length === 0 && loading ? (
+                  {allTracks == null ? (
+                    // Ещё грузится в фоне — скелетоны
                     <div className="tracklist">
+                      <div className="skel" />
+                      <div className="skel" />
                       <div className="skel" />
                       <div className="skel" />
                     </div>
@@ -445,14 +464,14 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
 
               {popular.length === 0 &&
                 releases.length === 0 &&
-                (allTracks == null || allTracks.length === 0) &&
+                (provider === "you_tube_music" ||
+                  allTracks == null ||
+                  allTracks.length === 0) &&
                 !loading && (
                   <div className="empty">
                     <div className="ico">♫</div>
-                    <div className="t1">Ничего не найдено</div>
-                    <div className="t2">
-                      У этого артиста пока нет доступных треков и релизов.
-                    </div>
+                    <div className="t1">{t(lang, "artist.empty1")}</div>
+                    <div className="t2">{t(lang, "artist.empty2")}</div>
                   </div>
                 )}
             </>
