@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+﻿use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
@@ -27,7 +27,9 @@ pub(super) fn decode_source(
     buffered_samples: &AtomicU64,
     duration_ms: &AtomicU64,
 ) -> Result<()> {
+    crate::dlog!("[decode][gen{generation}] opening media (pos={position_ms})");
     let media = open_media(&source, position_ms)?;
+    crate::dlog!("[decode][gen{generation}] media opened");
     let stream = MediaSourceStream::new(
         media.source,
         MediaSourceStreamOptions {
@@ -49,6 +51,7 @@ pub(super) fn decode_source(
             MetadataOptions::default(),
         )
         .context("формат аудиопотока не распознан")?;
+    crate::dlog!("[decode][gen{generation}] probe done");
     let track = format
         .default_track(TrackType::Audio)
         .context("в источнике нет аудиодорожки")?
@@ -95,6 +98,7 @@ pub(super) fn decode_source(
         );
     }
 
+    let mut chunk_count: u64 = 0;
     let mut discard_samples = media
         .discard_ms
         .saturating_mul(output_rate as u64)
@@ -107,6 +111,13 @@ pub(super) fn decode_source(
         else {
             break;
         };
+        if chunk_count == 0 {
+            crate::dlog!(
+                "[decode][gen{generation}] packet track_id={} (аудио={})",
+                packet.track_id,
+                packet.track_id == track.id
+            );
+        }
         if packet.track_id != track.id {
             continue;
         }
@@ -140,6 +151,9 @@ pub(super) fn decode_source(
         }
         let sample_count = samples.len() as u64;
         buffered_samples.fetch_add(sample_count, Ordering::AcqRel);
+        if chunk_count == 0 {
+            crate::dlog!("[decode][gen{generation}] sending FIRST chunk ({} samples)", sample_count);
+        }
         if chunks
             .send(AudioChunk {
                 generation,
@@ -149,6 +163,9 @@ pub(super) fn decode_source(
             .is_err()
         {
             break;
+        }
+        if chunk_count == 0 {
+            crate::dlog!("[decode][gen{generation}] FIRST CHUNK SENT");
         }
     }
     Ok(())

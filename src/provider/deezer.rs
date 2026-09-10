@@ -1,4 +1,4 @@
-use std::{
+﻿use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
@@ -80,6 +80,8 @@ impl DeezerProvider {
         let http = Client::builder()
             .cookie_provider(jar)
             .user_agent(BROWSER_UA)
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
             .build()
             .context("не удалось создать HTTP-клиент Deezer")?;
         Ok(Self { http })
