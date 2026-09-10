@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+﻿import { useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { providerLabel } from "../lib/utils";
@@ -104,13 +104,24 @@ export function Sidebar() {
         {nav("queue")}
       </div>
       <div className="nav">
-        <div className="nav-label-row" style={{ cursor: "pointer" }} onClick={() => setPlExpanded((v) => !v)}>
-          <span className="nav-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 10 }}>{plExpanded ? "▾" : "▸"}</span>
+        <div className="nav-label-row">
+          <span
+            className={`nav-chevron ${plExpanded ? "open" : "closed"}`}
+            onClick={() => setPlExpanded((v) => !v)}
+            aria-label="Toggle playlists"
+            title={plExpanded ? "Свернуть плейлисты" : "Развернуть плейлисты"}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+          </span>
+          <span
+            className="nav-label"
+            style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, cursor: "pointer" }}
+            onClick={() => setPlExpanded((v) => !v)}
+          >
             {t(lang, "nav.playlists")}
           </span>
-          <span className="plus" onClick={(e) => { e.stopPropagation(); createPlaylist(); }}>
-            ＋
+          <span className="plus" onClick={(e) => { e.stopPropagation(); createPlaylist(); }} aria-label="Создать плейлист" title="Создать плейлист">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </span>
         </div>
         <div

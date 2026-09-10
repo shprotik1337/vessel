@@ -7,6 +7,38 @@ import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import * as api from "../api/commands";
 
+const HEART_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+);
+
+const SHUFFLE_SVG = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+);
+
+const PREV_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+);
+
+const NEXT_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
+);
+
+const REPEAT_SVG = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+);
+
+const PLAY_SVG = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l14 8-14 8V4z"/></svg>
+);
+
+const PAUSE_SVG = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+);
+
+const VOLUME_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+);
+
 export function BottomPlayer() {
   const { state, showToast, refresh, navigateTo, lang } = useApp();
   if (!state) return null;
@@ -149,9 +181,20 @@ export function BottomPlayer() {
 
   const playing = player.status === "playing" || player.status === "buffering";
   const failed = player.status === "error";
+  // Текст ошибки: сначала failed-статус плеера, затем последнее уведомление
+  // (Action::PlaybackNotice/PlaybackFailed), если оно относится к треку.
+  const errText = failed
+    ? `${track?.title ?? ""} — не удалось воспроизвести`
+    : null;
 
   return (
-    <footer className="player">
+    <footer className={`player ${failed ? "playback-error" : ""}`} style={{ position: "relative" }}>
+      {errText && (
+        <div className="err-banner">
+          <span style={{ color: "var(--red)", fontWeight: 700 }}>!</span>
+          <span>{errText} — нажми ▶, чтобы повторить</span>
+        </div>
+      )}
       <div className="pl-left">
         {track ? (
           <Artwork
@@ -164,9 +207,16 @@ export function BottomPlayer() {
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
         <div className="pl-meta">
-          <span className="ttl" style={failed ? { color: "var(--red)" } : undefined}>
-            {failed ? `${track?.title ?? ""} — не удалось воспроизвести` : track?.title ?? t(lang, "bottom.noTrack")}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <span className="ttl" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {track?.title ?? t(lang, "bottom.noTrack")}
+            </span>
+            {track && (
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".5px", color: "var(--text2)", background: "rgba(255,255,255,.08)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", flexShrink: 0 }}>
+                {providerLabel(track.provider)}
+              </span>
+            )}
+          </div>
           <div className="pl-sub">
             {track && track.artists.length > 0 ? (
               <span>
@@ -188,38 +238,45 @@ export function BottomPlayer() {
             ) : (
               <span>{track ? "" : ""}</span>
             )}
-            {track && <span className="dot" />}
-            <span className="pl-src">{track ? providerLabel(track.provider) : ""}</span>
           </div>
         </div>
-        <button className={`pl-fav ${fav ? "on" : ""}`} onClick={handleFav} title={t(lang, "bottom.favorite")}>
-          {fav ? "♥" : "♡"}
+        <button
+          className={`heart ${fav ? "active" : ""}`}
+          onClick={handleFav}
+          title={t(lang, "bottom.favorite")}
+          aria-label="Like"
+          disabled={!track}
+        >
+          {HEART_SVG}
         </button>
       </div>
       <div className="pl-center">
         <div className="pl-controls">
           <button
-            className={`p-btn ${player.shuffle ? "" : "muted"}`}
+            className={`ctrl-btn ${player.shuffle ? "active" : "muted"}`}
             onClick={handleShuffle}
             title={t(lang, "bottom.shuffle")}
+            aria-label="Shuffle"
           >
-            🔀
+            {SHUFFLE_SVG}
           </button>
-          <button className="p-btn" onClick={handlePrev} title={t(lang, "bottom.previous")}>
-            ⏮
+          <button className="ctrl-btn" onClick={handlePrev} title={t(lang, "bottom.previous")} aria-label="Previous">
+            {PREV_SVG}
           </button>
-          <button className="p-play" onClick={handleToggle} title={t(lang, "bottom.playPause")} type="button">
-            {playing ? "⏸" : "▶"}
+          <button className="p-play" onClick={handleToggle} title={t(lang, "bottom.playPause")} type="button" aria-label={playing ? "Pause" : "Play"}>
+            {playing ? PAUSE_SVG : PLAY_SVG}
           </button>
-          <button className="p-btn" onClick={handleNext} title={t(lang, "bottom.next")}>
-            ⏭
+          <button className="ctrl-btn" onClick={handleNext} title={t(lang, "bottom.next")} aria-label="Next">
+            {NEXT_SVG}
           </button>
           <button
-            className={`p-btn ${player.repeat === "off" ? "muted" : ""}`}
+            className={`ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
             onClick={handleRepeat}
             title={t(lang, "bottom.repeat")}
+            aria-label="Repeat"
           >
-            {player.repeat === "one" ? "🔂" : "🔁"}
+            {REPEAT_SVG}
+            {player.repeat === "one" && <span className="rep-one">1</span>}
           </button>
         </div>
         <div className="pl-progress">
@@ -232,12 +289,13 @@ export function BottomPlayer() {
         </div>
       </div>
       <div className="pl-right">
-        <button className="p-btn muted" title={t(lang, "bottom.volume")}>
-          {player.volume_percent === 0 ? "🔇" : "🔊"}
-        </button>
-        <div ref={volBarRef} className="vol-bar" onPointerDown={onVolPointerDown}>
-          <div className="fill" style={{ width: `${player.volume_percent}%` }} />
-          <div className="knob" style={{ left: `${player.volume_percent}%` }} />
+        <div className="divider" />
+        <div className="vol">
+          <span style={{ opacity: player.volume_percent === 0 ? 0.5 : 1 }}>{VOLUME_SVG}</span>
+          <div ref={volBarRef} className="vol-bar" onPointerDown={onVolPointerDown}>
+            <div className="fill" style={{ width: `${player.volume_percent}%` }} />
+            <div className="knob" style={{ left: `${player.volume_percent}%` }} />
+          </div>
         </div>
       </div>
     </footer>

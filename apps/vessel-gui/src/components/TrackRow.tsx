@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 
 import { useApp } from "../store";
 import {
@@ -229,25 +229,28 @@ export function TrackRow({
             <span className="src">{providerLabel(track.provider)}</span>
           )}
           <span className="row-actions">
-            <i
-              className={fav ? "fav" : ""}
+            <button
+              className={`heart ${fav ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
                 void handleFav();
               }}
               title={t(lang, "trackrow.favorite")}
+              aria-label="Like"
             >
-              {fav ? "♥" : "♡"}
-            </i>
-            <i
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+            </button>
+            <button
+              className="plus-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 setPlPicker(true);
               }}
               title={t(lang, "trackrow.addToPlaylist")}
+              aria-label="Add to playlist"
             >
-              ＋
-            </i>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
             <i onClick={openMenu} title={t(lang, "trackrow.more")}>
               ⋯
             </i>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
@@ -342,7 +342,7 @@ export function Search() {
                     void addToLibrary(item.web_url);
                   }}
                 >
-                  {adding === item.web_url ? "…" : `＋ ${t(lang, "search.add")}`}
+                  {adding === item.web_url ? "…" : (<span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style={{verticalAlign:"-2px",marginRight:4}}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>{t(lang, "search.add")}</span>)}
                 </button>
               )}
               {owned && (
