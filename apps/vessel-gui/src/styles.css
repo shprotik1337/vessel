@@ -32,10 +32,11 @@ button{font-family:inherit}
 .nav-count{font-size:12px;color:var(--text3);font-variant-numeric:tabular-nums}
 .plus{display:flex;align-items:center;justify-content:center;padding:2px;border-radius:4px;color:var(--icon,#c7c7c7);cursor:pointer;transition:background .12s,color .12s}
 .plus:hover{background:var(--hover);color:var(--text)}
-.nav-chevron{display:flex;align-items:center;justify-content:center;color:var(--icon,#c7c7c7);cursor:pointer;transition:color .12s,transform .15s ease}
+.nav-chevron{display:flex;align-items:center;justify-content:center;color:var(--icon,#c7c7c7);cursor:pointer;transition:color .12s}
 .nav-chevron:hover{color:var(--text)}
-.nav-chevron.open{transform:rotate(0deg)}
-.nav-chevron.closed{transform:rotate(180deg)}
+.nav-chevron svg{transition:transform .18s ease}
+.nav-chevron.open svg{transform:rotate(0deg)}
+.nav-chevron.closed svg{transform:rotate(180deg)}
 .plus:hover{color:var(--text)}
 .pl-item{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:4px;color:var(--text2);font-size:13px;cursor:pointer;border:none;background:none;width:100%;text-align:left;transition:background .12s}
 .pl-item:hover{background:var(--elev);color:var(--text)}
@@ -106,7 +107,7 @@ button{font-family:inherit}
 .thead{display:grid;grid-template-columns:18px 40px 1.5fr 1fr 110px 100px 50px;gap:14px;align-items:center;height:34px;padding:0 12px;border-bottom:1px solid var(--border)}
 .th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);cursor:pointer;user-select:none}
 .th:hover{color:var(--text2)}
-.trow{display:grid;grid-template-columns:18px 40px 1.5fr 1fr 110px 100px 50px;gap:14px;align-items:center;height:48px;padding:0 12px;border-radius:5px;cursor:default;border:1px solid transparent;transition:background .1s}
+.trow{display:grid;grid-template-columns:18px 40px 2.2fr 0.7fr 90px 88px 54px;gap:12px;align-items:center;height:52px;padding:0 12px;border-radius:5px;cursor:default;border:1px solid transparent;transition:background .1s}
 .trow:hover{background:var(--elev2)}
 .trow.now{background:var(--elev);box-shadow:inset 2px 0 0 0 var(--text)}
 .trow.dim{opacity:.55}
@@ -115,9 +116,9 @@ button{font-family:inherit}
 .t-num:hover{color:var(--text)}
 .t-art{width:40px;height:40px;border-radius:3px;overflow:hidden;flex-shrink:0}
 .c-title{display:flex;flex-direction:column;gap:1px;min-width:0}
-.ttl{font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ttl{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .trow.now .ttl{font-weight:600}
-.sub{font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:13.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c-album{font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c-src{width:110px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);white-space:nowrap;position:relative}
 .row-actions{display:none;gap:11px;font-size:14px;color:var(--text2);align-items:center}
@@ -247,7 +248,7 @@ button{font-family:inherit}
 .ctrl-btn.active::after{content:"";display:block;width:4px;height:4px;border-radius:50%;background:var(--text);margin:2px auto 0}
 .ctrl-btn.muted{color:var(--text3)}
 .ctrl-btn .rep-one{position:absolute;font-size:8px;font-weight:700;right:-2px;bottom:-2px;background:#000;border-radius:50%;width:10px;height:10px;display:flex;align-items:center;justify-content:center;line-height:1;color:var(--text)}
-.p-play{width:40px;height:40px;border-radius:50%;background:var(--text);color:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;opacity:1;transition:transform .12s ease}
+.p-play{width:34px;height:34px;border-radius:50%;background:var(--text);color:#000;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;opacity:1;transition:transform .12s ease}
 .p-play:hover{transform:scale(1.06)}
 .p-play:active{transform:scale(.94)}
 .pl-progress{display:flex;align-items:center;gap:10px;width:100%;max-width:560px}
@@ -337,4 +338,3 @@ button{font-family:inherit}
 /* --- Sidebar playlist chevron: вверх = открыто, вниз = закрыто --- */
 .nav-chevron.open svg{transform:rotate(0deg)}
 .nav-chevron.closed svg{transform:rotate(180deg)}
-.nav-chevron svg{transition:transform .15s ease}
