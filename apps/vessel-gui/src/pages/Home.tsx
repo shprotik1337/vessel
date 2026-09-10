@@ -12,8 +12,8 @@ export function Home() {
   const { state, playTracks, navigateTo, showToast, lang } = useApp();
   if (!state) return null;
 
-  const recent = dedupe(state.history.map((h) => h.track)).slice(0, 5);
-  const playlists = state.playlists.slice(0, 5);
+  const recent = dedupe(state.history.map((h) => h.track)).slice(0, 8);
+  const playlists = state.playlists.slice(0, 9);
   const library = state.library.slice(0, 10);
 
   const playOne = (track: TrackRef) => {

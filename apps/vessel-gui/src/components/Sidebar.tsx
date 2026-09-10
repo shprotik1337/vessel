@@ -2,12 +2,14 @@
 
 import { useApp } from "../store";
 import { providerLabel } from "../lib/utils";
+import { TextInputModal } from "./Modal";
 import { t } from "../i18n";
 import * as api from "../api/commands";
 
 export function Sidebar() {
   const { state, view, playlistId, navigateTo, showToast, refresh, lang } = useApp();
   const [plExpanded, setPlExpanded] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
@@ -43,14 +45,15 @@ export function Sidebar() {
     setDragOver(null);
   };
 
-  const createPlaylist = async () => {
-    const title = window.prompt("Playlist name:", "New Playlist");
-    if (!title || !title.trim()) return;
+  const doCreate = async (title: string) => {
+    const name = title.trim();
+    if (!name) return;
     try {
-      const pl = await api.createPlaylist(title.trim());
+      const pl = await api.createPlaylist(name);
       await refresh();
+      setCreateOpen(false);
       navigateTo("playlist", { playlistId: pl.id });
-      showToast(`Created: ${title.trim()}`);
+      showToast(`Created: ${name}`);
     } catch (error) {
       showToast(String(error), true);
     }
@@ -120,7 +123,7 @@ export function Sidebar() {
           >
             {t(lang, "nav.playlists")}
           </span>
-          <span className="plus" onClick={(e) => { e.stopPropagation(); createPlaylist(); }} aria-label="Создать плейлист" title="Создать плейлист">
+          <span className="plus" onClick={(e) => { e.stopPropagation(); setCreateOpen(true); }} aria-label="Создать плейлист" title="Создать плейлист">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </span>
         </div>
@@ -200,6 +203,16 @@ export function Sidebar() {
           <span>{t(lang, "nav.settings")}</span>
         </button>
       </div>
+      {createOpen && (
+        <TextInputModal
+          lang={lang}
+          title={t(lang, "playlists.createName")}
+          placeholder={t(lang, "playlists.createName")}
+          confirmText={t(lang, "common.create")}
+          onSubmit={doCreate}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
     </aside>
   );
 }

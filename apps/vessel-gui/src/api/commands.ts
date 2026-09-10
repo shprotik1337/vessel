@@ -409,3 +409,19 @@ export async function getLanguage(): Promise<string> {
 export async function setLanguage(language: string): Promise<void> {
   return invoke("set_language", { language });
 }
+
+export async function pickFolder(): Promise<string | null> {
+  return invoke<string | null>("pick_folder");
+}
+
+export async function pickFile(extensions?: string[]): Promise<string | null> {
+  return invoke<string | null>("pick_file", { extensions: extensions ?? null });
+}
+
+export async function openPath(path: string): Promise<void> {
+  return invoke("open_path", { path });
+}
+
+export async function getUsersDir(): Promise<string> {
+  return invoke<string>("get_users_dir");
+}

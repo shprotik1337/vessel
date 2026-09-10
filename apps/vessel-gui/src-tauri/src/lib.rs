@@ -378,6 +378,8 @@ pub fn run() {
     let core = Arc::new(Mutex::new(core));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(core)
 .invoke_handler(tauri::generate_handler![
             get_state,
@@ -468,6 +470,11 @@ pub fn run() {
             commands::delete_user,
             commands::get_language,
             commands::set_language,
+            commands::pick_folder,
+            commands::pick_file,
+            commands::save_file_as,
+            commands::open_path,
+            commands::get_users_dir,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

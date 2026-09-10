@@ -3,6 +3,7 @@
 import { useApp } from "../store";
 import { PlaylistCover } from "../components/PlaylistCover";
 import { PlatformIcon } from "../components/PlatformIcon";
+import { TextInputModal, ConfirmModal } from "../components/Modal";
 import { trackKey } from "../lib/utils";
 import { t } from "../i18n";
 import * as api from "../api/commands";
@@ -24,27 +25,31 @@ export function Playlists() {
   const [likesProfileUrl, setLikesProfileUrl] = useState("");
   const [likesTarget, setLikesTarget] = useState<"favorites" | "playlist">("favorites");
   const [likesPlaylistTitle, setLikesPlaylistTitle] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   if (!state) return null;
 
-  const createPlaylist = async () => {
-    const title = window.prompt(t(lang, "playlists.createName"), "New Playlist");
-    if (!title || !title.trim()) return;
+  const doCreate = async (title: string) => {
+    const name = title.trim();
+    if (!name) return;
     try {
-      await api.createPlaylist(title.trim());
+      await api.createPlaylist(name);
       await refresh();
-      showToast(`${t(lang, "common.created")} ${title.trim()}`);
+      setCreateOpen(false);
+      showToast(`${t(lang, "common.created")} ${name}`);
     } catch (error) {
       showToast(String(error), true);
     }
   };
 
-  const deletePl = async (id: string, title: string) => {
-    if (!window.confirm(t(lang, "playlists.deleteConfirm").replace("{title}", title))) return;
+  const doDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      await api.deletePlaylist(id);
+      await api.deletePlaylist(deleteTarget.id);
       await refresh();
-      showToast(`${t(lang, "common.deleted")} ${title}`);
+      showToast(`${t(lang, "common.deleted")} ${deleteTarget.title}`);
+      setDeleteTarget(null);
     } catch (error) {
       showToast(String(error), true);
     }
@@ -133,7 +138,7 @@ export function Playlists() {
           <button className="btn btn-ghost" onClick={openImport}>
             {t(lang, "playlists.import")}
           </button>
-          <button className="btn btn-primary" onClick={createPlaylist}>
+          <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style={{verticalAlign:"-2px",marginRight:6}}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>{t(lang, "playlists.new")}
           </button>
         </div>
@@ -154,7 +159,7 @@ export function Playlists() {
               onClick={() => navigateTo("playlist", { playlistId: p.id })}
               onContextMenu={(e) => {
                 e.preventDefault();
-                deletePl(p.id, p.title);
+                setDeleteTarget({ id: p.id, title: p.title });
               }}
             >
               <div className="card-art">
@@ -398,6 +403,26 @@ export function Playlists() {
             </div>
           </div>
         </div>
+      )}
+      {createOpen && (
+        <TextInputModal
+          lang={lang}
+          title={t(lang, "playlists.createName")}
+          placeholder={t(lang, "playlists.createName")}
+          confirmText={t(lang, "common.create")}
+          onSubmit={doCreate}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          lang={lang}
+          title={t(lang, "playlists.deleteConfirm").replace("{title}", deleteTarget.title)}
+          confirmText={t(lang, "common.delete")}
+          onConfirm={doDelete}
+          onClose={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
