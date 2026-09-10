@@ -225,14 +225,14 @@ button{font-family:inherit}
 .qx{cursor:pointer;color:var(--text3);font-style:normal;font-size:15px;text-align:center}
 .qx:hover{color:var(--text)}
 
-.player{height:76px;flex-shrink:0;background:var(--panel);border-top:1px solid var(--border);display:flex;align-items:center;gap:24px;padding:0 24px;transition:box-shadow .2s}
+.player{min-height:76px;flex-shrink:0;background:var(--panel);border-top:1px solid var(--border);display:flex;align-items:center;gap:24px;padding:10px 24px;transition:box-shadow .2s}
 .player.playback-error{animation:errPulse 1.1s ease-in-out infinite;border-top:1px solid var(--red)}
 @keyframes errPulse{0%,100%{box-shadow:inset 0 0 0 1px transparent}50%{box-shadow:inset 0 0 0 1px var(--red)}}
 .player .err-banner{position:absolute;top:-34px;left:24px;right:24px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:var(--panel2);border:1px solid var(--red);color:var(--text);font-size:12px;z-index:5}
-.pl-left{width:264px;flex-shrink:0;display:flex;align-items:center;gap:12px;min-width:0}
+.pl-left{width:auto;min-width:200px;max-width:34%;flex-shrink:0;display:flex;align-items:center;gap:12px;min-width:0}
 .pl-art{width:48px;height:48px;border-radius:6px;overflow:hidden;flex-shrink:0;cursor:pointer}
 .pl-meta{display:flex;flex-direction:column;gap:3px;min-width:0;cursor:pointer}
-.pl-meta .ttl{font-size:16px;font-weight:700;letter-spacing:.3px}
+.pl-meta .ttl{font-size:12px;font-weight:700;letter-spacing:.3px;line-height:1.25;white-space:normal;overflow:visible;text-overflow:clip}
 .pl-sub{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)}
 .pl-sub .dot{width:1px;height:10px;background:var(--border2)}
 .pl-src{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3)}
