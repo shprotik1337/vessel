@@ -244,7 +244,7 @@ export function BottomPlayer() {
               title={t(lang, "bottom.favorite")}
               aria-label="Like"
               disabled={!track}
-              style={{ marginTop: -6 }}
+              style={{ marginTop: -6, marginBottom: -7 }}
             >
               {HEART_SVG}
             </button>
