@@ -25,6 +25,7 @@ pub(super) fn decode_source(
     output_channels: usize,
     chunks: &Sender<AudioChunk>,
     buffered_samples: &AtomicU64,
+    duration_ms: &AtomicU64,
 ) -> Result<()> {
     let media = open_media(&source, position_ms)?;
     let stream = MediaSourceStream::new(
@@ -57,6 +58,18 @@ pub(super) fn decode_source(
         .as_ref()
         .and_then(|params| params.audio())
         .context("у аудиодорожки нет параметров кодека")?;
+
+    // Длительность от декодера: треки без duration_ms в метаданных (например,
+    // импортированные плейлисты) иначе теряют ползунок.
+    // Duration хранится в timebase-единицах — конвертируем через time_base.
+    let track_duration_ms = match (&track.duration, &track.time_base) {
+        (Some(dur), Some(tb)) => {
+            dur.get() as u64 * u64::from(tb.numer.get()) / u64::from(tb.denom.get()) * 1000
+        }
+        _ => 0,
+    };
+    duration_ms.store(track_duration_ms, Ordering::Release);
+
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(codec, &AudioDecoderOptions::default())
         .context("аудиокодек не поддерживается")?;
@@ -75,6 +88,11 @@ pub(super) fn decode_source(
             )
             .context("источник не поддерживает перемотку")?;
         decoder.reset();
+    } else if position_ms > 0 {
+        crate::dlog!(
+            "[audio] seek {}ms отклонён: источник не seekable, играю с начала",
+            position_ms
+        );
     }
 
     let mut discard_samples = media

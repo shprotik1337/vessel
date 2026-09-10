@@ -30,14 +30,19 @@ export function relativeTime(ms: number): string {
 
 export function providerLabel(provider: string): string {
   switch (provider) {
+    case "soundcloud":
     case "sound_cloud":
       return "SoundCloud";
+    case "yandex":
     case "yandex_music":
-      return "Yandex";
+      return "Yandex Music";
     case "deezer":
       return "Deezer";
     case "spotify":
       return "Spotify";
+    case "youtube_music":
+    case "you_tube_music":
+      return "YouTube Music";
     default:
       return provider;
   }

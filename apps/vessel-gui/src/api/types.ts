@@ -1,4 +1,4 @@
-export type ProviderKind = "soundcloud" | "yandex_music" | "deezer" | "spotify";
+export type ProviderKind = "soundcloud" | "yandex_music" | "deezer" | "spotify" | "you_tube_music";
 
 export interface TrackRef {
   provider: ProviderKind;
@@ -20,7 +20,7 @@ export type PlaybackCapability =
   | { kind: "unavailable"; reason: string };
 
 export type RepeatMode = "off" | "all" | "one";
-export type PlaybackStatus = "playing" | "paused" | "buffering" | "stopped";
+export type PlaybackStatus = "playing" | "paused" | "buffering" | "stopped" | "error";
 
 export interface PlayerState {
   status: PlaybackStatus;
@@ -72,8 +72,21 @@ export interface FullState {
   yandex_enabled: boolean;
   deezer_enabled: boolean;
   spotify_enabled: boolean;
+  youtube_music_enabled: boolean;
   server_url: string;
   status_message: string;
+  user_profile: UserProfile | null;
+  needs_user_selection: boolean;
+  language: string;
+  wave_source: string;
+}
+
+export interface UserProfile {
+  id: string;
+  display_name: string;
+  created_at_ms: number;
+  updated_at_ms: number;
+  format_version: number;
 }
 
 export interface SearchOutcome {
@@ -102,7 +115,8 @@ export type View =
   | "favorites"
   | "recent"
   | "queue"
-  | "settings";
+  | "settings"
+  | "wave";
 
 export type CollectionKind = "playlist" | "album" | "artist";
 

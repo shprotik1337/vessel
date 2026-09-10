@@ -93,6 +93,7 @@ mod tests {
             genres: Vec::new(),
             explicit: false,
             drm: false,
+            isrc: None,
         };
         let tracks = related_tracks(&client, &track, 5).await.unwrap();
         server.join().unwrap();

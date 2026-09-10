@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
 import { trackKey, artistLabel } from "../lib/utils";
+import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
@@ -10,7 +11,7 @@ type SortMode = "custom" | "title" | "artist" | "added";
 type SortDir = "asc" | "desc";
 
 export function Favorites() {
-  const { state, playTracks, showToast, navigateTo, refresh } = useApp();
+  const { state, playTracks, showToast, navigateTo, refresh, lang } = useApp();
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [sort, setSort] = useState<SortMode>("custom");
@@ -89,7 +90,7 @@ export function Favorites() {
       const res = await api.downloadAllToCache(favTracks);
       await refresh();
       showToast(
-        `Downloaded: ${res.downloaded} · skipped: ${res.skipped} · failed: ${res.failed}`,
+        `${t(lang, "favorites.cache")}: ${res.downloaded} · skipped: ${res.skipped} · failed: ${res.failed}`,
       );
     } catch (error) {
       showToast(String(error), true);
@@ -128,10 +129,10 @@ export function Favorites() {
   };
 
   const sortOptions: { mode: SortMode; label: string }[] = [
-    { mode: "custom", label: "Custom order" },
-    { mode: "title", label: "Title" },
-    { mode: "artist", label: "Artist" },
-    { mode: "added", label: "Date added" },
+    { mode: "custom", label: t(lang, "playlist.customOrder") },
+    { mode: "title", label: t(lang, "playlist.titleSort") },
+    { mode: "artist", label: t(lang, "playlist.artistSort") },
+    { mode: "added", label: t(lang, "playlist.dateAdded") },
   ];
 
   const toggleSort = (mode: SortMode) => {
@@ -147,23 +148,23 @@ export function Favorites() {
     <div className="view">
       <div className="view-hd">
         <div>
-          <div className="view-title">Favorites</div>
-          <div className="view-sub">{favTracks.length} tracks</div>
+          <div className="view-title">{t(lang, "favorites.title")}</div>
+          <div className="view-sub">{favTracks.length} {t(lang, "common.tracks")}</div>
         </div>
         <div className="btns">
           <button className="btn btn-primary" onClick={playAll}>
-            ▶ Play all
+            ▶ {t(lang, "favorites.playAll")}
           </button>
           <button className="btn btn-ghost" onClick={shufflePlay}>
-            Shuffle
+            {t(lang, "favorites.shuffle")}
           </button>
           <button
             className="btn btn-outline"
             onClick={downloadAll}
             disabled={downloading}
-            title="Скачать все треки в кэш"
+            title={t(lang, "favorites.cacheTitle")}
           >
-            {downloading ? "..." : "⤓ Cache"}
+            {downloading ? "..." : `⤓ ${t(lang, "favorites.cache")}`}
           </button>
         </div>
       </div>
@@ -171,8 +172,8 @@ export function Favorites() {
       {favTracks.length === 0 ? (
         <div className="empty">
           <div className="ico">♡</div>
-          <div className="t1">No favorites yet</div>
-          <div className="t2">Click the heart on any track to add it.</div>
+          <div className="t1">{t(lang, "favorites.empty1")}</div>
+          <div className="t2">{t(lang, "favorites.empty2")}</div>
         </div>
       ) : (
         <>

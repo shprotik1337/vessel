@@ -4,7 +4,6 @@ use symphonia::core::io::MediaSource;
 use crate::model::PlaybackSource;
 
 use super::{hls::HlsSource, http_source::HttpRangeSource};
-
 pub(super) struct OpenedMedia {
     pub(super) source: Box<dyn MediaSource>,
     pub(super) extension: Option<String>,

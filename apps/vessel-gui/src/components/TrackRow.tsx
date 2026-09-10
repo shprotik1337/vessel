@@ -9,6 +9,7 @@ import {
   trackKey,
   canPlay,
 } from "../lib/utils";
+import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import { Artwork } from "./Artwork";
 import * as api from "../api/commands";
@@ -36,7 +37,7 @@ export function TrackRow({
   showAdded,
   addedLabel,
 }: TrackRowProps) {
-  const { state, showToast, refresh } = useApp();
+  const { state, showToast, refresh, lang } = useApp();
   const key = trackKey(track);
   const isCurrent = nowKey != null && nowKey === key;
   const isLive =
@@ -99,7 +100,7 @@ export function TrackRow({
     closeAll();
     try {
       await api.addToQueue(track);
-      showToast(`Added to queue: ${track.title}`);
+      showToast(`${t(lang, "trackrow.addedToQueue")} ${track.title}`);
     } catch (error) {
       showToast(String(error), true);
     }
@@ -109,7 +110,7 @@ export function TrackRow({
     closeAll();
     try {
       await api.playNext(track);
-      showToast(`Play next: ${track.title}`);
+      showToast(`${t(lang, "trackrow.playNextToast")} ${track.title}`);
     } catch (error) {
       showToast(String(error), true);
     }
@@ -118,10 +119,10 @@ export function TrackRow({
   const handleDownload = async () => {
     closeAll();
     setDownloading(true);
-    showToast(`Скачиваю: ${track.title}…`);
+    showToast(`${t(lang, "trackrow.downloadingTrack")} ${track.title}…`);
     try {
       const path = await api.downloadTrack(track);
-      showToast(`Скачано: ${path}`);
+      showToast(`${t(lang, "trackrow.downloaded")} ${path}`);
     } catch (error) {
       showToast(String(error), true);
     } finally {
@@ -133,7 +134,7 @@ export function TrackRow({
     closeAll();
     try {
       await api.addToPlaylist(playlistId, track);
-      showToast(`Added to playlist`);
+      showToast(t(lang, "trackrow.addedToPlaylist"));
       await refresh();
     } catch (error) {
       showToast(String(error), true);
@@ -200,22 +201,30 @@ export function TrackRow({
             style={{ display: "flex" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <span
-              style={{ cursor: onArtistClick && track.artists[0] ? "pointer" : undefined }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onArtistClick && track.artists[0])
-                  onArtistClick(track.artists[0], track.provider);
-              }}
-            >
-              {artistLabel(track.artists)}
-            </span>
+            {track.artists.length > 0
+              ? track.artists.map((artist, i) => (
+                  <span key={`${artist}-${i}`}>
+                    <span
+                      style={{
+                        cursor: onArtistClick ? "pointer" : undefined,
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onArtistClick) onArtistClick(artist, track.provider);
+                      }}
+                    >
+                      {artist}
+                    </span>
+                    {i < track.artists.length - 1 ? ", " : ""}
+                  </span>
+                ))
+              : artistLabel([])}
           </span>
         </div>
         {showAlbum ? <span className="c-album">—</span> : <span />}
         <span className="c-src">
           {!playable ? (
-            <span className="badge-unav">Unavailable</span>
+            <span className="badge-unav">{t(lang, "trackrow.unavailable")}</span>
           ) : (
             <span className="src">{providerLabel(track.provider)}</span>
           )}
@@ -226,7 +235,7 @@ export function TrackRow({
                 e.stopPropagation();
                 void handleFav();
               }}
-              title="Favorite"
+              title={t(lang, "trackrow.favorite")}
             >
               {fav ? "♥" : "♡"}
             </i>
@@ -235,11 +244,11 @@ export function TrackRow({
                 e.stopPropagation();
                 setPlPicker(true);
               }}
-              title="Add to playlist"
+              title={t(lang, "trackrow.addToPlaylist")}
             >
               ＋
             </i>
-            <i onClick={openMenu} title="More">
+            <i onClick={openMenu} title={t(lang, "trackrow.more")}>
               ⋯
             </i>
           </span>
@@ -251,21 +260,21 @@ export function TrackRow({
       {menu && (
         <div ref={menuRef} className="ctx show" style={menuStyle}>
           <div className="ctx-head">{track.title}</div>
-          <div className="ctx-item" onClick={handlePlayNext}>Play next</div>
-          <div className="ctx-item" onClick={handleAddQueue}>Add to queue</div>
+          <div className="ctx-item" onClick={handlePlayNext}>{t(lang, "trackrow.playNext")}</div>
+          <div className="ctx-item" onClick={handleAddQueue}>{t(lang, "trackrow.addToQueue")}</div>
           <div className="ctx-item" onClick={() => { setMenu(null); setPlPicker(true); }}>
-            Add to playlist
+            {t(lang, "trackrow.addToPlaylistCtx")}
           </div>
           <div className="ctx-item" onClick={handleDownload} style={downloading ? { opacity: 0.5 } : undefined}>
-            {downloading ? "Скачивается…" : "Скачать"}
+            {downloading ? t(lang, "trackrow.downloading") : t(lang, "trackrow.download")}
           </div>
           <div className="ctx-sep" />
-          <div className="ctx-item" onClick={handleFav}>{fav ? "Unlike" : "Like"}</div>
+          <div className="ctx-item" onClick={handleFav}>{fav ? t(lang, "trackrow.unlike") : t(lang, "trackrow.like")}</div>
           {onRemove && (
             <>
               <div className="ctx-sep" />
               <div className="ctx-item danger" onClick={() => { closeAll(); onRemove(track); }}>
-                Remove from playlist
+                {t(lang, "trackrow.removeFromPlaylist")}
               </div>
             </>
           )}
@@ -280,14 +289,14 @@ export function TrackRow({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="playlist-picker-head">
-              <span className="ov-title">Add to playlist</span>
+              <span className="ov-title">{t(lang, "trackrow.addToPlaylistCtx")}</span>
               <button className="ov-close" onClick={() => setPlPicker(false)}>
                 ✕
               </button>
             </div>
             <div className="playlist-picker-list">
               {state?.playlists.length === 0 && (
-                <div className="set-desc" style={{ padding: 12 }}>No playlists yet</div>
+                <div className="set-desc" style={{ padding: 12 }}>{t(lang, "trackrow.noPlaylists")}</div>
               )}
               {state?.playlists.map((p) => (
                 <div

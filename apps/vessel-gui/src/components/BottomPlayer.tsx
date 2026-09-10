@@ -1,12 +1,14 @@
 import { useRef, useState } from "react";
 
 import { useApp } from "../store";
-import { formatTime, artistLabel, providerLabel, isFavorite } from "../lib/utils";
+import { formatTime, providerLabel, isFavorite
+ } from "../lib/utils";
+import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import * as api from "../api/commands";
 
 export function BottomPlayer() {
-  const { state, showToast, refresh, navigateTo } = useApp();
+  const { state, showToast, refresh, navigateTo, lang } = useApp();
   if (!state) return null;
 
   const track = state.now_playing;
@@ -146,6 +148,7 @@ export function BottomPlayer() {
   };
 
   const playing = player.status === "playing" || player.status === "buffering";
+  const failed = player.status === "error";
 
   return (
     <footer className="player">
@@ -161,22 +164,35 @@ export function BottomPlayer() {
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
         <div className="pl-meta">
-          <span className="ttl">{track?.title ?? "No track"}</span>
+          <span className="ttl" style={failed ? { color: "var(--red)" } : undefined}>
+            {failed ? `${track?.title ?? ""} — не удалось воспроизвести` : track?.title ?? t(lang, "bottom.noTrack")}
+          </span>
           <div className="pl-sub">
-            <span
-              style={{ cursor: track && track.artists[0] ? "pointer" : undefined }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (track?.artists[0]) navigateTo("artist", { artist: track.artists[0], provider: track.provider });
-              }}
-            >
-              {track ? artistLabel(track.artists) : ""}
-            </span>
+            {track && track.artists.length > 0 ? (
+              <span>
+                {track.artists.map((artist, i) => (
+                  <span key={`${artist}-${i}`}>
+                    <span
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateTo("artist", { artist, provider: track.provider });
+                      }}
+                    >
+                      {artist}
+                    </span>
+                    {i < track.artists.length - 1 ? "," : ""}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span>{track ? "" : ""}</span>
+            )}
             {track && <span className="dot" />}
             <span className="pl-src">{track ? providerLabel(track.provider) : ""}</span>
           </div>
         </div>
-        <button className={`pl-fav ${fav ? "on" : ""}`} onClick={handleFav} title="Favorite">
+        <button className={`pl-fav ${fav ? "on" : ""}`} onClick={handleFav} title={t(lang, "bottom.favorite")}>
           {fav ? "♥" : "♡"}
         </button>
       </div>
@@ -185,23 +201,23 @@ export function BottomPlayer() {
           <button
             className={`p-btn ${player.shuffle ? "" : "muted"}`}
             onClick={handleShuffle}
-            title="Shuffle"
+            title={t(lang, "bottom.shuffle")}
           >
             🔀
           </button>
-          <button className="p-btn" onClick={handlePrev} title="Previous">
+          <button className="p-btn" onClick={handlePrev} title={t(lang, "bottom.previous")}>
             ⏮
           </button>
-          <button className="p-play" onClick={handleToggle} title="Play / Pause" type="button">
+          <button className="p-play" onClick={handleToggle} title={t(lang, "bottom.playPause")} type="button">
             {playing ? "⏸" : "▶"}
           </button>
-          <button className="p-btn" onClick={handleNext} title="Next">
+          <button className="p-btn" onClick={handleNext} title={t(lang, "bottom.next")}>
             ⏭
           </button>
           <button
             className={`p-btn ${player.repeat === "off" ? "muted" : ""}`}
             onClick={handleRepeat}
-            title="Repeat"
+            title={t(lang, "bottom.repeat")}
           >
             {player.repeat === "one" ? "🔂" : "🔁"}
           </button>
@@ -216,7 +232,7 @@ export function BottomPlayer() {
         </div>
       </div>
       <div className="pl-right">
-        <button className="p-btn muted" title="Volume">
+        <button className="p-btn muted" title={t(lang, "bottom.volume")}>
           {player.volume_percent === 0 ? "🔇" : "🔊"}
         </button>
         <div ref={volBarRef} className="vol-bar" onPointerDown={onVolPointerDown}>

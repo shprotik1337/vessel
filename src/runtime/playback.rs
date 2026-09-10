@@ -14,7 +14,11 @@ pub(super) fn spawn_playback(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let message = match provider.playback_source(&track).await {
-            Ok(source) => RuntimeMessage::PlaybackReady { generation, source },
+            Ok(source) => RuntimeMessage::PlaybackReady {
+                generation,
+                source,
+                video_only_notice: None,
+            },
             Err(error) => RuntimeMessage::PlaybackFailed {
                 generation,
                 error: error.to_string(),

@@ -13,6 +13,7 @@ pub enum SearchProvider {
     YandexMusic,
     Deezer,
     Spotify,
+    YouTubeMusic,
 }
 
 impl SearchProvider {
@@ -22,7 +23,8 @@ impl SearchProvider {
             Self::SoundCloud => Self::YandexMusic,
             Self::YandexMusic => Self::Deezer,
             Self::Deezer => Self::Spotify,
-            Self::Spotify => Self::All,
+            Self::Spotify => Self::YouTubeMusic,
+            Self::YouTubeMusic => Self::All,
         }
     }
 
@@ -33,6 +35,7 @@ impl SearchProvider {
             Self::YandexMusic => "Yandex",
             Self::Deezer => "Deezer",
             Self::Spotify => "Spotify",
+            Self::YouTubeMusic => "YouTube Music",
         }
     }
 
@@ -43,6 +46,7 @@ impl SearchProvider {
             Self::YandexMusic => Some(ProviderKind::YandexMusic),
             Self::Deezer => Some(ProviderKind::Deezer),
             Self::Spotify => Some(ProviderKind::Spotify),
+            Self::YouTubeMusic => Some(ProviderKind::YouTubeMusic),
         }
     }
 }
@@ -55,6 +59,7 @@ pub enum ProviderKind {
     YandexMusic,
     Deezer,
     Spotify,
+    YouTubeMusic,
 }
 
 impl ProviderKind {
@@ -68,6 +73,8 @@ impl ProviderKind {
             Some(Self::Deezer)
         } else if host == "open.spotify.com" || host.ends_with(".spotify.com") {
             Some(Self::Spotify)
+        } else if host == "music.youtube.com" || host.ends_with(".music.youtube.com") {
+            Some(Self::YouTubeMusic)
         } else {
             None
         }
@@ -79,6 +86,7 @@ impl ProviderKind {
             Self::YandexMusic => "Yandex Music",
             Self::Deezer => "Deezer",
             Self::Spotify => "Spotify",
+            Self::YouTubeMusic => "YouTube Music",
         }
     }
 }
@@ -120,6 +128,9 @@ pub struct TrackRef {
     pub explicit: bool,
     #[serde(default)]
     pub drm: bool,
+    /// Международный стандартный код записи (ISRC) — главный ключ матчинга.
+    #[serde(default)]
+    pub isrc: Option<String>,
 }
 
 impl TrackRef {
@@ -224,6 +235,7 @@ mod tests {
             genres: Vec::new(),
             explicit: false,
             drm: false,
+            isrc: None,
         }
     }
 
@@ -268,7 +280,8 @@ mod tests {
         );
         assert_eq!(SearchProvider::YandexMusic.next(), SearchProvider::Deezer);
         assert_eq!(SearchProvider::Deezer.next(), SearchProvider::Spotify);
-        assert_eq!(SearchProvider::Spotify.next(), SearchProvider::All);
+        assert_eq!(SearchProvider::Spotify.next(), SearchProvider::YouTubeMusic);
+        assert_eq!(SearchProvider::YouTubeMusic.next(), SearchProvider::All);
     }
 
     #[test]

@@ -3,7 +3,8 @@ mod importer;
 mod message;
 mod onboarding;
 mod playback;
-mod providers;
+pub mod playback_resolver;
+pub mod providers;
 mod search;
 mod wave;
 
@@ -42,6 +43,8 @@ use wave::spawn_wave;
 
 pub struct Runtime {
     providers: Arc<ProviderRegistry>,
+    /// Резолвер Spotify → YT/Deezer (выбор источника в настройках).
+    playback_resolver: Arc<playback_resolver::PlaybackResolver>,
     account_client: Option<Arc<AccountClient>>,
     config: AppConfig,
     secrets: SecretStore,
@@ -58,6 +61,10 @@ pub struct Runtime {
     onboarding_task: Option<JoinHandle<()>>,
     search_generation: u64,
     playback_generation: u64,
+    /// Идентификатор активной playback-сессии для логов [Playback][id].
+    playback_session_id: String,
+    /// Счётчик сессий (для генерации коротких id).
+    playback_session_counter: u64,
     wave_generation: u64,
     control_search_generation: u64,
     control_wave_generation: u64,
@@ -91,8 +98,19 @@ impl Runtime {
             }
         };
         let (sender, receiver) = mpsc::unbounded_channel();
+        let providers_arc = Arc::new(setup.registry);
+        let playback_source = config
+            .spotify_playback_source
+            .as_deref()
+            .and_then(playback_resolver::PlaybackSourceKind::from_str)
+            .unwrap_or(playback_resolver::PlaybackSourceKind::Auto);
+        let playback_resolver = Arc::new(playback_resolver::PlaybackResolver::new(
+            Arc::clone(&providers_arc),
+            playback_source,
+        ));
         Self {
-            providers: Arc::new(setup.registry),
+            providers: providers_arc,
+            playback_resolver,
             account_client,
             config: config.clone(),
             secrets: secrets.clone(),
@@ -109,6 +127,8 @@ impl Runtime {
             onboarding_task: None,
             search_generation: 0,
             playback_generation: 0,
+            playback_session_id: String::new(),
+            playback_session_counter: 0,
             wave_generation: 0,
             control_search_generation: 0,
             control_wave_generation: 0,
@@ -221,7 +241,10 @@ impl Runtime {
                 AppEffect::Seek(position_ms) => {
                     if let Some(audio) = &self.audio
                         && let Err(error) = audio.seek_to(position_ms)
+                        && !error.to_string().contains("сейчас ничего не воспроизводится")
                     {
+                        // «Нечего мотать» ( buffering/резолв нового трека) —
+                        // не фейлим воспроизведение, просто игнорируем seek
                         actions.push(Action::PlaybackFailed(error.to_string()));
                     }
                 }
@@ -265,9 +288,21 @@ impl Runtime {
                 } if generation == self.control_search_generation => {
                     actions.push(Action::ControlSearchFinished { tracks, failures });
                 }
-                RuntimeMessage::PlaybackReady { generation, source }
-                    if generation == self.playback_generation =>
+                RuntimeMessage::PlaybackReady {
+                    generation,
+                    source,
+                    video_only_notice,
+                } if generation == self.playback_generation =>
                 {
+                    crate::dlog!(
+                        "[Playback][{}] playback started (gen {generation})",
+                        self.playback_session_id
+                    );
+                    // Предупреждение «только клип» — до старта, UI покажет
+                    // в статусной строке
+                    if let Some(notice) = video_only_notice {
+                        actions.push(Action::PlaybackNotice(notice));
+                    }
                     if let Some(audio) = &self.audio {
                         audio.play(source);
                     } else {
@@ -279,6 +314,10 @@ impl Runtime {
                 RuntimeMessage::PlaybackFailed { generation, error }
                     if generation == self.playback_generation =>
                 {
+                    crate::dlog!(
+                        "[Playback][{}] playback failed: {error}",
+                        self.playback_session_id
+                    );
                     self.current_track = None;
                     self.current_track_started = false;
                     actions.push(Action::PlaybackFailed(error));
@@ -355,6 +394,15 @@ impl Runtime {
                 {
                     actions.push(Action::ZapretApplied(result));
                 }
+                // Устаревшие playback-результаты не имеют права менять
+                // состояние нового воспроизведения — только лог
+                RuntimeMessage::PlaybackReady { generation, .. }
+                | RuntimeMessage::PlaybackFailed { generation, .. } => {
+                    crate::dlog!(
+                        "[Playback][{}] stale session result ignored (gen {generation})",
+                        self.playback_session_id
+                    );
+                }
                 _ => {}
             }
         }
@@ -368,6 +416,7 @@ impl Runtime {
                 actions.push(Action::AudioProgress {
                     position_ms: status.position_ms,
                     buffered_ms: status.buffered_ms,
+                    duration_ms: status.duration_ms,
                 });
                 self.last_audio_status = Some(status);
             }
@@ -410,6 +459,20 @@ impl Runtime {
         Arc::clone(&self.providers)
     }
 
+    /// Текущий источник аудио для Spotify-треков.
+    pub fn spotify_playback_source(&self) -> playback_resolver::PlaybackSourceKind {
+        self.playback_resolver.source()
+    }
+
+    /// Сменить источник аудио для Spotify-треков (сразу, без перезапуска).
+    pub fn set_spotify_playback_source(
+        &mut self,
+        source: playback_resolver::PlaybackSourceKind,
+    ) {
+        self.playback_resolver.set_source(source);
+        self.config.spotify_playback_source = Some(source.as_str().to_string());
+    }
+
     pub fn remove_credential(&mut self, key: crate::secrets::SecretKey) -> anyhow::Result<()> {
         self.secrets.remove(key)?;
         match key {
@@ -419,6 +482,8 @@ impl Runtime {
             crate::secrets::SecretKey::YandexToken => self.config.yandex_enabled = false,
             crate::secrets::SecretKey::DeezerArl => self.config.deezer_enabled = false,
             crate::secrets::SecretKey::SpotifySpDc => self.config.spotify_enabled = false,
+            crate::secrets::SecretKey::YouTubeCookie
+            | crate::secrets::SecretKey::YouTubeOAuthRefresh => {}
             _ => {}
         }
         self.reload_providers();
@@ -441,11 +506,30 @@ impl Runtime {
             CredentialKind::YandexToken => self.config.yandex_enabled = true,
             CredentialKind::DeezerArl => self.config.deezer_enabled = true,
             CredentialKind::SpotifySpDc => self.config.spotify_enabled = true,
+            CredentialKind::SpotifyOAuthRefreshToken => {
+                self.config.spotify_enabled = true;
+            }
+            CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {
+                self.config.youtube_music_enabled = true;
+            }
         }
         let setup = build_registry(&self.config, &self.secrets);
         self.providers = Arc::new(setup.registry);
         self.notices.extend(setup.notices);
         Ok(())
+    }
+
+    /// Включает/выключает провайдера по флагу конфига и сразу пересобирает реестр,
+    /// чтобы переключение в Настройках действовало без перезапуска приложения.
+    pub fn set_provider_enabled(&mut self, kind: crate::model::ProviderKind, enabled: bool) {
+        match kind {
+            crate::model::ProviderKind::SoundCloud => self.config.soundcloud_enabled = enabled,
+            crate::model::ProviderKind::YandexMusic => self.config.yandex_enabled = enabled,
+            crate::model::ProviderKind::Deezer => self.config.deezer_enabled = enabled,
+            crate::model::ProviderKind::Spotify => self.config.spotify_enabled = enabled,
+            crate::model::ProviderKind::YouTubeMusic => self.config.youtube_music_enabled = enabled,
+        }
+        self.reload_providers();
     }
 
     fn set_liked(&self, track: &crate::model::TrackRef, liked: bool) -> Result<(), String> {
@@ -531,13 +615,238 @@ impl Runtime {
     fn start_playback(&mut self, track: crate::model::TrackRef, actions: &mut Vec<Action>) {
         self.record_current(false, true);
         self.cancel_playback();
-        let Some(provider) = self.providers.get(track.provider) else {
-            actions.push(Action::PlaybackFailed(format!(
-                "{} не настроен",
-                track.provider.label()
-            )));
+
+        // Session id для корреляции логов всего playback-пайплайна
+        self.playback_session_id = format!("p{:04x}", self.playback_session_counter);
+        self.playback_session_counter = self.playback_session_counter.wrapping_add(1);
+        let session = self.playback_session_id.clone();
+        crate::dlog!(
+            "[Playback][{session}] requested {} track «{}» ({}), source={}",
+            track.provider.label(),
+            track.title,
+            track.id,
+            self.playback_resolver.source().as_str()
+        );
+
+        // Выбор источника аудио: Spotify-треки играют через цепочку каталогов.
+        // Ручной режим — один источник; «Автоматически» —
+        // Deezer → YouTube Music → YouTube (каждый следующий только если
+        // предыдущий не смог).
+        if track.provider == crate::model::ProviderKind::Spotify {
+            let requested_source = self.playback_resolver.source();
+            let chain: Vec<_> = requested_source
+                .chain()
+                .into_iter()
+                .filter(|source| self.playback_resolver.source_available(*source))
+                .collect();
+            if chain.is_empty() {
+                // Ни один источник не настроен — пробуем родной Spotify
+                // (premium-путь), если и он не настроен — ошибка
+                match self.providers.get(track.provider) {
+                    Some(provider) => {
+                        self.start_native_playback(provider, track, actions);
+                    }
+                    None => {
+                        actions.push(Action::PlaybackFailed(format!(
+                            "источник {} не подключён — добавь его в Настройках",
+                            requested_source.label()
+                        )));
+                    }
+                }
+                return;
+            }
+
+            // Резолвим матч в фоне, аудио пойдёт из чужого каталога.
+            // playback_generation уже поднят cancel_playback() выше —
+            // дублировать нельзя: poll_actions отбросит PlaybackReady
+            // как устаревшее, и трек повиснет в бесконечной загрузке.
+            let resolver = Arc::clone(&self.playback_resolver);
+            let providers = Arc::clone(&self.providers);
+            let sender = self.sender.clone();
+            let generation = self.playback_generation;
+            if let Some(audio) = &self.audio {
+                audio.reset();
+            }
+            self.current_track = Some(track.clone());
+            self.current_track_started = false;
+            // Пока резолвим матч и качаем трек — статус Buffering,
+            // чтобы UI не давал мотать старый источник
+            actions.push(Action::Audio(crate::audio::AudioEvent::Buffering));
+            self.playback_task = Some(tokio::spawn(async move {
+                let mut failures: Vec<String> = Vec::new();
+                // Кандидаты пришли из общего поиска (клип-версия) — нужна
+                // пометка для предупреждения в UI
+                let mut candidates_from_general = false;
+
+                for source in chain {
+                    crate::dlog!("[Playback][{session}] trying provider={}", source.label());
+
+                    // Этап 1: матчинг в этом каталоге
+                    let candidates = match resolver.resolve_candidates_in(source, &track).await {
+                        Ok((Some(candidates), stage)) => {
+                            crate::dlog!(
+                                "[Playback][{session}] {} {} candidates={}",
+                                stage.describe(),
+                                source.as_str(),
+                                candidates.len()
+                            );
+                            candidates_from_general = false;
+                            candidates
+                        }
+                        Ok((None, stage)) => {
+                            crate::dlog!(
+                                "[Playback][{session}] {} в {}",
+                                stage.describe(),
+                                source.label()
+                            );
+                            failures.push(format!(
+                                "{}: матча нет ({})",
+                                source.label(),
+                                stage.describe()
+                            ));
+                            // Последний шанс в Auto: честный поиск не нашёл,
+                            // но в YTM остался официальный клип — общий поиск
+                            if requested_source
+                                == playback_resolver::PlaybackSourceKind::Auto
+                                && source
+                                    == playback_resolver::PlaybackSourceKind::YouTubeMusic
+                            {
+                                match resolver.resolve_candidates_general(&track).await {
+                                    Ok((Some(video_candidates), stage)) => {
+                                        crate::dlog!(
+                                            "[Playback][{session}] {} {} candidates={}",
+                                            stage.describe(),
+                                            source.as_str(),
+                                            video_candidates.len()
+                                        );
+                                        candidates_from_general = true;
+                                        video_candidates
+                                    }
+                                    Ok((None, stage)) => {
+                                        crate::dlog!(
+                                            "[Playback][{session}] {} в общем поиске {}",
+                                            stage.describe(),
+                                            source.label()
+                                        );
+                                        failures.push(format!(
+                                            "YouTube Music (клипы): {}",
+                                            stage.describe()
+                                        ));
+                                        continue;
+                                    }
+                                    Err(error) => {
+                                        crate::dlog!(
+                                            "[Playback][{session}] general search failed: {error:#}"
+                                        );
+                                        failures.push(format!(
+                                            "YouTube Music (клипы): {error:#}"
+                                        ));
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+                        Err(error) => {
+                            crate::dlog!(
+                                "[Playback][{session}] {} resolve failed: {error:#}",
+                                source.label()
+                            );
+                            failures.push(format!("{}: {error:#}", source.label()));
+                            continue;
+                        }
+                    };
+
+                    // Этап 2: перебираем кандидатов, пока какой-нибудь
+                    // не отдаст проигрываемый поток
+                    let Some(foreign) = providers.get(source.provider_kind()) else {
+                        continue;
+                    };
+                    // Предупреждение «играем клип-версию, а не полный трек» —
+                    // только для матчей из общего поиска YTM
+                    let video_only_notice = if candidates_from_general {
+                        Some(format!(
+                            "Играю клип-версию «{}» с YouTube Music — полная версия недоступна в каталогах",
+                            track.title
+                        ))
+                    } else {
+                        None
+                    };
+                    for (index, foreign_track) in candidates.iter().enumerate() {
+                        crate::dlog!(
+                            "[Playback][{session}] source resolution candidate {} {} «{}»",
+                            index + 1,
+                            source.as_str(),
+                            foreign_track.title
+                        );
+                        match foreign.playback_source(foreign_track).await {
+                            Ok(source_stream) => {
+                                // Играем через чужого провайдера, но
+                                // UI-трек остаётся Spotify (лайки/история)
+                                crate::dlog!(
+                                    "[Playback][{session}] selected provider={} ({} канд.)",
+                                    source.label(),
+                                    candidates.len()
+                                );
+                                let _ = sender.send(RuntimeMessage::PlaybackReady {
+                                    generation,
+                                    source: source_stream,
+                                    video_only_notice: video_only_notice.clone(),
+                                });
+                                return;
+                            }
+                            Err(error) => {
+                                crate::dlog!(
+                                    "[Playback][{session}] {} candidate {} not playable: {error:#}",
+                                    source.as_str(),
+                                    index + 1
+                                );
+                            }
+                        }
+                    }
+
+                    // Ни один кандидат каталога не проигрался — выкидываем
+                    // матч из кэша и идём к следующему источнику цепочки
+                    resolver.drop_cache(&track, source);
+                    crate::dlog!("[Playback][{session}] {} failed", source.label());
+                    failures.push(format!(
+                        "{}: не проигрался ({} канд.)",
+                        source.label(),
+                        candidates.len()
+                    ));
+                }
+
+                let _ = sender.send(RuntimeMessage::PlaybackFailed {
+                    generation,
+                    error: failures.join("; "),
+                });
+            }));
             return;
-        };
+        }
+
+        // Не-Spotify трек: играем через его родного провайдера
+        match self.providers.get(track.provider) {
+            Some(provider) => {
+                self.start_native_playback(provider, track, actions);
+            }
+            None => {
+                actions.push(Action::PlaybackFailed(format!(
+                    "{} не настроен",
+                    track.provider.label()
+                )));
+            }
+        }
+    }
+
+    /// Родной путь: provider.playback_source(track) без матчинга
+    /// (Spotify-фолбэк, треки уже чужого каталога, YouTube-треки из поиска).
+    fn start_native_playback(
+        &mut self,
+        provider: Arc<dyn crate::provider::MusicProvider>,
+        track: crate::model::TrackRef,
+        _actions: &mut Vec<Action>,
+    ) {
         if let Some(audio) = &self.audio {
             audio.reset();
         }
@@ -792,6 +1101,10 @@ impl Runtime {
     fn cancel_playback(&mut self) {
         if let Some(task) = self.playback_task.take() {
             task.abort();
+            crate::dlog!(
+                "[Playback][{}] session cancelled",
+                self.playback_session_id
+            );
         }
         if let Some(task) = self.control_search_task.take() {
             task.abort();
@@ -876,6 +1189,10 @@ mod tests {
         let (sender, receiver) = mpsc::unbounded_channel();
         let mut runtime = Runtime {
             providers: Arc::new(ProviderRegistry::default()),
+            playback_resolver: Arc::new(playback_resolver::PlaybackResolver::new(
+                Arc::new(ProviderRegistry::default()),
+                playback_resolver::PlaybackSourceKind::YouTubeMusic,
+            )),
             account_client: None,
             config: AppConfig::default(),
             secrets: SecretStore::new(std::path::PathBuf::from("unused-secrets.json")),
@@ -892,6 +1209,8 @@ mod tests {
             onboarding_task: None,
             search_generation: 7,
             playback_generation: 3,
+            playback_session_id: String::new(),
+            playback_session_counter: 0,
             wave_generation: 0,
             control_search_generation: 0,
             control_wave_generation: 0,
@@ -940,6 +1259,10 @@ mod tests {
         let (sender, receiver) = mpsc::unbounded_channel();
         let mut runtime = Runtime {
             providers: Arc::new(ProviderRegistry::default()),
+            playback_resolver: Arc::new(playback_resolver::PlaybackResolver::new(
+                Arc::new(ProviderRegistry::default()),
+                playback_resolver::PlaybackSourceKind::YouTubeMusic,
+            )),
             account_client: None,
             config: AppConfig::default(),
             secrets: SecretStore::new(std::path::PathBuf::from("unused-secrets.json")),
@@ -956,6 +1279,8 @@ mod tests {
             onboarding_task: None,
             search_generation: 0,
             playback_generation: 0,
+            playback_session_id: String::new(),
+            playback_session_counter: 0,
             wave_generation: 0,
             control_search_generation: 0,
             control_wave_generation: 0,
@@ -987,6 +1312,10 @@ mod tests {
         let (sender, receiver) = mpsc::unbounded_channel();
         let mut runtime = Runtime {
             providers: Arc::new(ProviderRegistry::default()),
+            playback_resolver: Arc::new(playback_resolver::PlaybackResolver::new(
+                Arc::new(ProviderRegistry::default()),
+                playback_resolver::PlaybackSourceKind::YouTubeMusic,
+            )),
             account_client: None,
             config: AppConfig::default(),
             secrets: SecretStore::file_only(temp.path().join("secrets.json")),
@@ -1003,6 +1332,8 @@ mod tests {
             onboarding_task: None,
             search_generation: 0,
             playback_generation: 0,
+            playback_session_id: String::new(),
+            playback_session_counter: 0,
             wave_generation: 0,
             control_search_generation: 0,
             control_wave_generation: 0,
@@ -1042,6 +1373,10 @@ mod tests {
         let (sender, receiver) = mpsc::unbounded_channel();
         let mut runtime = Runtime {
             providers: Arc::new(ProviderRegistry::default()),
+            playback_resolver: Arc::new(playback_resolver::PlaybackResolver::new(
+                Arc::new(ProviderRegistry::default()),
+                playback_resolver::PlaybackSourceKind::YouTubeMusic,
+            )),
             account_client: None,
             config: AppConfig::default(),
             secrets: SecretStore::new(std::path::PathBuf::from("unused-secrets.json")),
@@ -1058,6 +1393,8 @@ mod tests {
             onboarding_task: None,
             search_generation: 0,
             playback_generation: 0,
+            playback_session_id: String::new(),
+            playback_session_counter: 0,
             wave_generation: 0,
             control_search_generation: 0,
             control_wave_generation: 0,
@@ -1087,6 +1424,10 @@ mod tests {
         let (sender, receiver) = mpsc::unbounded_channel();
         let mut runtime = Runtime {
             providers: Arc::new(ProviderRegistry::default()),
+            playback_resolver: Arc::new(playback_resolver::PlaybackResolver::new(
+                Arc::new(ProviderRegistry::default()),
+                playback_resolver::PlaybackSourceKind::YouTubeMusic,
+            )),
             account_client: None,
             config: AppConfig::default(),
             secrets: SecretStore::new(std::path::PathBuf::from("unused-secrets.json")),
@@ -1103,6 +1444,8 @@ mod tests {
             onboarding_task: None,
             search_generation: 0,
             playback_generation: 0,
+            playback_session_id: String::new(),
+            playback_session_counter: 0,
             wave_generation: 0,
             control_search_generation: 0,
             control_wave_generation: 0,
@@ -1137,6 +1480,7 @@ mod tests {
             genres: Vec::new(),
             explicit: false,
             drm: false,
+            isrc: None,
         }
     }
 }

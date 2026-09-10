@@ -3,7 +3,6 @@ use crate::{
         error::AccountApiError,
         models::{AccountAction, AccountSession, BootstrapUpdate, CaptchaChallenge},
     },
-    app::Screen,
     audio::AudioEvent,
     model::TrackRef,
     onboarding::{
@@ -15,11 +14,6 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     Quit,
-    Navigate(Screen),
-    Back,
-    SelectPrevious,
-    SelectNext,
-    Activate,
     TogglePause,
     NextTrack,
     PreviousTrack,
@@ -28,13 +22,6 @@ pub enum Action {
     ToggleShuffle,
     CycleRepeat,
     ToggleLike,
-    StartSearch,
-    ToggleSearchFocus,
-    FocusSearchInput,
-    CycleSearchProvider,
-    SearchInput(char),
-    SearchBackspace,
-    SubmitSearch,
     SearchFinished {
         query: String,
         tracks: Vec<TrackRef>,
@@ -55,22 +42,18 @@ pub enum Action {
     AudioProgress {
         position_ms: u64,
         buffered_ms: u64,
+        /// Длительность от декодера (0 = не изменилась/неизвестна)
+        duration_ms: u64,
     },
     Audio(AudioEvent),
     PlaybackFailed(String),
-    OpenHelp,
-    OpenKeybindings,
-    OpenCommandPalette,
+    /// Некритичное предупреждение playback-пайплайна (например «играю
+    /// клип-версию, полный трек недоступен») — показываем в статусной строке.
+    PlaybackNotice(String),
     OpenPlaylistImport,
     OpenAccount(AccountAction),
     ToggleAccountMode,
     AccountLogout,
-    MouseClick {
-        column: u16,
-        row: u16,
-        terminal_width: u16,
-        terminal_height: u16,
-    },
     CloseModal,
     ModalSubmit,
     ModalPrevious,
@@ -103,6 +86,4 @@ pub enum Action {
     ZapretPlanned(Result<Box<ZapretPlan>, String>),
     ZapretApplied(Result<ZapretApplyResult, String>),
     AudioOutputChanged(Result<String, String>),
-    Tick,
-    Resize,
 }

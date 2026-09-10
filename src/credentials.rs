@@ -8,14 +8,20 @@ pub enum CredentialKind {
     YandexToken,
     DeezerArl,
     SpotifySpDc,
+    SpotifyOAuthRefreshToken,
+    YouTubeCookie,
+    YouTubeOAuthRefresh,
 }
 
 impl CredentialKind {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 7] = [
         Self::SoundCloudClientId,
         Self::YandexToken,
         Self::DeezerArl,
         Self::SpotifySpDc,
+        Self::SpotifyOAuthRefreshToken,
+        Self::YouTubeCookie,
+        Self::YouTubeOAuthRefresh,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -24,6 +30,9 @@ impl CredentialKind {
             Self::YandexToken => "Yandex OAuth токен",
             Self::DeezerArl => "Deezer ARL cookie",
             Self::SpotifySpDc => "Spotify sp_dc",
+            Self::SpotifyOAuthRefreshToken => "Spotify OAuth refresh_token",
+            Self::YouTubeCookie => "YouTube cookie",
+            Self::YouTubeOAuthRefresh => "YouTube OAuth refresh_token",
         }
     }
 
@@ -33,6 +42,9 @@ impl CredentialKind {
             Self::YandexToken => SecretKey::YandexToken,
             Self::DeezerArl => SecretKey::DeezerArl,
             Self::SpotifySpDc => SecretKey::SpotifySpDc,
+            Self::SpotifyOAuthRefreshToken => SecretKey::SpotifyOAuthRefreshToken,
+            Self::YouTubeCookie => SecretKey::YouTubeCookie,
+            Self::YouTubeOAuthRefresh => SecretKey::YouTubeOAuthRefresh,
         }
     }
 
@@ -50,6 +62,15 @@ impl CredentialKind {
             Self::SpotifySpDc => {
                 "Вставь значение cookie sp_dc из браузера; токен останется только локально"
             }
+            Self::SpotifyOAuthRefreshToken => {
+                "Получается автоматически при входе через браузер"
+            }
+            Self::YouTubeCookie => {
+                "Вставь cookie из браузера (SID, SSID, HSID, LOGIN_INFO и др.); даёт полные треки"
+            }
+            Self::YouTubeOAuthRefresh => {
+                "Получается автоматически при входе через браузер"
+            }
         }
     }
 }
@@ -60,6 +81,7 @@ pub struct CredentialState {
     pub yandex: bool,
     pub deezer: bool,
     pub spotify: bool,
+    pub youtube: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -98,7 +120,10 @@ impl CredentialState {
                 || has_value(secrets, SecretKey::SoundCloudClientId)?,
             yandex: has_value(secrets, SecretKey::YandexToken)?,
             deezer: has_value(secrets, SecretKey::DeezerArl)?,
-            spotify: has_value(secrets, SecretKey::SpotifySpDc)?,
+            spotify: has_value(secrets, SecretKey::SpotifySpDc)?
+                || has_value(secrets, SecretKey::SpotifyOAuthRefreshToken)?,
+            youtube: has_value(secrets, SecretKey::YouTubeCookie)?
+                || has_value(secrets, SecretKey::YouTubeOAuthRefresh)?,
         })
     }
 
@@ -107,7 +132,8 @@ impl CredentialState {
             CredentialKind::SoundCloudClientId => self.soundcloud,
             CredentialKind::YandexToken => self.yandex,
             CredentialKind::DeezerArl => self.deezer,
-            CredentialKind::SpotifySpDc => self.spotify,
+            CredentialKind::SpotifySpDc | CredentialKind::SpotifyOAuthRefreshToken => self.spotify,
+            CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => self.youtube,
         }
     }
 
@@ -116,7 +142,12 @@ impl CredentialState {
             CredentialKind::SoundCloudClientId => self.soundcloud = configured,
             CredentialKind::YandexToken => self.yandex = configured,
             CredentialKind::DeezerArl => self.deezer = configured,
-            CredentialKind::SpotifySpDc => self.spotify = configured,
+            CredentialKind::SpotifySpDc | CredentialKind::SpotifyOAuthRefreshToken => {
+                self.spotify = configured
+            }
+            CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {
+                self.youtube = configured
+            }
         }
     }
 }

@@ -60,6 +60,9 @@ pub(super) enum RuntimeMessage {
     PlaybackReady {
         generation: u64,
         source: PlaybackSource,
+        /// Предупреждение для юзера: матч из общего поиска YTM — играем
+        /// клип-версию, а не полный трек (видео-only fallback).
+        video_only_notice: Option<String>,
     },
     PlaybackFailed {
         generation: u64,

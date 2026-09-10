@@ -1,4 +1,4 @@
-use std::{
+﻿use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -12,11 +12,13 @@ use vessel_core::{
     runtime::Runtime,
     secrets::SecretStore,
     storage::{HistoryEntry, Storage},
+    user::UserManager,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod commands;
+mod webview_cookies;
 
 pub struct GuiCore {
     pub app: App,
@@ -24,11 +26,17 @@ pub struct GuiCore {
     pub config: AppConfig,
     pub paths: AppPaths,
     pub storage: Storage,
+    pub users: UserManager,
+    pub needs_user_selection: bool,
     pub last_state_hash: u64,
     pub last_progress_at: Instant,
+    /// Р’СЂРµРјРµРЅРЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ Spotify РґР»СЏ OAuth-С„Р»РѕСѓ (СЃРѕР·РґР°С‘С‚СЃСЏ РІ oauth_begin).
+    pub spotify_oauth: Option<std::sync::Arc<vessel_core::provider::spotify::SpotifyProvider>>,
+    /// Р’СЂРµРјРµРЅРЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ YouTube РґР»СЏ OAuth-С„Р»РѕСѓ (device code).
+    pub youtube_oauth: Option<std::sync::Arc<vessel_core::provider::youtube::YouTubeMusicProvider>>,
 }
 
-/// Полное состояние приложения, которое фронтенд читает напрямую по запросу.
+/// РџРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РїСЂРёР»РѕР¶РµРЅРёСЏ, РєРѕС‚РѕСЂРѕРµ С„СЂРѕРЅС‚РµРЅРґ С‡РёС‚Р°РµС‚ РЅР°РїСЂСЏРјСѓСЋ РїРѕ Р·Р°РїСЂРѕСЃСѓ.
 #[derive(Serialize, Clone)]
 pub struct FullState {
     pub player: PlayerState,
@@ -44,8 +52,13 @@ pub struct FullState {
     pub yandex_enabled: bool,
     pub deezer_enabled: bool,
     pub spotify_enabled: bool,
+    pub youtube_music_enabled: bool,
     pub server_url: String,
     pub status_message: String,
+    pub user_profile: Option<vessel_core::user::UserProfile>,
+    pub needs_user_selection: bool,
+    pub language: String,
+    pub wave_source: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -97,6 +110,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
         vessel_core::model::ProviderKind::YandexMusic,
         vessel_core::model::ProviderKind::Deezer,
         vessel_core::model::ProviderKind::Spotify,
+        vessel_core::model::ProviderKind::YouTubeMusic,
     ];
     for kind in kinds {
         let label = kind.label().to_string();
@@ -105,6 +119,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::YandexMusic => "yandex",
             vessel_core::model::ProviderKind::Deezer => "deezer",
             vessel_core::model::ProviderKind::Spotify => "spotify",
+            vessel_core::model::ProviderKind::YouTubeMusic => "youtube_music",
         }
         .to_string();
         let enabled = match kind {
@@ -112,12 +127,15 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::YandexMusic => core.app.yandex_enabled,
             vessel_core::model::ProviderKind::Deezer => core.app.deezer_enabled,
             vessel_core::model::ProviderKind::Spotify => core.app.spotify_enabled,
+            vessel_core::model::ProviderKind::YouTubeMusic => core.app.youtube_music_enabled,
         };
         let has_credentials = match kind {
             vessel_core::model::ProviderKind::SoundCloud => credentials.soundcloud,
             vessel_core::model::ProviderKind::YandexMusic => credentials.yandex,
             vessel_core::model::ProviderKind::Deezer => credentials.deezer,
             vessel_core::model::ProviderKind::Spotify => credentials.spotify,
+            // YouTube Music СЂР°Р±РѕС‚Р°РµС‚ РІСЃРµРіРґР° Рё Р°РЅРѕРЅРёРјРЅРѕ
+            vessel_core::model::ProviderKind::YouTubeMusic => true,
         };
         let connected = registry.get(kind).is_some() && enabled;
         statuses.push(ProviderStatus {
@@ -147,8 +165,17 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
         yandex_enabled: core.app.yandex_enabled,
         deezer_enabled: core.app.deezer_enabled,
         spotify_enabled: core.app.spotify_enabled,
+        youtube_music_enabled: core.app.youtube_music_enabled,
         server_url: core.config.server_url.clone(),
         status_message: core.app.status_message.clone(),
+        user_profile: core.app.user_profile.clone(),
+        needs_user_selection: core.needs_user_selection,
+        language: core.config.language.clone(),
+        wave_source: core
+            .config
+            .wave_source
+            .clone()
+            .unwrap_or_else(|| "favorites".to_string()),
     }
 }
 
@@ -174,7 +201,7 @@ pub struct ProgressPayload {
     pub duration_ms: u64,
 }
 
-/// Основной цикл: гоняет runtime, персистит состояние, шлёт события.
+/// РћСЃРЅРѕРІРЅРѕР№ С†РёРєР»: РіРѕРЅСЏРµС‚ runtime, РїРµСЂСЃРёСЃС‚РёС‚ СЃРѕСЃС‚РѕСЏРЅРёРµ, С€Р»С‘С‚ СЃРѕР±С‹С‚РёСЏ.
 fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
     loop {
         let mut core = match core.lock() {
@@ -219,7 +246,7 @@ fn persist(core: &mut GuiCore) {
     let mut config = core.config.clone();
     if core.app.queue_dirty {
         if let Err(error) = core.storage.save_queue(&core.app.queue_snapshot()) {
-            eprintln!("[vessel] save_queue: {error}");
+            vessel_core::dlog!("[vessel] save_queue: {error}");
         } else {
             core.app.queue_dirty = false;
         }
@@ -227,7 +254,7 @@ fn persist(core: &mut GuiCore) {
     if core.app.playlists_dirty {
         for playlist in &core.app.playlists {
             if let Err(error) = core.storage.save_playlist(playlist) {
-                eprintln!("[vessel] save_playlist: {error}");
+                vessel_core::dlog!("[vessel] save_playlist: {error}");
             }
         }
         core.app.playlists_dirty = false;
@@ -238,16 +265,28 @@ fn persist(core: &mut GuiCore) {
         config.yandex_enabled = core.app.yandex_enabled;
         config.deezer_enabled = core.app.deezer_enabled;
         config.spotify_enabled = core.app.spotify_enabled;
+        config.youtube_music_enabled = core.app.youtube_music_enabled;
+        // РСЃС‚РѕС‡РЅРёРє Р°СѓРґРёРѕ Spotify (РјРµРЅСЏРµС‚СЃСЏ С‡РµСЂРµР· set_spotify_playback_source,
+        // РєРѕС‚РѕСЂС‹Р№ РїРёС€РµС‚ РµРіРѕ РІ core.config С‡РµСЂРµР· Runtime)
+        config.spotify_playback_source = core.config.spotify_playback_source.clone();
         config.global_hotkeys_enabled = core.app.global_hotkeys_enabled;
         config.hotkeys = core.app.hotkeys.clone();
         config.keybindings_notice_seen = core.app.keybindings_notice_seen;
         config.guest_mode = core.app.account.user().is_none();
         config.soundcloud_client_id_refresh_at_ms = core.app.soundcloud_refresh_at_ms;
         if let Err(error) = config.save(&core.paths) {
-            eprintln!("[vessel] save config: {error}");
+            vessel_core::dlog!("[vessel] save config: {error}");
         } else {
             core.config = config;
             core.app.config_dirty = false;
+        }
+    }
+    if core.app.user_dirty {
+        core.users.active_user_mut().profile.touch();
+        if let Err(error) = core.users.active_user().save_profile() {
+            vessel_core::dlog!("[vessel] save profile: {error}");
+        } else {
+            core.app.user_dirty = false;
         }
     }
 }
@@ -270,13 +309,28 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         )?;
         config.save(paths)?;
     }
-    let storage = Storage::new(paths.database_file.clone());
-    storage.initialize()?;
+    let users_dir = config
+        .users_dir_override
+        .as_deref()
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| paths.users_dir());
+    let mut users = UserManager::open(users_dir, config.history_limit, Some(paths.database_file.clone()))?;
+    // РђРІС‚Рѕ-РІС…РѕРґ РёР»Рё РІС‹Р±РѕСЂ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїСЂРё СЃС‚Р°СЂС‚Рµ
+    if let Some(auto) = config.auto_login_user.clone() {
+        if users.user_exists(&auto) {
+            users.switch_user(&auto)?;
+        }
+    }
+    let needs_user_selection = config.auto_login_user.is_none() && users.count() > 1;
+    let storage = users.storage().clone();
     let mut app = App::load(&storage, &config)?;
+    app.user_profile = Some(users.active_user().profile.clone());
     let mut runtime = Runtime::new(&config, &secrets, storage.clone());
     match runtime.credential_state() {
         Ok(credentials) => app.set_credentials(credentials),
-        Err(error) => app.status_message = format!("Не удалось проверить ключи: {error}"),
+        Err(error) => app.status_message = format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РєР»СЋС‡Рё: {error}"),
     }
     if let Some(notice) = runtime.take_notices().into_iter().last() {
         app.status_message = notice;
@@ -288,8 +342,12 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         config,
         paths: paths.clone(),
         storage,
+        users,
+        needs_user_selection,
         last_state_hash: 0,
         last_progress_at: Instant::now(),
+        spotify_oauth: None,
+        youtube_oauth: None,
     })
 }
 
@@ -302,11 +360,21 @@ async fn get_state(state: State<'_, Arc<Mutex<GuiCore>>>) -> Result<FullState, S
 }
 
 pub fn run() {
-    let paths = AppPaths::discover().expect("не удалось найти пути приложения");
+    let paths = AppPaths::discover().expect("РЅРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РїСѓС‚Рё РїСЂРёР»РѕР¶РµРЅРёСЏ");
     paths
         .ensure()
-        .expect("не удалось создать каталоги приложения");
-    let core = load_core(&paths).expect("не удалось загрузить ядро");
+        .expect("РЅРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РєР°С‚Р°Р»РѕРіРё РїСЂРёР»РѕР¶РµРЅРёСЏ");
+
+    // РЎС‚Р°СЂС‚РѕРІР°СЏ РѕС‡РёСЃС‚РєР° РєСЌС€РµР№: РІСЂРµРјРµРЅРЅС‹Р№ playback-РєСЌС€ (Deezer/Spotify)
+    // СѓРґР°Р»СЏРµС‚СЃСЏ С†РµР»РёРєРѕРј (legacy-С„Р°Р№Р»С‹, РѕСЂС„Р°РЅС‹, .part), РІ offline-РєСЌС€Рµ
+    // РІС‹С‡РёС‰Р°СЋС‚СЃСЏ С‚РѕР»СЊРєРѕ .part Рё РЅСѓР»РµРІС‹Рµ С„Р°Р№Р»С‹. Р’Р°Р»РёРґРЅС‹Рµ offline-Р·Р°РіСЂСѓР·РєРё
+    // (В«РЎРєР°С‡Р°С‚СЊ РІ РєРµС€В») РЅРµ С‚СЂРѕРіР°СЋС‚СЃСЏ.
+    let (removed, errors) = vessel_core::provider::cache::cleanup_playback_caches();
+    if removed > 0 || errors > 0 {
+        vessel_core::dlog!("[cache] startup cleanup: removed={removed} errors={errors}");
+    }
+
+    let core = load_core(&paths).expect("РЅРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЏРґСЂРѕ");
     let core = Arc::new(Mutex::new(core));
 
     tauri::Builder::default()
@@ -359,7 +427,16 @@ pub fn run() {
             commands::save_credential,
             commands::probe_credential,
             commands::remove_credential,
+            commands::set_provider_enabled,
             commands::get_related,
+            commands::get_wave_recommendations,
+            commands::get_wave_source,
+            commands::set_wave_source,
+            commands::get_wave_providers,
+            commands::set_wave_providers,
+            commands::get_recommendation_providers,
+            commands::set_recommendation_providers,
+            commands::import_likes,
             commands::reset_settings,
             commands::reset_data,
             commands::reorder_library,
@@ -368,6 +445,29 @@ pub fn run() {
             commands::download_all_to_cache,
             commands::get_spotify_proxy,
             commands::set_spotify_proxy,
+            commands::get_spotify_playback_source,
+            commands::set_spotify_playback_source,
+            commands::spotify_browser_login,
+            commands::spotify_capture_cookies,
+            commands::spotify_browser_login,
+            commands::youtube_browser_login,
+            commands::spotify_login_window_open,
+            commands::spotify_auth_cancel,
+            commands::youtube_browser_login,
+            commands::youtube_capture_cookies,
+            commands::get_user_profile,
+            commands::get_known_users,
+            commands::switch_user,
+            commands::create_user,
+            commands::export_user,
+            commands::import_user,
+            commands::backup_user,
+            commands::select_user,
+            commands::clear_auto_login,
+            commands::get_auto_login,
+            commands::delete_user,
+            commands::get_language,
+            commands::set_language,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -380,7 +480,7 @@ pub fn run() {
                 {
                     Ok(runtime) => runtime,
                     Err(error) => {
-                        eprintln!("[vessel] tokio runtime: {error}");
+                        vessel_core::dlog!("[vessel] tokio runtime: {error}");
                         return;
                     }
                 };

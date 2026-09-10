@@ -10,6 +10,7 @@ use crate::model::{Playlist, RepeatMode, TrackRef};
 #[derive(Clone, Debug)]
 pub struct Storage {
     path: PathBuf,
+    history_limit: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -30,7 +31,31 @@ pub struct QueueSnapshot {
 
 impl Storage {
     pub fn new(path: PathBuf) -> Self {
-        Self { path }
+        Self {
+            path,
+            history_limit: 2000,
+        }
+    }
+
+    pub fn set_history_limit(&mut self, limit: usize) {
+        self.history_limit = limit.clamp(500, 10_000);
+    }
+
+    pub fn prune_history(&self, limit: usize) -> Result<usize> {
+        let deleted = self.connection()?.execute(
+            "DELETE FROM history WHERE id IN (
+                SELECT id FROM history ORDER BY played_at_ms DESC LIMIT -1 OFFSET ?1
+            )",
+            [limit.clamp(1, 10_000) as i64],
+        )?;
+        Ok(deleted)
+    }
+
+    pub fn vacuum_into(&self, target: &Path) -> Result<()> {
+        self.connection()?.execute_batch(
+            &format!("VACUUM INTO '{}'", target.display().to_string().replace('\'', "''")),
+        )?;
+        Ok(())
     }
 
     pub fn path(&self) -> &Path {
@@ -364,6 +389,7 @@ impl Storage {
                 entry.skipped,
             ],
         )?;
+        self.prune_history(self.history_limit)?;
         Ok(())
     }
 
@@ -597,6 +623,7 @@ mod tests {
             genres: vec!["test".to_string()],
             explicit: false,
             drm: false,
+            isrc: None,
         }
     }
 

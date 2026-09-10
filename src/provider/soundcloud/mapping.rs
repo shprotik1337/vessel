@@ -62,5 +62,6 @@ pub fn normalizovat_track(track: ScTrack) -> Option<TrackRef> {
         genres,
         explicit: false,
         drm: false,
+            isrc: None,
     })
 }

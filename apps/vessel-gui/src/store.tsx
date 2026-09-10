@@ -14,6 +14,7 @@ import type {
   ProgressPayload,
   TrackRef,
 } from "./api/types";
+import { normalizeLang, type Lang } from "./i18n";
 import * as api from "./api/commands";
 
 export interface AppStore {
@@ -27,6 +28,9 @@ export interface AppStore {
   artist: string | null;
   artistProvider: string | null;
   artistId: string | null;
+  lang: Lang;
+  waveTracks: TrackRef[];
+  setWaveTracks: (tracks: TrackRef[]) => void;
   setView: (view: string) => void;
   navigateTo: (
     view: string,
@@ -67,6 +71,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [artistProvider, setArtistProvider] = useState<string | null>(null);
   const [artistId, setArtistId] = useState<string | null>(null);
   const [, setHistory] = useState<NavEntry[]>([]);
+  const [waveTracks, setWaveTracks] = useState<TrackRef[]>([]);
 
   const navigateTo = useCallback(
     (
@@ -94,6 +99,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [view, playlistId, artist, artistProvider, artistId],
   );
+
+  const lang = normalizeLang(state?.language);
 
   const goBack = useCallback(() => {
     setHistory((h) => {
@@ -190,6 +197,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         showToast,
         playTracks,
         refresh,
+        lang,
+        waveTracks,
+        setWaveTracks,
       }}
     >
       {children}

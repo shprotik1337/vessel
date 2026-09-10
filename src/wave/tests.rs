@@ -328,6 +328,7 @@ fn track(id: &str, artist: &str) -> TrackRef {
         genres: Vec::new(),
         explicit: false,
         drm: false,
+            isrc: None,
     }
 }
 
