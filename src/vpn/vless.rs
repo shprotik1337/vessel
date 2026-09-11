@@ -180,6 +180,10 @@ pub fn parse_vless_uri(raw: &str) -> Result<VlessUri> {
             path: get("path").filter(|p| !p.is_empty()).unwrap_or_else(|| "/".to_string()),
             host: get("host").filter(|h| !h.is_empty()),
         },
+        other if other == "xhttp" || other == "splithttp" => bail!(
+            "транспорт {other} не поддерживается ядром — его нет в текущей версии amnezia-box; \
+             попроси у того, кто выдал ссылку, вариант с ws или grpc"
+        ),
         other => bail!(
             "неподдерживаемый транспорт «{other}» — поддерживаются tcp, ws, grpc и http"
         ),

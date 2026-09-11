@@ -1990,14 +1990,23 @@ pub fn vpn_add_amnezia(
     name: String,
     config_text: String,
 ) -> Result<vessel_core::config::VpnProfileConfig, String> {
-    let parsed =
-        vessel_core::vpn::amnezia::parse_awg_conf(&config_text).map_err(|e| e.to_string())?;
+    let trimmed = config_text.trim();
+    // Amnezia экспортирует конфиг как ссылку vpn://… (zlib+base64url), либо
+    // можно вставить обычный текстовый AmneziaWG/WireGuard .conf.
+    let (parsed, description) = if trimmed.starts_with("vpn://") {
+        vessel_core::vpn::amnezia::parse_amnezia_vpn_uri(trimmed).map_err(|e| e.to_string())?
+    } else {
+        (
+            vessel_core::vpn::amnezia::parse_awg_conf(trimmed).map_err(|e| e.to_string())?,
+            None,
+        )
+    };
     let now = now_ms();
     let is_awg = parsed.obfuscation.jc.is_some() || parsed.obfuscation.h1.is_some();
     let display_name = {
         let trimmed = name.trim();
         if trimmed.is_empty() {
-            parsed.endpoint_host.clone()
+            description.unwrap_or_else(|| parsed.endpoint_host.clone())
         } else {
             trimmed.to_string()
         }
