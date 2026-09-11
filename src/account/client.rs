@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::vpn::ApplyVpnProxy;
 use reqwest::{Client, Method, Response, StatusCode};
 use serde::{Serialize, de::DeserializeOwned};
 use url::Url;
@@ -27,6 +28,7 @@ impl AccountClient {
     pub fn new(server_url: &str, secrets: &SecretStore) -> anyhow::Result<Self> {
         let base_url = Url::parse(server_url.trim())?;
         let http = Client::builder()
+            .apply_vpn_proxy()
             .user_agent(format!("vessel/{APP_VERSION}"))
             .timeout(Duration::from_secs(20))
             .build()?;

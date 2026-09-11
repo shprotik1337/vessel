@@ -63,6 +63,22 @@ pub struct HotkeyBindings {
     pub volume_down: String,
 }
 
+/// Метаданные VPN-профиля. Секреты (uuid, ключи) лежат в SecretStore
+/// под именем `vpn-profile:<id>` — здесь только то, что не жалко показывать.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct VpnProfileConfig {
+    pub id: String,
+    pub name: String,
+    /// "vless" | "amnezia"
+    pub kind: String,
+    pub server: String,
+    pub port: u16,
+    /// Человекочитаемая подпись транспорта: "Reality", "TLS", "WS", "AWG"…
+    pub transport: String,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
 impl Default for HotkeyBindings {
     fn default() -> Self {
         Self {
@@ -122,6 +138,11 @@ pub struct AppConfig {
     /// None = родной Spotify-плеер (premium).
     #[serde(default)]
     pub spotify_playback_source: Option<String>,
+    #[serde(default)]
+    pub vpn_profiles: Vec<VpnProfileConfig>,
+    /// Последний профиль, к которому подключались (для UI).
+    #[serde(default)]
+    pub vpn_active_profile_id: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -158,6 +179,8 @@ impl Default for AppConfig {
             recommendation_providers: None,
             youtube_potoken_provider: None,
             spotify_playback_source: None,
+            vpn_profiles: Vec::new(),
+            vpn_active_profile_id: None,
         }
     }
 }

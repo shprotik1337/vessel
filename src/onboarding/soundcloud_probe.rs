@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::vpn::ApplyVpnProxy;
 use reqwest::{Client, StatusCode, redirect::Policy};
 use url::Url;
 
@@ -22,6 +23,7 @@ pub async fn probe_soundcloud() -> SoundCloudAccess {
 
 async fn probe_url(url: Url, timeout: Duration) -> SoundCloudAccess {
     let client = match Client::builder()
+        .apply_vpn_proxy()
         .user_agent(format!("vessel/{}", crate::APP_VERSION))
         .redirect(Policy::limited(3))
         .timeout(timeout)

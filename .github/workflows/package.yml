@@ -12,9 +12,49 @@ on:
 permissions:
   contents: write
 
+env:
+  AMNEZIA_BOX_REF: v1.260910.0
+
 jobs:
+  vpn-core:
+    name: VPN core (amnezia-box)
+    runs-on: windows-latest
+    steps:
+      - name: Установка Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.5"
+
+      - name: Загрузка amnezia-box
+        uses: actions/checkout@v4
+        with:
+          repository: amnezia-vpn/amnezia-box
+          ref: ${{ env.AMNEZIA_BOX_REF }}
+          persist-credentials: false
+
+      - name: Сборка ядра
+        shell: pwsh
+        run: |
+          $env:GOTOOLCHAIN = "local"
+          $env:GOWORK = "off"
+          $tags = "with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_awg"
+          go build -trimpath -tags $tags `
+            -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=$env:AMNEZIA_BOX_REF" `
+            -o amnezia-box.exe ./cmd/sing-box
+          if (-not (Test-Path "amnezia-box.exe")) { throw "ядро не собралось" }
+          & .\amnezia-box.exe version
+
+      - name: Публикация артефакта
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpn-core
+          path: amnezia-box.exe
+          retention-days: 1
+          if-no-files-found: error
+
   windows:
     name: Windows installer
+    needs: vpn-core
     runs-on: windows-latest
     env:
       PACKAGE_VERSION: ${{ inputs.version }}
@@ -32,12 +72,21 @@ jobs:
         with:
           node-version: 20
 
+      - name: Загрузка ядра VPN
+        uses: actions/download-artifact@v4
+        with:
+          name: vpn-core
+          path: apps/vessel-gui/src-tauri/resources/vpn
+
       - name: Сверка версии
         shell: pwsh
         run: |
           $tauri = Get-Content "apps/vessel-gui/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
           if ($tauri.version -ne $env:PACKAGE_VERSION) {
             throw "tauri.conf.json содержит $($tauri.version), ожидалась $env:PACKAGE_VERSION"
+          }
+          if (-not (Test-Path "apps/vessel-gui/src-tauri/resources/vpn/amnezia-box.exe")) {
+            throw "ядро VPN не найдено в ресурсах"
           }
 
       - name: Тесты

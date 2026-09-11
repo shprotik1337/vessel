@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, io::Read, thread, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
+use crate::vpn::ApplyVpnProxy;
 use reqwest::{
     StatusCode,
     blocking::{Client, Response},
@@ -23,6 +24,7 @@ impl HlsClient {
     pub(super) fn new(headers: &BTreeMap<String, String>) -> Result<Self> {
         let headers = parse_headers(headers)?;
         let client = Client::builder()
+            .apply_vpn_proxy()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .redirect(Policy::custom(|attempt| {

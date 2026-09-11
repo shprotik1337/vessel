@@ -1085,6 +1085,18 @@ impl Runtime {
         ));
     }
 
+    pub fn save_named_secret(&self, name: &str, value: &str) -> Result<(), anyhow::Error> {
+        self.secrets.set_named(name, value).map(|_| ())
+    }
+
+    pub fn get_named_secret(&self, name: &str) -> anyhow::Result<Option<String>> {
+        self.secrets.get_named(name)
+    }
+
+    pub fn remove_named_secret(&self, name: &str) -> Result<(), anyhow::Error> {
+        self.secrets.remove_named(name).map(|_| ())
+    }
+
     pub fn reload_providers(&mut self) {
         let setup = build_registry(&self.config, &self.secrets);
         self.providers = Arc::new(setup.registry);
