@@ -34,11 +34,15 @@ export function VpnTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const connect = async (id: string) => {
+  // Мастер-тумблер: включил — VPN сам подключается (и будет подключаться
+  // при каждом запуске), выключил — отключается и больше не трогается.
+  const toggleEnabled = async () => {
     setBusy(true);
     try {
-      await api.vpnConnect(id);
+      const next = !status?.enabled;
+      await api.vpnSetEnabled(next);
       await load();
+      showToast(next ? t(lang, "vpn.enabledToast") : t(lang, "vpn.disabledToast"));
     } catch (error) {
       showToast(String(error), true);
     } finally {
@@ -46,11 +50,11 @@ export function VpnTab() {
     }
   };
 
-  const disconnect = async () => {
+  const selectProfile = async (id: string) => {
+    if (status?.enabled && status.profile_id === id) return;
     setBusy(true);
     try {
-      await api.vpnDisconnect();
-      setExternalIp(null);
+      await api.vpnSelectProfile(id);
       await load();
     } catch (error) {
       showToast(String(error), true);
@@ -137,25 +141,20 @@ export function VpnTab() {
                   ? status.error
                   : status?.profile_name
                     ? `${status.profile_name}${status.proxy_port ? ` · :${status.proxy_port}` : ""}`
-                    : t(lang, "vpn.disconnectedHint")}
+                    : status?.enabled
+                      ? t(lang, "vpn.enabledHint")
+                      : t(lang, "vpn.disconnectedHint")}
               </div>
             </div>
             <div className="btns">
-              {connected ? (
-                <button className="btn btn-outline btn-sm" onClick={disconnect} disabled={busy}>
-                  {t(lang, "vpn.disconnect")}
-                </button>
-              ) : (
-                status?.profile_id && (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => void connect(status.profile_id!)}
-                    disabled={busy || transitioning || !status.core_present}
-                  >
-                    {t(lang, "vpn.connect")}
-                  </button>
-                )
-              )}
+              <button
+                className={status?.enabled ? "btn btn-outline btn-sm" : "btn btn-primary btn-sm"}
+                onClick={() => void toggleEnabled()}
+                disabled={busy || transitioning || !status?.core_present}
+                title={t(lang, "vpn.enabledHint")}
+              >
+                {status?.enabled ? t(lang, "vpn.disable") : t(lang, "vpn.enable")}
+              </button>
               {connected && (
                 <button className="btn btn-ghost btn-sm" onClick={check} disabled={busy}>
                   {t(lang, "vpn.check")}
@@ -166,6 +165,11 @@ export function VpnTab() {
           {!status?.core_present && (
             <div className="set-desc" style={{ padding: "0 20px 14px", color: "var(--red)" }}>
               {t(lang, "vpn.coreMissing")}
+              {status?.core_path && (
+                <span style={{ display: "block", marginTop: 4, wordBreak: "break-all", opacity: 0.7 }}>
+                  {t(lang, "vpn.corePath")}: {status.core_path}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -182,10 +186,20 @@ export function VpnTab() {
           {profiles.map((profile) => {
             const isActive = status?.profile_id === profile.id;
             return (
-              <div key={profile.id} className="svc-row">
+              <div
+                key={profile.id}
+                className="svc-row"
+                style={{ cursor: "pointer" }}
+                onClick={() => void selectProfile(profile.id)}
+              >
                 <div
                   className="svc-logo"
-                  style={{ background: "var(--elev)", width: 44, height: 44, borderRadius: 6 }}
+                  style={{
+                    background: isActive && status?.enabled ? "var(--track)" : "var(--elev)",
+                    width: 44,
+                    height: 44,
+                    borderRadius: 6,
+                  }}
                 >
                   <span style={{ fontSize: 16, fontWeight: 700 }}>
                     {profile.kind === "vless" ? "VL" : "AW"}
@@ -194,6 +208,12 @@ export function VpnTab() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
                     {profile.name}
+                    {isActive && (
+                      <span className="badge ok">
+                        <span className="bdot" />
+                        {t(lang, "vpn.active")}
+                      </span>
+                    )}
                     {isActive && connected && (
                       <span className="badge ok">
                         <span className="bdot" />
@@ -208,34 +228,27 @@ export function VpnTab() {
                     · {profile.server}:{profile.port}
                   </div>
                 </div>
-                <div className="btns">
-                  {isActive && connected ? (
-                    <button className="btn btn-outline btn-sm" onClick={disconnect} disabled={busy}>
-                      {t(lang, "vpn.disconnect")}
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-outline btn-sm"
-                      onClick={() => void connect(profile.id)}
-                      disabled={busy || transitioning || !status?.core_present}
-                    >
-                      {t(lang, "vpn.connect")}
-                    </button>
-                  )}
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => void remove(profile.id)}
-                    disabled={busy || (isActive && connected)}
-                  >
-                    {t(lang, "users.delete")}
-                  </button>
-                </div>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void remove(profile.id);
+                  }}
+                  disabled={busy || (isActive && connected)}
+                >
+                  {t(lang, "users.delete")}
+                </button>
               </div>
             );
           })}
           {profiles.length === 0 && (
             <div className="set-desc" style={{ padding: 12 }}>
               {t(lang, "vpn.noProfiles")}
+            </div>
+          )}
+          {profiles.length > 0 && (
+            <div className="set-desc" style={{ padding: "0 20px 14px" }}>
+              {t(lang, "vpn.selectHint")}
             </div>
           )}
         </div>

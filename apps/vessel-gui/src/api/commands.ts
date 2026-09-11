@@ -452,6 +452,8 @@ export interface VpnStatus {
   error: string | null;
   proxy_port: number | null;
   core_present: boolean;
+  core_path: string;
+  enabled: boolean;
 }
 
 export async function vpnStatus(): Promise<VpnStatus> {
@@ -480,6 +482,14 @@ export async function vpnConnect(id: string): Promise<void> {
 
 export async function vpnDisconnect(): Promise<void> {
   return invoke("vpn_disconnect");
+}
+
+export async function vpnSetEnabled(enabled: boolean): Promise<void> {
+  return invoke("vpn_set_enabled", { enabled });
+}
+
+export async function vpnSelectProfile(id: string): Promise<void> {
+  return invoke("vpn_select_profile", { id });
 }
 
 export async function vpnLogs(tail?: number): Promise<string[]> {

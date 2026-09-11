@@ -165,6 +165,11 @@ impl VpnManager {
         self.core_binary().is_file()
     }
 
+    /// Текущий путь к ядру — для диагностики в UI.
+    pub fn core_binary_path(&self) -> String {
+        self.core_binary().to_string_lossy().into_owned()
+    }
+
     pub(crate) fn work_dir(&self) -> &std::path::Path {
         &self.inner.work_dir
     }

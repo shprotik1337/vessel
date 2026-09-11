@@ -1916,6 +1916,8 @@ pub fn vpn_status(core: CoreState<'_>) -> Result<serde_json::Value, String> {
         "error": status.error,
         "proxy_port": status.proxy_port,
         "core_present": core.vpn.core_present(),
+        "core_path": core.vpn.core_binary_path(),
+        "enabled": core.config.vpn_enabled,
     }))
 }
 
@@ -2073,6 +2075,73 @@ pub fn vpn_connect(core: CoreState<'_>, id: String) -> Result<(), String> {
             secret_json,
         })
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn vpn_set_enabled(core: CoreState<'_>, enabled: bool) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.vpn_enabled = enabled;
+    core.app.config_dirty = true;
+    if !enabled {
+        core.vpn.disconnect();
+        return Ok(());
+    }
+    // Включаем: подключаемся к активному профилю (или первому доступному)
+    let profile = core
+        .config
+        .vpn_profiles
+        .iter()
+        .find(|p| Some(&p.id) == core.config.vpn_active_profile_id.as_ref())
+        .or_else(|| core.config.vpn_profiles.first())
+        .cloned();
+    let Some(profile) = profile else {
+        return Err("нет ни одного профиля — сначала добавь подключение".to_string());
+    };
+    let secret_json = core
+        .runtime
+        .get_named_secret(&vpn_secret_name(&profile.id))
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "секретные данные профиля не найдены — добавь профиль заново".to_string())?;
+    core.config.vpn_active_profile_id = Some(profile.id.clone());
+    core.vpn
+        .connect(vessel_core::vpn::VpnConnectRequest {
+            profile_id: profile.id,
+            profile_name: profile.name,
+            kind: profile.kind,
+            secret_json,
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn vpn_select_profile(core: CoreState<'_>, id: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    let profile = core
+        .config
+        .vpn_profiles
+        .iter()
+        .find(|p| p.id == id)
+        .cloned()
+        .ok_or_else(|| "профиль не найден".to_string())?;
+    core.config.vpn_active_profile_id = Some(profile.id.clone());
+    core.app.config_dirty = true;
+    // VPN включён и активный профиль сменился — переподключаемся сами
+    if core.config.vpn_enabled {
+        let secret_json = core
+            .runtime
+            .get_named_secret(&vpn_secret_name(&profile.id))
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "секретные данные профиля не найдены — добавь профиль заново".to_string())?;
+        core.vpn
+            .connect(vessel_core::vpn::VpnConnectRequest {
+                profile_id: profile.id,
+                profile_name: profile.name,
+                kind: profile.kind,
+                secret_json,
+            })
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
