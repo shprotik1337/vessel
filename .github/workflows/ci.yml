@@ -29,10 +29,13 @@ jobs:
         with:
           node-version: 20
 
+      - name: Зависимости GUI
+        working-directory: apps/vessel-gui
+        run: npm ci
+
       - name: Тесты
         run: cargo test --lib --locked -j 2
 
       - name: Сборка GUI
         working-directory: apps/vessel-gui
         run: npm run tauri build -- --no-bundle
-# workflow reindex
