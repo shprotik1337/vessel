@@ -107,6 +107,17 @@ jobs:
           if (-not (Test-Path $path)) { throw "installer не найден: $path" }
           "{0:N1} MB" -f ((Get-Item $path).Length / 1MB)
 
+      - name: Portable-архив
+        shell: pwsh
+        run: |
+          $dir = "target/release/portable/Vessel"
+          New-Item -ItemType Directory -Force "$dir/vpn" | Out-Null
+          Copy-Item "target/release/vessel.exe" $dir
+          Copy-Item "apps/vessel-gui/src-tauri/resources/vpn/amnezia-box.exe" "$dir/vpn/"
+          New-Item -ItemType Directory -Force "target/release/bundle/portable" | Out-Null
+          Compress-Archive -Path "$dir/*" -DestinationPath "target/release/bundle/portable/Vessel_${env:PACKAGE_VERSION}_x64-portable.zip" -Force
+          "portable: {0:N1} MB" -f ((Get-Item "target/release/bundle/portable/Vessel_${env:PACKAGE_VERSION}_x64-portable.zip").Length / 1MB)
+
       - name: Публикация в Release
         uses: softprops/action-gh-release@v2
         with:
@@ -117,10 +128,13 @@ jobs:
 
             Установщик Windows (NSIS). Запусти `Vessel_${{ inputs.version }}_x64-setup.exe` и следуй шагам установщика.
 
+            **Portable**: распакуй `Vessel_${{ inputs.version }}_x64-portable.zip` в любую папку и запусти `Vessel.exe` — рядом должны лежать папка `vpn` с ядром.
+
             ### Требования
             - Windows 10/11 x64
             - WebView2 Runtime (предустановлен в Windows 11, [скачать для Windows 10](https://developer.microsoft.com/en-us/microsoft-edge/webview2/))
           files: |
             target/release/bundle/nsis/Vessel_${{ inputs.version }}_x64-setup.exe
+            target/release/bundle/portable/Vessel_${{ inputs.version }}_x64-portable.zip
           draft: false
           prerelease: false

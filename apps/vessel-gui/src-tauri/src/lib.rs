@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -509,16 +509,31 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let core = app.state::<Arc<Mutex<GuiCore>>>();
             let core = Arc::clone(core.inner());
-            // Ядро VPN лежит в ресурсах инсталлятора (resources/vpn/).
-            // В dev-режиме путь переопределяется переменной VESSEL_VPN_CORE
-            // или подкладывается файл в каталог конфига.
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                let bundled = resource_dir.join("vpn").join("amnezia-box.exe");
-                if bundled.is_file() {
+            // Ищем ядро VPN во всех типичных местах: ресурсы installer'а,
+            // папка рядом с exe (portable), каталог конфига, переменная окружения.
+            {
+                let mut candidates: Vec<PathBuf> = Vec::new();
+                if let Ok(env_path) = std::env::var("VESSEL_VPN_CORE") {
+                    candidates.push(PathBuf::from(env_path));
+                }
+                if let Ok(resource_dir) = app.path().resource_dir() {
+                    candidates.push(resource_dir.join("vpn").join("amnezia-box.exe"));
+                }
+                if let Ok(exe_dir) = std::env::current_exe().map(|p| p.parent().map(Path::to_path_buf).unwrap_or_default()) {
+                    candidates.push(exe_dir.join("vpn").join("amnezia-box.exe"));
+                    candidates.push(exe_dir.join("amnezia-box.exe"));
+                }
+                let fallback = {
+                    let guard = core.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    guard.paths.config_dir.join("vpn").join("amnezia-box.exe")
+                };
+                candidates.push(fallback);
+                if let Some(found) = candidates.iter().find(|p| p.is_file()) {
+                    vessel_core::dlog!("[vpn] core binary: {}", found.display());
                     core.lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .vpn
-                        .set_core_binary(bundled);
+                        .set_core_binary(found.clone());
                 }
             }
             std::thread::spawn(move || {
