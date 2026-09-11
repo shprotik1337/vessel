@@ -1,6 +1,8 @@
 //! InnerTube client identities (по образцу Kopuz `clients.rs`, EUPL-1.2).
 //! Константы — публичные идентификаторы клиентов YouTube (NewPipe, yt-dlp).
 
+use crate::vpn::ApplyVpnProxy;
+
 #[derive(Clone, Copy, Debug)]
 pub struct YouTubeClient {
     pub client_name: &'static str,
@@ -22,10 +24,25 @@ pub struct YouTubeClient {
 pub const ORIGIN_YOUTUBE_MUSIC: &str = "https://music.youtube.com";
 
 /// Общий HTTP-клиент для всех innertube/decipher запросов (тёплый TLS).
-pub fn clients_http() -> &'static reqwest::Client {
-    use std::sync::OnceLock;
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| reqwest::Client::builder().build().expect("youtube http client"))
+/// Кэшируется по активному VPN-прокси: сменился прокси — пересоздаётся.
+pub fn clients_http() -> std::sync::Arc<reqwest::Client> {
+    use std::sync::{Arc, Mutex, OnceLock};
+    static CLIENT: OnceLock<Mutex<(Option<String>, Arc<reqwest::Client>)>> = OnceLock::new();
+    let cell = CLIENT.get_or_init(|| Mutex::new((None, Arc::new(new_client()))));
+    let mut cached = cell.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let active = crate::vpn::current_proxy();
+    if cached.0 != active {
+        cached.1 = Arc::new(new_client());
+        cached.0 = active;
+    }
+    Arc::clone(&cached.1)
+}
+
+fn new_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .apply_vpn_proxy()
+        .build()
+        .expect("youtube http client")
 }
 
 const USER_AGENT_WEB: &str =

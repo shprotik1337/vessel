@@ -83,6 +83,13 @@ impl SpotifyProvider {
         if !cookie.to_ascii_lowercase().contains("sp_dc=") {
             bail!("в строке нет cookie sp_dc — вставь хотя бы sp_dc")
         }
+        // Прокси: ручной из настроек, либо активный VPN-прокси (VPN приоритетнее,
+        // если ручной не задан).
+        let proxy = proxy
+            .map(str::trim)
+            .filter(|proxy| !proxy.is_empty())
+            .map(str::to_owned)
+            .or_else(crate::vpn::current_proxy);
         // Кладём sp_dc/sp_key в cookie jar, чтобы reqwest слал их автоматически
         // на все поддомены spotify.com.
         let jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
@@ -105,8 +112,6 @@ impl SpotifyProvider {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30));
         if let Some(proxy) = proxy
-            .map(str::trim)
-            .filter(|proxy| !proxy.is_empty())
         {
             builder = builder
                 .proxy(reqwest::Proxy::all(proxy).context("не удалось разобрать прокси Spotify")?);

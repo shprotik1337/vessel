@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -28,6 +28,10 @@ pub struct GuiCore {
     pub storage: Storage,
     pub users: UserManager,
     pub needs_user_selection: bool,
+    /// VPN-слой: профили, состояние, процесс amnezia-box.
+    pub vpn: vessel_core::vpn::VpnManager,
+    /// Последний увиденный статус VPN — для перезапуска провайдеров при смене.
+    pub vpn_last_status: Option<vessel_core::vpn::VpnStatus>,
     pub last_state_hash: u64,
     pub last_progress_at: Instant,
 }
@@ -205,6 +209,20 @@ fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
             Err(poisoned) => poisoned.into_inner(),
         };
         drive_runtime(&mut core);
+        // VPN сменил состояние → пересобираем провайдеров, чтобы клиенты
+        // подхватили (или сбросили) локальный прокси ядра.
+        let vpn_status = core.vpn.status_kind();
+        if core.vpn_last_status != Some(vpn_status) {
+            core.vpn_last_status = Some(vpn_status);
+            if matches!(
+                vpn_status,
+                vessel_core::vpn::VpnStatus::Connected
+                    | vessel_core::vpn::VpnStatus::Disconnected
+                    | vessel_core::vpn::VpnStatus::Error
+            ) {
+                core.runtime.reload_providers();
+            }
+        }
         persist(&mut core);
         let now = Instant::now();
         let hash = state_hash(&core.app);
@@ -332,6 +350,10 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         app.status_message = notice;
     }
     app.restore_account();
+    let vpn_work_dir = paths.config_dir.join("vpn");
+    let vpn_core_binary = std::env::var("VESSEL_VPN_CORE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| vpn_work_dir.join("amnezia-box.exe"));
     Ok(GuiCore {
         app,
         runtime,
@@ -340,6 +362,8 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         storage,
         users,
         needs_user_selection,
+        vpn: vessel_core::vpn::VpnManager::new(vpn_core_binary, vpn_work_dir),
+        vpn_last_status: None,
         last_state_hash: 0,
         last_progress_at: Instant::now(),
     })
@@ -471,11 +495,32 @@ pub fn run() {
             commands::save_file_as,
             commands::open_path,
             commands::get_users_dir,
+            commands::vpn_status,
+            commands::vpn_profiles,
+            commands::vpn_add_vless,
+            commands::vpn_add_amnezia,
+            commands::vpn_remove_profile,
+            commands::vpn_connect,
+            commands::vpn_disconnect,
+            commands::vpn_logs,
+            commands::vpn_check,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
             let core = app.state::<Arc<Mutex<GuiCore>>>();
             let core = Arc::clone(core.inner());
+            // Ядро VPN лежит в ресурсах инсталлятора (resources/vpn/).
+            // В dev-режиме путь переопределяется переменной VESSEL_VPN_CORE
+            // или подкладывается файл в каталог конфига.
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let bundled = resource_dir.join("vpn").join("amnezia-box.exe");
+                if bundled.is_file() {
+                    core.lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .vpn
+                        .set_core_binary(bundled);
+                }
+            }
             std::thread::spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_multi_thread()
                     .enable_all()

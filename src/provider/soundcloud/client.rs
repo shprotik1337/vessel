@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use crate::vpn::ApplyVpnProxy;
 use reqwest::{Client, ClientBuilder};
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -64,6 +65,7 @@ impl SoundCloudClient {
 
 pub(super) fn build_http(builder: ClientBuilder) -> Result<Client> {
     builder
+        .apply_vpn_proxy()
         .user_agent(format!("vessel/{}", crate::APP_VERSION))
         .build()
         .context("не удалось создать HTTP-клиент SoundCloud")

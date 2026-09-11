@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use crate::vpn::ApplyVpnProxy;
 use reqwest::{
     StatusCode,
     blocking::Client,
@@ -36,6 +37,7 @@ impl HttpRangeSource {
         prefer_range: bool,
     ) -> Result<Self> {
         let client = Client::builder()
+            .apply_vpn_proxy()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .user_agent(BROWSER_UA)

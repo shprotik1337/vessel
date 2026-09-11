@@ -102,12 +102,55 @@ impl SecretStore {
     }
 
     pub fn remove(&self, key: SecretKey) -> Result<()> {
+        self.remove_named(key.name())
+    }
+
+    /// Динамический ключ по имени — для VPN-профилей (`vpn-profile:<id>`).
+    pub fn set_named(&self, name: &str, value: &str) -> Result<SecretBackend> {
         if self.system_enabled
-            && let Ok(entry) = Entry::new(SERVICE_NAME, key.name())
+            && Entry::new(SERVICE_NAME, name)
+                .and_then(|entry| entry.set_password(value))
+                .is_ok()
+        {
+            self.remove_named_file_value(name)?;
+            return Ok(SecretBackend::System);
+        }
+        self.set_named_file_value(name, value)?;
+        Ok(SecretBackend::File)
+    }
+
+    pub fn get_named(&self, name: &str) -> Result<Option<String>> {
+        if self.system_enabled {
+            if let Ok(value) = Entry::new(SERVICE_NAME, name).and_then(|entry| entry.get_password())
+                && !value.is_empty()
+            {
+                return Ok(Some(value));
+            }
+        }
+        Ok(self.load_file()?.values.get(name).cloned())
+    }
+
+    pub fn remove_named(&self, name: &str) -> Result<()> {
+        if self.system_enabled
+            && let Ok(entry) = Entry::new(SERVICE_NAME, name)
         {
             let _ = entry.delete_credential();
         }
-        self.remove_file_value(key)
+        self.remove_named_file_value(name)
+    }
+
+    fn set_named_file_value(&self, name: &str, value: &str) -> Result<()> {
+        let mut file = self.load_file()?;
+        file.values.insert(name.to_string(), value.to_string());
+        self.save_file(&file)
+    }
+
+    fn remove_named_file_value(&self, name: &str) -> Result<()> {
+        let mut file = self.load_file()?;
+        if file.values.remove(name).is_some() {
+            self.save_file(&file)?;
+        }
+        Ok(())
     }
 
     fn load_file(&self) -> Result<SecretFile> {

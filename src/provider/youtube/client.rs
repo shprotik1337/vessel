@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use crate::vpn::ApplyVpnProxy;
 use reqwest::{
     Client,
     header::{HeaderValue, CONTENT_TYPE, COOKIE, USER_AGENT},
@@ -61,6 +62,7 @@ impl Clone for YoutubeClient {
 impl YoutubeClient {
     pub fn new() -> Result<Self> {
         let http = Client::builder()
+            .apply_vpn_proxy()
             .user_agent(BROWSER_UA)
             .build()
             .context("не удалось создать HTTP-клиент YouTube")?;

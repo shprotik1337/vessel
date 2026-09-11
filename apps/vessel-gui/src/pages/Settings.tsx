@@ -3,11 +3,12 @@ import { useEffect, useState } from "react";
 import { useApp } from "../store";
 import { PlatformIcon } from "../components/PlatformIcon";
 import { TextInputModal, ConfirmModal, PathModal } from "../components/Modal";
+import { VpnTab } from "../components/VpnTab";
 import type { ProviderStatus, UserProfile } from "../api/types";
 import * as api from "../api/commands";
 import { t } from "../i18n";
 
-type Tab = "services" | "playback" | "storage" | "users" | "recommendations";
+type Tab = "services" | "playback" | "storage" | "users" | "recommendations" | "vpn";
 
 type ConfirmTarget = "settings" | "data" | null;
 type DirTarget = "download" | "cache" | null;
@@ -1069,6 +1070,12 @@ export function Settings() {
           >
             <span>{t(lang, "settings.recommendations")}</span>
           </button>
+          <button
+            className={`sett-item ${tab === "vpn" ? "active" : ""}`}
+            onClick={() => setTab("vpn")}
+          >
+            <span>VPN</span>
+          </button>
         </div>
 
         <div className="sett-body">
@@ -1288,6 +1295,7 @@ export function Settings() {
           )}
 
           {tab === "users" && <UsersTab />}
+          {tab === "vpn" && <VpnTab />}
           {tab === "recommendations" && <RecommendationsTab />}
         </div>
       </div>
