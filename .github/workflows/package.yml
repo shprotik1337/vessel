@@ -43,6 +43,10 @@ jobs:
       - name: Тесты
         run: cargo test --lib --locked -j 2
 
+      - name: Зависимости GUI
+        working-directory: apps/vessel-gui
+        run: npm ci
+
       - name: Сборка installer
         working-directory: apps/vessel-gui
         run: npm run tauri build
@@ -71,4 +75,3 @@ jobs:
             target/release/bundle/nsis/Vessel_${{ inputs.version }}_x64-setup.exe
           draft: false
           prerelease: false
-# workflow reindex
