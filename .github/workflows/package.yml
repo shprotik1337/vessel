@@ -1,4 +1,4 @@
-﻿name: Release
+name: Release
 
 on:
   workflow_dispatch:
@@ -71,3 +71,4 @@ jobs:
             target/release/bundle/nsis/Vessel_${{ inputs.version }}_x64-setup.exe
           draft: false
           prerelease: false
+# workflow reindex
