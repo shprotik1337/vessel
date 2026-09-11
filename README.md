@@ -1,14 +1,14 @@
 # Vessel
 
 <p align="center">
-  <a href="https://github.com/shprotik1337/vessel/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/shprotik1337/vessel/ci.yml?branch=main&amp;style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=CI" alt="CI"></a>
+  <a href="https://github.com/shprotik1337/vessel/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/shprotik1337/vessel/ci.yml?branch=beta&amp;style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=CI" alt="CI"></a>
   <a href="#системные-требования"><img src="https://img.shields.io/badge/Platform-Windows-0078D4?style=for-the-badge&amp;logo=windows95&amp;logoColor=white" alt="Windows"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--only-2EA44F?style=for-the-badge" alt="License: GPL-3.0-only"></a>
 </p>
 
 <p align="center">
   <a href="apps/vessel-gui/src-tauri"><img src="https://img.shields.io/badge/Desktop-Tauri%202%20%2B%20WebView2-24C8DB?style=for-the-badge&amp;logo=tauri&amp;logoColor=white" alt="Tauri 2"></a>
-  <a href="Cargo.toml"><img src="https://img.shields.io/badge/Rust%20Core-2024-000000?style=for-the-badge&amp;logo=rust&amp;logoColor=white" alt="Rust 2024"></a>
+  <a href="Cargo.toml"><img src="https://img.shields.io/badge/Rust%20Core-2021-000000?style=for-the-badge&amp;logo=rust&amp;logoColor=white" alt="Rust 2021"></a>
   <a href="apps/vessel-gui/src"><img src="https://img.shields.io/badge/Frontend-React%2018%20%2B%20TypeScript-3178C6?style=for-the-badge&amp;logo=react&amp;logoColor=white" alt="React + TypeScript"></a>
   <a href="Cargo.toml"><img src="https://img.shields.io/badge/Audio-CPAL%20%2B%20Symphonia-8A63D2?style=for-the-badge&amp;logo=rust&amp;logoColor=white" alt="CPAL and Symphonia"></a>
   <a href="Cargo.toml"><img src="https://img.shields.io/badge/Storage-SQLite-07405E?style=for-the-badge&amp;logo=sqlite&amp;logoColor=white" alt="SQLite"></a>
@@ -25,9 +25,10 @@
 - **«Моя волна»** — персональные рекомендации на основе истории, любимых треков и подборок провайдеров, с выбором площадок-источников;
 - **карточки артистов**: аватар, популярные треки, дискография сеткой, вся музыка — единый вид для всех сервисов;
 - **импорт плейлистов и альбомов** по ссылкам SoundCloud, Yandex Music, Deezer, Spotify и YouTube Music;
+- **импорт лайков** из SoundCloud, Deezer и Spotify — в «Избранное» или отдельным плейлистом;
 - **локальная библиотека** с сортировкой и drag-and-drop, плейлисты с обложками, история прослушивания;
 - **несколько профилей** с раздельными библиотеками, экспорт/импорт/бэкап пользователя;
-- **вход через браузер** для Spotify и YouTube Music: встроенное окно входа, ключи остаются только на устройстве;
+- **вход через браузер для Spotify**: встроенное окно, приложение само перехватывает cookie `sp_dc` (OAuth не используется); ключи остаются только на устройстве;
 - **двухязычный интерфейс** (русский и английский) с мгновенным переключением;
 - гостевой режим — аккаунт не обязателен.
 
@@ -40,16 +41,16 @@ Vessel подключает только включённые и настрое�
 | SoundCloud | `client_id` (можно вставить вручную или получить через аккаунт) | поиск, треки, плейлисты, похожие треки |
 | Yandex Music | OAuth-токен из расширения [yandex-music-token](https://github.com/DoorChop/yandex-music-oauth-token) | поиск, треки, плейлисты, персональная волна |
 | Deezer | cookie `arl` | поиск, треки, плейлисты, похожие треки |
-| Spotify | cookie `sp_dc` или вход через браузер | поиск, треки, плейлисты, альбомы, карточки артистов |
-| YouTube Music | работает без входа.| поиск, треки, плейлисты, альбомы, артисты, похожие треки |
+| Spotify | cookie `sp_dc` или вход через браузер (OAuth не используется) | поиск, треки, плейлисты, альбомы, карточки артистов |
+| YouTube Music | ничего не нужно — работает сразу | поиск, треки, плейлисты, альбомы, артисты, похожие треки |
 
 ### Где взять ключи
 
 - **SoundCloud** — `client_id` из любого веб-запроса soundcloud.com к API;
 - **Yandex Music** — токен из браузерного расширения yandex-music-token;
 - **Deezer** — значение cookie `arl` из браузера с залогиненным аккаунтом;
-- **Spotify** — cookie `sp_dc` из браузера, либо кнопка «Войти через браузер» в Настройках;
-- **YouTube Music** — работает сразу после включения.
+- **Spotify** — cookie `sp_dc` из браузера, либо кнопка «Войти через браузер» в Настройках (приложение само перехватит cookie; OAuth не используется);
+- **YouTube Music** — работает сразу после включения, без входа и ключей.
 
 Все ключи хранятся локально: сначала в системном хранилище учётных данных (Windows Credential Manager / Secret Service), при его недоступности — в файле `secrets.json` рядом с данными приложения.
 
@@ -59,12 +60,10 @@ Vessel подключает только включённые и настрое�
 
 Скачай установщик `Vessel_1.0.0_x64-setup.exe` из [Releases](https://github.com/shprotik1337/vessel/releases/latest) и запусти — NSIS-инсталлятор (~14 МБ) сделает всё сам. Инсталлятор включает всё нужное: поиск, плеер, импорт плейлистов и лайков.
 
-Альтернатива без установки: скачай portable `vessel.exe` из вложений релиза и запусти его откуда угодно.
-
 ## Системные требования
 
 - Windows 10/11 x64 с WebView2 Runtime (предустановлен в актуальных Windows 10/11);
-- Rust (stable, edition 2024) и Node.js ≥ 18 — только для сборки из исходников.
+- Rust (stable, edition 2021) и Node.js ≥ 18 — только для сборки из исходников.
 
 ## Сборка из исходников
 
@@ -134,17 +133,12 @@ vessel/
 │   │   └── onboarding.rs       #   проверка SoundCloud, Zapret
 │   ├── wave/                   # движок рекомендаций «Моя волна»
 │   │   ├── generator.rs        #   сборка волны из истории/лайков/кандидатов
-│   │   ├── selector.rs         #   выбор треков, квоты по провайдерам
+│   │   ├── selector.rs        #   выбор треков, квоты по провайдерам
 │   │   ├── score.rs            #   скоринг кандидатов
 │   │   ├── pool.rs             #   пул кандидатов
 │   │   └── …                   #   жанры, семена, профили, текстовый анализ
 │   ├── account/                # API аккаунтов (логин, капча, восстановление)
-│   └── bin/                    # отладочные утилиты (не входят в релиз)
-│       ├── debug_providers.rs  #   проверка регистрации провайдеров и поиска
-│       ├── debug_youtube.rs    #   проверка поиска/стрима YouTube
-│       ├── debug_youtube_stream.rs # проверка Range-запросов к CDN
-│       ├── debug_spotify.rs    #   проверка профиля артиста Spotify
-│       └── debug_secrets.rs    #   проверка хранилища секретов
+│   └── onboarding/             # первичная настройка: проверка SoundCloud, Zapret
 ├── apps/vessel-gui/            # настольное приложение (Tauri 2)
 │   ├── package.json            # React + TypeScript + Vite
 │   ├── src/                    # фронтенд
@@ -163,9 +157,8 @@ vessel/
 │           ├── lib.rs          # состояние GUI, полный state, цикл событий драйвера
 │           ├── commands.rs     # все #[tauri::command]: поиск, плеер, библиотека,
 │           │                   # провайдеры, вход через браузер, пользователи
-│           ├── webview_cookies.rs # захват cookies (sp_dc, YouTube) из WebView
+│           ├── webview_cookies.rs # захват cookie sp_dc из окна входа Spotify
 │           └── main.rs         # точка входа
-└── packaging/                  # упаковка релизов
 ```
 
 ## Архитектура
@@ -179,7 +172,7 @@ vessel/
 
 **Провайдеры.** Каждый сервис реализует трейт `MusicProvider` (поиск, коллекции, карточка артиста, все треки, импорт плейлиста, похожие, источник воспроизведения). Реестр строится из конфига и секретов; включение/выключение провайдера или сохранение ключа пересобирает реестр на лету.
 
-**Аудио.** Источник трека (URL с заголовками) превращается в `MediaSource`: локальный файл, HTTP с Range-запросами или HLS. Symphonia декодирует MP3/AAC/FLAC/Vorbis/WAV, CPAL выводит звук. Для Spotify аудио идёт через встроенный резолвер Spotify → YouTube, когда нет premium-доступа.
+**Аудио.** Источник трека (URL с заголовками) превращается в `MediaSource`: локальный файл, HTTP с Range-запросами или HLS. Symphonia декодирует MP3/AAC/FLAC/Vorbis/WAV, CPAL выводит звук. Для Spotify источник аудио настраивается: «Автоматически» (цепочка Deezer → YouTube Music), Deezer или YouTube Music; если первый источник недоступен, автоматически пробуется следующий.
 
 **Хранение.** SQLite — библиотека, плейлисты, очередь, история (на пользователя). `config.toml` — настройки. Keyring/`secrets.json` — ключи провайдеров.
 

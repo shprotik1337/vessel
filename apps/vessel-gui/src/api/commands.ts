@@ -153,22 +153,6 @@ export async function spotifyAuthCancel(): Promise<void> {
   return invoke("spotify_auth_cancel");
 }
 
-export async function youtubeOauthBegin(): Promise<string> {
-  return invoke<string>("youtube_oauth_begin");
-}
-
-export async function youtubeOauthFinish(): Promise<void> {
-  return invoke("youtube_oauth_finish");
-}
-
-export async function youtubeBrowserLogin(): Promise<void> {
-  return invoke("youtube_browser_login");
-}
-
-export async function youtubeCaptureCookies(): Promise<string> {
-  return invoke<string>("youtube_capture_cookies");
-}
-
 export async function addToQueue(track: TrackRef): Promise<void> {
   return invoke("add_to_queue", { track });
 }

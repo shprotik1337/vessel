@@ -1,4 +1,4 @@
-﻿use std::path::PathBuf;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use vessel_core::{
@@ -903,78 +903,6 @@ pub async fn get_provider_status(core: CoreState<'_>) -> Result<Vec<crate::Provi
     Ok(crate::provider_statuses(&core))
 }
 
-pub async fn youtube_oauth_begin(core: CoreState<'_>) -> Result<String, String> {
-    use vessel_core::provider::youtube::YouTubeMusicProvider;
-    let provider = YouTubeMusicProvider::new().map_err(|e| format!("{e:#}"))?;
-    let (user_code, _verification_url) = provider
-        .oauth_begin()
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    let mut core = lock(&core);
-    core.youtube_oauth = Some(std::sync::Arc::new(provider));
-    Ok(user_code)
-}
-
-#[tauri::command]
-pub async fn youtube_oauth_finish(core: CoreState<'_>) -> Result<(), String> {
-    let provider = {
-        let mut core = lock(&core);
-        core.youtube_oauth
-            .take()
-            .ok_or_else(|| "OAuth РЅРµ Р±С‹Р» РЅР°С‡Р°С‚".to_string())?
-    };
-    let refresh_token = provider.oauth_complete().await.map_err(|e| format!("{e:#}"))?;
-    let mut core = lock(&core);
-    core.runtime
-        .save_credential(CredentialKind::YouTubeOAuthRefresh, &refresh_token)
-        .map_err(|e| e.to_string())?;
-    core.app.config_dirty = true;
-    Ok(())
-}
-
-/// РћС‚РєСЂС‹РІР°РµС‚ РѕРєРЅРѕ WebView СЃ YouTube РґР»СЏ РІС…РѕРґР°. РџРѕСЃР»Рµ Р»РѕРіРёРЅР° СЋР·РµСЂ Р¶РјС‘С‚ В«Р—Р°Р±СЂР°С‚СЊ cookiesВ».
-#[tauri::command]
-pub async fn youtube_browser_login(app: AppHandle) -> Result<(), String> {
-    // РЈР¶Рµ РµСЃС‚СЊ РѕРєРЅРѕ вЂ” С„РѕРєСѓСЃРёСЂСѓРµРј РµРіРѕ
-    if let Some(window) = app.get_webview_window("youtube_login") {
-        window.set_focus().map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-    let url = WebviewUrl::External(
-        url::Url::parse("https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/")
-            .map_err(|e| e.to_string())?,
-    );
-    WebviewWindowBuilder::new(&app, "youtube_login", url)
-        .title("YouTube вЂ” РІС…РѕРґ")
-        .inner_size(900.0, 700.0)
-        .min_inner_size(600.0, 500.0)
-        .build()
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Р—Р°Р±РёСЂР°РµС‚ РІСЃРµ cookies (РІРєР»СЋС‡Р°СЏ httpOnly) РёР· WebView2 РѕРєРЅР° Рё СЃРѕС…СЂР°РЅСЏРµС‚ РёС… РєР°Рє YouTube cookie.
-#[tauri::command]
-pub async fn youtube_capture_cookies(
-    app: AppHandle,
-    core: CoreState<'_>,
-) -> Result<String, String> {
-    let cookie = crate::webview_cookies::collect_youtube_cookies(&app).map_err(|e| e.to_string())?;
-    if cookie.trim().is_empty() {
-        return Err("РЅРµ РЅР°С€С‘Р» cookies РІ РѕРєРЅРµ вЂ” РІРѕР№РґРё РІ Р°РєРєР°СѓРЅС‚ Рё РїРѕРІС‚РѕСЂРё".to_string());
-    }
-    let mut core = lock(&core);
-    core.app.youtube_music_enabled = true;
-    core.runtime
-        .save_credential(CredentialKind::YouTubeCookie, &cookie)
-        .map_err(|e| e.to_string())?;
-    core.app.config_dirty = true;
-    // Р—Р°РєСЂС‹РІР°РµРј РѕРєРЅРѕ РІС…РѕРґР°
-    if let Some(window) = app.get_webview_window("youtube_login") {
-        let _ = window.close();
-    }
-    Ok(cookie.len().to_string())
-}
 
 /// РћС‚РєСЂС‹РІР°РµС‚ РѕРєРЅРѕ WebView СЃ Spotify РґР»СЏ РІС…РѕРґР° Рё Р·Р°РїСѓСЃРєР°РµС‚ С„РѕРЅРѕРІС‹Р№
 /// РјРѕРЅРёС‚РѕСЂРёРЅРі cookies: РєР°Рє С‚РѕР»СЊРєРѕ sp_dc РїРѕСЏРІР»СЏРµС‚СЃСЏ (СЋР·РµСЂ Р·Р°Р»РѕРіРёРЅРёР»СЃСЏ),

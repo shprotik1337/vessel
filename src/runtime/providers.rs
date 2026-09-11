@@ -57,30 +57,6 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore) -> ProviderSetu
         let proxy = config.spotify_proxy.as_deref();
         match SpotifyProvider::with_proxy(sp_dc, proxy) {
             Ok(mut provider) => {
-                if let Some(refresh) = load_secret(
-                    secrets,
-                    SecretKey::SpotifyOAuthRefreshToken,
-                    &mut notices,
-                ) {
-                    provider.set_oauth_refresh(&refresh);
-                }
-                if let Ok(resolver) = crate::provider::youtube::YoutubeResolver::new() {
-                    provider.set_youtube_resolver(resolver);
-                }
-                registry.register(provider);
-            }
-            Err(error) => notices.push(format!("Spotify не настроен: {error}")),
-        }
-    } else if config.spotify_enabled
-        && let Some(refresh) =
-            load_secret(secrets, SecretKey::SpotifyOAuthRefreshToken, &mut notices)
-                .filter(|value| !value.trim().is_empty())
-    {
-        // Если есть только OAuth refresh_token (без sp_dc) — создаём провайдера с ним
-        let proxy = config.spotify_proxy.as_deref();
-        match SpotifyProvider::with_proxy("oauth-only", proxy) {
-            Ok(mut provider) => {
-                provider.set_oauth_refresh(&refresh);
                 if let Ok(resolver) = crate::provider::youtube::YoutubeResolver::new() {
                     provider.set_youtube_resolver(resolver);
                 }

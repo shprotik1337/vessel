@@ -34,18 +34,10 @@ type HmacSha1 = Hmac<Sha1>;
 
 const API: &str = "https://api.spotify.com/v1";
 const PATHFINDER: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
-/// Публичный client_id веб-плеера (для client-token и refresh-обмена).
-const SPOTIFY_OAUTH_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
 const SESSION_TOKEN_URL: &str = "https://open.spotify.com/api/token";
 const SERVER_TIME_URL: &str = "https://open.spotify.com/api/server-time";
 const CLIENT_TOKEN_URL: &str = "https://clienttoken.spotify.com/v1/clienttoken";
 const TOTP_SECRETS_URL: &str = "https://git.gay/thereallo/totp-secrets/raw/branch/main/secrets/secretDict.json";
-const DEVICE_AUTH_URL: &str = "https://accounts.spotify.com/oauth2/device/authorize";
-const DEVICE_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
-const DEVICE_RESOLVE_URL: &str = "https://accounts.spotify.com/pair/api/resolve";
-const DEVICE_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
-const DEVICE_FLOW_USER_AGENT: &str = "Spotify/128600502 Win32_x86_64/0 (PC desktop)";
-const DEVICE_SCOPE: &str = "app-remote-control,playlist-modify,playlist-modify-private,playlist-modify-public,playlist-read,playlist-read-collaborative,playlist-read-private,streaming,transfer-auth-session,ugc-image-upload,user-follow-modify,user-follow-read,user-library-modify,user-library-read,user-modify,user-modify-playback-state,user-personalized,user-read-birthdate,user-read-currently-playing,user-read-email,user-read-play-history,user-read-playback-position,user-read-playback-state,user-read-private,user-read-recently-played,user-top-read";
 const SPCLIENT: &str = "https://spclient.wg.spotify.com";
 const WEB_URL: &str = "https://open.spotify.com";
 const PAGE_SIZE: usize = 50;
@@ -72,10 +64,6 @@ pub struct SpotifyProvider {
     cookie: String,
     access_token: Mutex<Option<(String, String, Instant)>>,
     totp_state: Mutex<Option<(String, Vec<u8>)>>,
-    /// OAuth refresh_token для получения access_token (вместо TOTP)
-    oauth_refresh: Mutex<Option<String>>,
-    /// Кэш OAuth-токена для Web API /v1 (device flow или refresh).
-    v1_token: Mutex<Option<(String, Instant)>>,
     /// Резолвер Spotify → YouTube (для аудио без premium)
     youtube: Option<super::youtube::YoutubeResolver>,
 }
@@ -88,32 +76,24 @@ impl SpotifyProvider {
 
     pub fn with_proxy(value: impl AsRef<str>, proxy: Option<&str>) -> Result<Self> {
         let value = value.as_ref().trim();
-        let oauth_guest = matches!(value, "oauth" | "oauth-only");
-        let cookie = if oauth_guest {
-            String::new()
-        } else {
-            let cookie = normalize_cookie_string(value);
-            if cookie.is_empty() {
-                bail!("для Spotify нужна cookie sp_dc")
-            }
-            if !cookie.to_ascii_lowercase().contains("sp_dc=") {
-                bail!("в строке нет cookie sp_dc — вставь хотя бы sp_dc")
-            }
-            cookie
-        };
+        let cookie = normalize_cookie_string(value);
+        if cookie.is_empty() {
+            bail!("для Spotify нужна cookie sp_dc")
+        }
+        if !cookie.to_ascii_lowercase().contains("sp_dc=") {
+            bail!("в строке нет cookie sp_dc — вставь хотя бы sp_dc")
+        }
         // Кладём sp_dc/sp_key в cookie jar, чтобы reqwest слал их автоматически
-        // на все поддомены spotify.com (нужно для device flow на accounts.spotify.com).
+        // на все поддомены spotify.com.
         let jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
-        if !cookie.is_empty() {
-            for url in [
-                "https://open.spotify.com/",
-                "https://accounts.spotify.com/",
-                "https://api.spotify.com/",
-                "https://spclient.wg.spotify.com/",
-            ] {
-                if let Ok(parsed) = Url::parse(url) {
-                    jar.add_cookie_str(&format!("{cookie}; Domain=.spotify.com; Path=/"), &parsed);
-                }
+        for url in [
+            "https://open.spotify.com/",
+            "https://accounts.spotify.com/",
+            "https://api.spotify.com/",
+            "https://spclient.wg.spotify.com/",
+        ] {
+            if let Ok(parsed) = Url::parse(url) {
+                jar.add_cookie_str(&format!("{cookie}; Domain=.spotify.com; Path=/"), &parsed);
             }
         }
         let mut builder = Client::builder()
@@ -137,17 +117,8 @@ impl SpotifyProvider {
             cookie,
             access_token: Mutex::new(None),
             totp_state: Mutex::new(None),
-            oauth_refresh: Mutex::new(None),
-            v1_token: Mutex::new(None),
             youtube: None,
         })
-    }
-
-    /// Задаёт OAuth refresh_token — тогда access_token берётся через него,
-    /// а не через TOTP-поток (sp_dc).
-    pub fn set_oauth_refresh(&self, refresh_token: &str) {
-        let value = refresh_token.trim().to_string();
-        *self.oauth_refresh.lock().unwrap() = (!value.is_empty()).then_some(value);
     }
 
     /// Подключает резолвер Spotify → YouTube для аудио без premium.
@@ -172,38 +143,20 @@ impl SpotifyProvider {
     }
 
     async fn fetch_access_token(&self) -> Result<(String, String)> {
-        // Основной путь — TOTP через sp_dc: даёт web-player токен, который
-        // принимает Pathfinder (поиск/релизы/артисты). OAuth refresh —
-        // запасной путь, если sp_dc нет или TOTP недоступен.
+        // Web-player токен через TOTP: даёт доступ к Pathfinder
+        // (поиск/релизы/артисты) и аудио. Единственный путь — sp_dc.
         if !self.cookie.is_empty() {
             match self.fetch_access_token_totp().await {
                 Ok(tokens) => return Ok(tokens),
                 Err(error) => {
-                    crate::dlog!("[spotify] TOTP token failed, trying OAuth: {error:#}");
+                    crate::dlog!("[spotify] TOTP token failed: {error:#}");
                 }
-            }
-        }
-
-        // Запасной путь — OAuth refresh_token
-        let refresh = self.oauth_refresh.lock().unwrap().clone();
-        if let Some(refresh) = refresh {
-            crate::dlog!("[spotify] refresh_token len={}", refresh.len());
-            if let Ok(token) = Self::access_token_from_refresh(&refresh).await {
-                // Пробуем получить client_token — Pathfinder без него отклоняет запрос
-                let client_token = match self
-                    .get_client_token_with_auth(SPOTIFY_OAUTH_CLIENT_ID, Some(&token))
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(_) => String::new(),
-                };
-                return Ok((token, client_token));
             }
         }
 
         // Ничего не вышло — честная ошибка с планом действий
         bail!(
-            "Spotify недоступен: cookie sp_dc отсутствует или отклонена, OAuth-токен не работает. \
+            "Spotify недоступен: cookie sp_dc отсутствует или отклонена. \
              В Настройках нажми «Подключить» и залогинься в окне Spotify"
         )
     }
@@ -362,38 +315,6 @@ impl SpotifyProvider {
             .json()
             .await
             .context("Spotify вернул непонятный JSON")
-    }
-
-    /// OAuth-токен для Web API /v1: ТОЛЬКО через refresh_token (PKCE-вход).
-    /// Device flow здесь недопустим: требует согласия в браузере, запросы
-    /// висят минутами и выглядят как зависание приложения. Нет токена —
-    /// честная ошибка с подсказкой.
-    async fn v1_access_token(&self) -> Result<String> {
-        if let Some((token, fetched_at)) = self.v1_token.lock().unwrap().as_ref()
-            && fetched_at.elapsed() < Duration::from_secs(25 * 60)
-        {
-            return Ok(token.clone());
-        }
-        let refresh = self.oauth_refresh.lock().unwrap().clone();
-        let Some(refresh) = refresh else {
-            bail!(
-                "нет OAuth-токена: в Настройках → Spotify нажми «Войти через OAuth» и подтверди доступ в браузере"
-            )
-        };
-        let token = match Self::access_token_from_refresh(&refresh).await {
-            Ok(token) => token,
-            Err(error) => {
-                let text = error.to_string();
-                if text.contains("invalid_grant") || text.contains("revoked") {
-                    bail!(
-                        "OAuth-токен протух: в Настройках → Spotify нажми «Войти через OAuth» заново"
-                    )
-                }
-                bail!("OAuth-токен не обновился: {text}")
-            }
-        };
-        *self.v1_token.lock().unwrap() = Some((token.clone(), Instant::now()));
-        Ok(token)
     }
 
     /// Запрос к внутреннему GraphQL Pathfinder API (работает с web-player токеном).
@@ -1026,21 +947,6 @@ impl SpotifyProvider {
         Ok(())
     }
 
-    /// Для отладки: refresh → access → /v1/me.
-    pub async fn debug_refresh_to_v1_me(&self) -> Result<(u16, String)> {
-        let refresh = self.oauth_refresh.lock().unwrap().clone()
-            .context("нет refresh")?;
-        let token = Self::access_token_from_refresh(&refresh).await
-            .context("refresh отклонён Spotify")?;
-        let url = Url::parse("https://api.spotify.com/v1/me")?;
-        let response = self.http.get(url)
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .send().await?;
-        let status = response.status().as_u16();
-        let text = response.text().await.unwrap_or_default();
-        Ok((status, text))
-    }
-
     /// Для отладки: pathfinder с явным хешем.
     pub async fn pathfinder_by_name(&self, operation: &str, variables: Value) -> Result<Value> {
         let hash = match operation {
@@ -1051,34 +957,6 @@ impl SpotifyProvider {
             other => bail!("нет хеша для операции {other}"),
         };
         self.pathfinder(operation, hash, variables).await
-    }
-
-    /// Получает свежий access_token из refresh_token.
-    pub async fn access_token_from_refresh(refresh_token: &str) -> Result<String> {
-        let params = [
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-            ("client_id", SPOTIFY_OAUTH_CLIENT_ID),
-        ];
-        let client = reqwest::Client::new();
-        let resp = client
-            .post("https://accounts.spotify.com/api/token")
-            .form(&params)
-            .send()
-            .await
-            .context("Spotify не ответил на refresh")?;
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            bail!("Spotify отклонил refresh ({status}): {body}")
-        }
-        let value: Value = serde_json::from_str(&body)
-            .with_context(|| format!("Spotify вернул непонятный refresh: {body}"))?;
-        value
-            .get("access_token")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .context("Spotify не вернул access_token")
     }
 }
 
