@@ -62,7 +62,7 @@ impl SoundCloudClient {
     }
 }
 
-fn build_http(builder: ClientBuilder) -> Result<Client> {
+pub(super) fn build_http(builder: ClientBuilder) -> Result<Client> {
     builder
         .user_agent(format!("vessel/{}", crate::APP_VERSION))
         .build()
