@@ -35,3 +35,4 @@ jobs:
       - name: Сборка GUI
         working-directory: apps/vessel-gui
         run: npm run tauri build -- --no-bundle
+# workflow reindex
