@@ -153,6 +153,30 @@ export async function spotifyAuthCancel(): Promise<void> {
   return invoke("spotify_auth_cancel");
 }
 
+export async function soundcloudBrowserLogin(): Promise<void> {
+  return invoke("soundcloud_browser_login");
+}
+
+export async function soundcloudLoginWindowOpen(): Promise<boolean> {
+  return invoke<boolean>("soundcloud_login_window_open");
+}
+
+export async function soundcloudAuthCancel(): Promise<void> {
+  return invoke("soundcloud_auth_cancel");
+}
+
+export async function deezerBrowserLogin(): Promise<void> {
+  return invoke("deezer_browser_login");
+}
+
+export async function deezerLoginWindowOpen(): Promise<boolean> {
+  return invoke<boolean>("deezer_login_window_open");
+}
+
+export async function deezerAuthCancel(): Promise<void> {
+  return invoke("deezer_auth_cancel");
+}
+
 export async function addToQueue(track: TrackRef): Promise<void> {
   return invoke("add_to_queue", { track });
 }

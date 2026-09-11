@@ -57,6 +57,35 @@ const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg
   },
 };
 
+type BrowserLoginKind = "spotify" | "soundcloud" | "deezer";
+
+const BROWSER_LOGIN_HINT_KEY: Record<BrowserLoginKind, Parameters<typeof t>[1]> = {
+  spotify: "settings.browserHint.spotify",
+  soundcloud: "settings.browserHint.soundcloud",
+  deezer: "settings.browserHint.deezer",
+};
+
+const BROWSER_LOGIN: Record<
+  BrowserLoginKind,
+  { login: () => Promise<void>; open: () => Promise<boolean>; cancel: () => Promise<void> }
+> = {
+  spotify: {
+    login: api.spotifyBrowserLogin,
+    open: api.spotifyLoginWindowOpen,
+    cancel: api.spotifyAuthCancel,
+  },
+  soundcloud: {
+    login: api.soundcloudBrowserLogin,
+    open: api.soundcloudLoginWindowOpen,
+    cancel: api.soundcloudAuthCancel,
+  },
+  deezer: {
+    login: api.deezerBrowserLogin,
+    open: api.deezerLoginWindowOpen,
+    cancel: api.deezerAuthCancel,
+  },
+};
+
 function ServiceRow({ status }: { status: ProviderStatus }) {
   const { showToast, refresh, lang } = useApp();
   const [editing, setEditing] = useState(false);
@@ -96,45 +125,41 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
     }
   };
 
-  const [oauthBusy, setOauthBusy] = useState(false);
-  const [spotifyLoginOpen, setSpotifyLoginOpen] = useState(false);
-  const [loginPolling, setLoginPolling] = useState(false);
-
   // Автоматический auth flow: открыли окно → залогинились → приложение само
-  // заметило sp_dc, сохранило и закрыло окно. UI просто следит за статусом.
-  const oauthLogin = async () => {
-    setOauthBusy(true);
+  // замечает ключ/cookie (sp_dc, arl, client_id), сохраняет и закрывает окно.
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginKind, setLoginKind] = useState<BrowserLoginKind | null>(null);
+
+  const browserLogin = async (kind: BrowserLoginKind) => {
+    setLoginBusy(true);
     try {
-      await api.spotifyBrowserLogin();
-      setSpotifyLoginOpen(true);
-      setLoginPolling(true);
+      await BROWSER_LOGIN[kind].login();
+      setLoginKind(kind);
     } catch (error) {
       showToast(String(error), true);
     } finally {
-      setOauthBusy(false);
+      setLoginBusy(false);
     }
   };
 
   useEffect(() => {
-    if (!loginPolling) return;
+    if (!loginKind) return;
     let cancelled = false;
     const timer = setInterval(async () => {
       try {
         const [statuses, open] = await Promise.all([
           api.getProviderStatus(),
-          api.spotifyLoginWindowOpen(),
+          BROWSER_LOGIN[loginKind].open(),
         ]);
         if (cancelled) return;
-        const spotify = statuses.find((s) => s.kind === "spotify");
-        if (spotify?.connected) {
-          setLoginPolling(false);
-          setSpotifyLoginOpen(false);
+        const provider = statuses.find((s) => s.kind === loginKind);
+        if (provider?.connected) {
+          setLoginKind(null);
           await refresh();
-          showToast("Spotify подключён");
+          showToast(`${provider.label} ${t(lang, "settings.providerConnected")}`);
         } else if (!open) {
           // Окно закрыли: либо вход отменён, либо сохранение уже прошло
-          setLoginPolling(false);
-          setSpotifyLoginOpen(false);
+          setLoginKind(null);
           await refresh();
         }
       } catch {
@@ -146,13 +171,14 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
       clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loginPolling]);
+  }, [loginKind]);
 
-  const cancelSpotifyLogin = async () => {
-    setLoginPolling(false);
-    setSpotifyLoginOpen(false);
+  const cancelBrowserLogin = async () => {
+    if (!loginKind) return;
+    const kind = loginKind;
+    setLoginKind(null);
     try {
-      await api.spotifyAuthCancel();
+      await BROWSER_LOGIN[kind].cancel();
     } catch {
       // окно могло уже закрыться
     }
@@ -226,8 +252,10 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
           <button className="btn btn-outline btn-sm" onClick={() => setEditing(true)}>
             {t(lang, "settings.connect")}
           </button>
-          {status.kind === "spotify" &&
-            (spotifyLoginOpen ? (
+          {(status.kind === "spotify" ||
+            status.kind === "soundcloud" ||
+            status.kind === "deezer") &&
+            (loginKind === status.kind ? (
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span className="badge warn">
                   <span className="bdot" />
@@ -235,7 +263,7 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
                 </span>
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={cancelSpotifyLogin}
+                  onClick={cancelBrowserLogin}
                 >
                   {t(lang, "common.cancel")}
                 </button>
@@ -243,11 +271,11 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
             ) : (
               <button
                 className="btn btn-primary btn-sm"
-                onClick={oauthLogin}
-                disabled={oauthBusy}
-                title={t(lang, "settings.spSearchHint")}
+                onClick={() => void browserLogin(status.kind as BrowserLoginKind)}
+                disabled={loginBusy}
+                title={t(lang, BROWSER_LOGIN_HINT_KEY[status.kind as BrowserLoginKind])}
               >
-                {oauthBusy ? t(lang, "settings.oauthBusy") : t(lang, "settings.oauthLogin")}
+                {loginBusy ? t(lang, "settings.oauthBusy") : t(lang, "settings.oauthLogin")}
               </button>
             ))}
         </div>
