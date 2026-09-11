@@ -143,6 +143,9 @@ pub struct AppConfig {
     /// Последний профиль, к которому подключались (для UI).
     #[serde(default)]
     pub vpn_active_profile_id: Option<String>,
+    /// Мастер-выключатель VPN: включён — подключается сам при каждом старте.
+    #[serde(default)]
+    pub vpn_enabled: bool,
 }
 
 impl Default for AppConfig {
@@ -181,6 +184,7 @@ impl Default for AppConfig {
             spotify_playback_source: None,
             vpn_profiles: Vec::new(),
             vpn_active_profile_id: None,
+            vpn_enabled: false,
         }
     }
 }

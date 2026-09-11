@@ -496,6 +496,8 @@ pub fn run() {
             commands::open_path,
             commands::get_users_dir,
             commands::vpn_status,
+            commands::vpn_set_enabled,
+            commands::vpn_select_profile,
             commands::vpn_profiles,
             commands::vpn_add_vless,
             commands::vpn_add_amnezia,
@@ -534,6 +536,44 @@ pub fn run() {
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .vpn
                         .set_core_binary(found.clone());
+                }
+            }
+            // Авто-включение VPN: пользователь оставил тумблер включённым —
+            // подключаемся сами при каждом старте (§27 crash recovery).
+            {
+                let mut guard = core.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                if guard.config.vpn_enabled && guard.vpn.core_present() {
+                    let profile = guard
+                        .config
+                        .vpn_profiles
+                        .iter()
+                        .find(|p| Some(&p.id) == guard.config.vpn_active_profile_id.as_ref())
+                        .or_else(|| guard.config.vpn_profiles.first())
+                        .cloned();
+                    if let Some(profile) = profile {
+                        let secret = guard
+                            .runtime
+                            .get_named_secret(&format!("vpn-profile:{}", profile.id))
+                            .ok()
+                            .flatten();
+                        if let Some(secret_json) = secret {
+                            guard.config.vpn_active_profile_id = Some(profile.id.clone());
+                            let request = vessel_core::vpn::VpnConnectRequest {
+                                profile_id: profile.id.clone(),
+                                profile_name: profile.name.clone(),
+                                kind: profile.kind.clone(),
+                                secret_json,
+                            };
+                            if let Err(error) = guard.vpn.connect(request) {
+                                vessel_core::dlog!("[vpn] auto-connect failed: {error}");
+                            } else {
+                                vessel_core::dlog!(
+                                    "[vpn] auto-connect started for profile {}",
+                                    profile.id
+                                );
+                            }
+                        }
+                    }
                 }
             }
             std::thread::spawn(move || {
