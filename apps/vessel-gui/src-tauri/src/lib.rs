@@ -30,10 +30,6 @@ pub struct GuiCore {
     pub needs_user_selection: bool,
     pub last_state_hash: u64,
     pub last_progress_at: Instant,
-    /// Р’СЂРµРјРµРЅРЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ Spotify РґР»СЏ OAuth-С„Р»РѕСѓ (СЃРѕР·РґР°С‘С‚СЃСЏ РІ oauth_begin).
-    pub spotify_oauth: Option<std::sync::Arc<vessel_core::provider::spotify::SpotifyProvider>>,
-    /// Р’СЂРµРјРµРЅРЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ YouTube РґР»СЏ OAuth-С„Р»РѕСѓ (device code).
-    pub youtube_oauth: Option<std::sync::Arc<vessel_core::provider::youtube::YouTubeMusicProvider>>,
 }
 
 /// РџРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РїСЂРёР»РѕР¶РµРЅРёСЏ, РєРѕС‚РѕСЂРѕРµ С„СЂРѕРЅС‚РµРЅРґ С‡РёС‚Р°РµС‚ РЅР°РїСЂСЏРјСѓСЋ РїРѕ Р·Р°РїСЂРѕСЃСѓ.
@@ -346,8 +342,6 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         needs_user_selection,
         last_state_hash: 0,
         last_progress_at: Instant::now(),
-        spotify_oauth: None,
-        youtube_oauth: None,
     })
 }
 
@@ -451,12 +445,8 @@ pub fn run() {
             commands::set_spotify_playback_source,
             commands::spotify_browser_login,
             commands::spotify_capture_cookies,
-            commands::spotify_browser_login,
-            commands::youtube_browser_login,
             commands::spotify_login_window_open,
             commands::spotify_auth_cancel,
-            commands::youtube_browser_login,
-            commands::youtube_capture_cookies,
             commands::get_user_profile,
             commands::get_known_users,
             commands::switch_user,
