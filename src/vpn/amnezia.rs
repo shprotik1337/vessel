@@ -19,7 +19,115 @@
 //! Зашифрованные архивы .vpn не поддерживаются — честная ошибка.
 
 use anyhow::{bail, Result};
+use base64::Engine;
+use flate2::read::ZlibDecoder;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::io::Read;
+
+/// Импорт ссылки `vpn://` из приложения AmneziaVPN.
+///
+/// Формат (как в AmneziaVPN `exportController`): `vpn://` + base64url от
+/// zlib-потока с 4-байтовым big-endian префиксом длины (формат Qt
+/// `qCompress`). Внутри — JSON с контейнерами; в контейнере
+/// `amnezia-awg` поле `last_config` содержит текстовую WireGuard/AmneziaWG
+/// конфигурацию (то, что умеет `parse_awg_conf`).
+pub fn parse_amnezia_vpn_uri(raw: &str) -> Result<(AwgConfig, Option<String>)> {
+    let trimmed = raw.trim();
+    let Some(payload) = trimmed.strip_prefix("vpn://") else {
+        bail!("это не ссылка Amnezia — она должна начинаться с vpn://")
+    };
+    let payload = payload.trim();
+    if payload.is_empty() {
+        bail!("ссылка Amnezia пустая — скопируй её целиком")
+    }
+
+    let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let bytes = engine
+        .decode(payload)
+        .map_err(|_| anyhow::anyhow!("ссылка повреждена — не удалось раскодировать base64"))?;
+    if bytes.len() < 10 {
+        bail!("ссылка слишком короткая — внутри нет конфигурации")
+    }
+
+    // Qt qCompress: 4 байта big-endian (размер распакованных данных) + zlib
+    let mut decoder = ZlibDecoder::new(&bytes[4..]);
+    let mut json_bytes = Vec::new();
+    decoder
+        .read_to_end(&mut json_bytes)
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "не удалось распаковать ссылку — возможно, она экспортирована с паролем; \
+                 экспортируй конфиг из Amnezia без пароля"
+            )
+        })?;
+    let json: Value = serde_json::from_slice(&json_bytes)
+        .map_err(|_| anyhow::anyhow!("внутри ссылки не конфигурация Amnezia"))?;
+
+    extract_awg_from_amnezia_json(&json)
+}
+
+/// Достаёт AmneziaWG-конфиг из распакованного JSON Amnezia.
+fn extract_awg_from_amnezia_json(json: &Value) -> Result<(AwgConfig, Option<String>)> {
+    let mut last_config: Option<Value> = None;
+
+    if let Some(containers) = json.get("containers").and_then(Value::as_array) {
+        for container in containers {
+            let kind = container
+                .get("container")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if !(kind.contains("awg") || kind.contains("wg") || kind.contains("wireguard")) {
+                continue;
+            }
+            let settings = container
+                .get(kind.as_str())
+                .or_else(|| container.get("awg"))
+                .or_else(|| container.get("wireguard"));
+            if let Some(settings) = settings
+                && let Some(config) = settings.get("last_config")
+            {
+                last_config = Some(config.clone());
+                break;
+            }
+        }
+    }
+    if last_config.is_none()
+        && let Some(settings) = json.get("awg")
+        && let Some(config) = settings.get("last_config")
+    {
+        last_config = Some(config.clone());
+    }
+
+    let Some(last_config) = last_config else {
+        bail!("в ссылке нет AmneziaWG-контейнера — эта ссылка от другого типа VPN")
+    };
+
+    // last_config — либо JSON-строка, либо уже объект
+    let last_value: Value = match &last_config {
+        Value::String(text) => serde_json::from_str(text.trim())
+            .map_err(|_| anyhow::anyhow!("внутренний конфиг Amnezia повреждён"))?,
+        value @ Value::Object(_) => value.clone(),
+        _ => bail!("внутренний конфиг Amnezia имеет неожиданный формат"),
+    };
+
+    let ini = last_value
+        .get("config")
+        .and_then(Value::as_str)
+        .or_else(|| last_value.get("Config").and_then(Value::as_str));
+    let Some(ini) = ini else {
+        bail!("внутренний конфиг Amnezia не содержит текстовую конфигурацию")
+    };
+    let config = parse_awg_conf(ini)?;
+    let description = json
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    Ok((config, description))
+}
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -228,5 +336,58 @@ mod tests {
         assert!(parse_awg_conf("[Interface]\nPrivateKey = x\n").is_err());
         let err = parse_awg_conf("[Interface]\nPrivateKey = k1=\nAddress = 10.0.0.2/32\n\n[Peer]\nAllowedIPs = 0.0.0.0/0\nEndpoint = 1.2.3.4:51820").unwrap_err();
         assert!(err.to_string().contains("PublicKey"), "{err}");
+    }
+
+    // ---------- vpn:// ----------
+
+    /// Собирает ссылку vpn:// в формате Qt qCompress (4 байта BE-длины + zlib).
+    fn make_vpn_link(json: &serde_json::Value) -> String {
+        use flate2::write::ZlibEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+        let bytes = serde_json::to_vec(json).unwrap();
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&bytes).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        payload.extend_from_slice(&compressed);
+        format!(
+            "vpn://{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload)
+        )
+    }
+
+    #[test]
+    fn parses_amnezia_vpn_link() {
+        let inner = serde_json::json!({
+            "H1": "1", "H2": "2", "H3": "3", "H4": "4",
+            "Jc": 4, "Jmin": 40, "Jmax": 70, "S1": 116, "S2": 61,
+            "config": "[Interface]\nPrivateKey = k1=\nAddress = 10.8.1.2/32\nMTU = 1408\nJc = 4\nH1 = 1\n\n[Peer]\nPublicKey = k2=\nAllowedIPs = 0.0.0.0/0\nEndpoint = vpn.example.com:51820\nPersistentKeepalive = 25",
+            "port": "51820",
+        });
+        let link = make_vpn_link(&serde_json::json!({
+            "containers": [{
+                "container": "amnezia-awg",
+                "awg": { "last_config": serde_json::to_string(&inner).unwrap() }
+            }],
+            "defaultContainer": "amnezia-awg",
+            "description": "Мой сервер Amnezia",
+        }));
+        let (config, name) = parse_amnezia_vpn_uri(&link).unwrap();
+        assert_eq!(config.private_key, "k1=");
+        assert_eq!(config.endpoint_host, "vpn.example.com");
+        assert_eq!(config.endpoint_port, 51820);
+        assert_eq!(config.obfuscation.jc, Some(4));
+        assert_eq!(name.as_deref(), Some("Мой сервер Amnezia"));
+    }
+
+    #[test]
+    fn rejects_broken_vpn_links() {
+        assert!(parse_amnezia_vpn_uri("https://x").is_err());
+        assert!(parse_amnezia_vpn_uri("vpn://").is_err());
+        assert!(parse_amnezia_vpn_uri("vpn://не-base64!!!").is_err());
+        // Случайные байты не распакуются как zlib
+        assert!(parse_amnezia_vpn_uri("vpn://AAAAAAAAAAAAAAAAAAAAAAAAAAAA").is_err());
     }
 }
