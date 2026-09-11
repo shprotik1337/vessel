@@ -123,3 +123,40 @@ pub fn collect_deezer_arl(app: &AppHandle) -> anyhow::Result<String> {
     }
 }
 
+/// Домены, с которых читаем перехваченный client_id SoundCloud.
+const SOUNDCLOUD_COOKIE_DOMAINS: &[&str] = &["https://soundcloud.com/"];
+
+/// Читает cookie `vessel_sc_client_id` — её ставит JS-хук в окне входа,
+/// перехватив client_id из запросов страницы к API.
+pub fn collect_soundcloud_client_id(app: &AppHandle) -> anyhow::Result<String> {
+    let window = app
+        .get_webview_window("soundcloud_login")
+        .ok_or_else(|| anyhow::anyhow!("окно входа SoundCloud не открыто"))?;
+
+    let mut client_id: Option<String> = None;
+    let mut urls: Vec<Url> = Vec::new();
+    if let Ok(current) = window.url() {
+        urls.push(current);
+    }
+    for url_str in SOUNDCLOUD_COOKIE_DOMAINS {
+        if let Ok(url) = Url::parse(url_str) {
+            urls.push(url);
+        }
+    }
+    for url in urls {
+        let webview = window.as_ref();
+        if let Ok(cookies) = webview.cookies_for_url(url) {
+            for cookie in cookies {
+                if cookie.name() == "vessel_sc_client_id" {
+                    let value = cookie.value().trim().to_string();
+                    if !value.is_empty() {
+                        client_id = Some(value);
+                    }
+                }
+            }
+        }
+    }
+
+    client_id.ok_or_else(|| anyhow::anyhow!("client_id ещё не перехвачен"))
+}
+

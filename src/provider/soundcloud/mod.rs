@@ -1,5 +1,6 @@
 mod artist;
 mod client;
+mod discover;
 mod mapping;
 mod models;
 mod playback;
@@ -28,6 +29,7 @@ use playlist::import_playlist;
 use related::related_tracks;
 use search::{search_albums, search_artists, search_playlists, search_tracks};
 
+pub use discover::discover_client_id;
 pub use mapping::normalizovat_track;
 pub use models::{ScCollection, ScPlaylist, ScTrack};
 pub use source_url::proverit_soundcloud_url;

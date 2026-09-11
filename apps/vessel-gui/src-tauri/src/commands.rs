@@ -946,6 +946,8 @@ fn spawn_spotify_cookie_watcher(app: AppHandle, core: CoreState<'_>) {
             if window.is_visible().unwrap_or(false) == false {
                 continue;
             }
+            // Всплывающие окна (вход через Google и т.п.) редиректим в это же окно
+            let _ = window.eval(POPUP_HOOK_JS);
             let cookie = match tauri::async_runtime::spawn_blocking({
                 let app = app.clone();
                 move || crate::webview_cookies::collect_spotify_cookies(&app)
@@ -1057,14 +1059,34 @@ pub async fn spotify_capture_cookies(
 
 // ---------- Вход через браузер: SoundCloud (client_id) ----------
 
-/// JS-хук, который вешается на страницу soundcloud.com: перехватывает все
-/// fetch/XHR и вычленяет client_id из URL запросов к API. Найдя его, пишет
-/// в document.title — watcher читает заголовок окна и забирает ключ.
+/// Общий JS-хук входа: Google OAuth и прочие «продолжить через…» открываются
+/// всплывающими окнами, которые WebView блокирует — перенаправляем их в то же
+/// окно, чтобы вход через аккаунт Google работал.
+const POPUP_HOOK_JS: &str = r#"(function(){
+  if (window.__vesselPopupHook) return;
+  window.__vesselPopupHook = true;
+  window.open = function(url){
+    try { if (url) { window.location.href = url; } } catch (e) {}
+    return null;
+  };
+  document.addEventListener('click', function(e){
+    try {
+      var a = e.target && e.target.closest ? e.target.closest('a[target="_blank"]') : null;
+      if (a && a.href) { e.preventDefault(); window.location.href = a.href; }
+    } catch (err) {}
+  }, true);
+})();"#;
+
+/// JS-хук SoundCloud: перехватывает fetch/XHR, вычленяет client_id из URL
+/// запросов к API и дублирует его в cookie (читается из Rust) и в заголовке.
 const SOUNDCLOUD_HOOK_JS: &str = r#"(function(){
   if (window.__vesselScHook) return;
   window.__vesselScHook = true;
   var apply = function(id){
-    if (id && /^[a-zA-Z0-9_-]{24,40}$/.test(id)) { document.title = 'SC_ID:' + id; }
+    if (id && /^[a-zA-Z0-9_-]{24,40}$/.test(id)) {
+      document.cookie = 'vessel_sc_client_id=' + id + '; path=/; max-age=86400';
+      document.title = 'SC_ID:' + id;
+    }
   };
   var extract = function(u){
     try {
@@ -1086,6 +1108,11 @@ const SOUNDCLOUD_HOOK_JS: &str = r#"(function(){
     extract(u);
     return origOpen.apply(this, arguments);
   };
+  // Кукис мог остаться с прошлой сессии входа — сразу показываем его watcher'у
+  try {
+    var m = document.cookie.match(/vessel_sc_client_id=([^;]+)/);
+    if (m) apply(m[1]);
+  } catch (e) {}
 })();"#;
 
 /// Открывает окно WebView со soundcloud.com. Клиент_id нужен даже анониму —
@@ -1110,14 +1137,16 @@ pub async fn soundcloud_browser_login(app: AppHandle, core: CoreState<'_>) -> Re
     Ok(())
 }
 
-/// Фоновая задача: каждые 2с инжектит хук в окно и проверяет заголовок.
-/// Как только в заголовке появился SC_ID:<client_id> — сохраняем credential
-/// и закрываем окно.
+/// Фоновая задача: каждые 2с инжектит хуки в окно и проверяет каналы перехвата:
+/// cookie `vessel_sc_client_id`, заголовок окна. Через 10с без результата
+/// подключает автопоиск client_id по HTTP (ассеты веб-плеера) — с ним вход
+/// срабатывает даже если страница не отдала ключ через хук.
 fn spawn_soundcloud_client_id_watcher(app: AppHandle, core: CoreState<'_>) {
     let core: Arc<Mutex<GuiCore>> = core.inner().clone();
     tokio::spawn(async move {
         const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2000);
-        for _attempt in 0..450u32 {
+        let mut discovered: Option<String> = None;
+        for attempt in 0..450u32 {
             tokio::time::sleep(POLL_INTERVAL).await;
             let Some(window) = app.get_webview_window("soundcloud_login") else {
                 vessel_core::dlog!("[soundcloud] auth window closed without capture — cancelled");
@@ -1126,15 +1155,36 @@ fn spawn_soundcloud_client_id_watcher(app: AppHandle, core: CoreState<'_>) {
             if window.is_visible().unwrap_or(false) == false {
                 continue;
             }
-            // (Пере)инжектим хук: на случай полной перезагрузки страницы.
+            // (Пере)инжектим хуки: на случай полной перезагрузки страницы.
+            let _ = window.eval(POPUP_HOOK_JS);
             let _ = window.eval(SOUNDCLOUD_HOOK_JS);
-            let title = window.title().unwrap_or_default();
-            let Some(client_id) = title.strip_prefix("SC_ID:").map(str::trim) else {
+
+            // Канал 1: cookie от JS-хука
+            let cookie_id = tauri::async_runtime::spawn_blocking({
+                let app = app.clone();
+                move || crate::webview_cookies::collect_soundcloud_client_id(&app).ok()
+            })
+            .await
+            .ok()
+            .flatten();
+            // Канал 2: заголовок окна
+            let title_id = window
+                .title()
+                .ok()
+                .and_then(|t| t.strip_prefix("SC_ID:").map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty());
+            let captured = cookie_id.or(title_id);
+
+            // Канал 3: автопоиск по HTTP (страница + JS-ассеты)
+            if captured.is_none() && discovered.is_none() && attempt >= 5 && attempt % 5 == 0 {
+                discovered = vessel_core::provider::soundcloud::discover_client_id()
+                    .await
+                    .ok();
+            }
+            let Some(client_id) = captured.or(discovered.clone()) else {
                 continue;
             };
-            if client_id.is_empty() {
-                continue;
-            }
+
             vessel_core::dlog!(
                 "[soundcloud] client_id detected ({} bytes) — saving",
                 client_id.len()
@@ -1145,7 +1195,7 @@ fn spawn_soundcloud_client_id_watcher(app: AppHandle, core: CoreState<'_>) {
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let _ = core
                     .runtime
-                    .save_credential(CredentialKind::SoundCloudClientId, client_id);
+                    .save_credential(CredentialKind::SoundCloudClientId, &client_id);
                 core.app.soundcloud_enabled = true;
                 core.app.config_dirty = true;
                 core.app.status_message = "SoundCloud подключён".to_string();
@@ -1215,6 +1265,8 @@ fn spawn_deezer_arl_watcher(app: AppHandle, core: CoreState<'_>) {
             if window.is_visible().unwrap_or(false) == false {
                 continue;
             }
+            // Всплывающие окна (вход через Google и т.п.) редиректим в это же окно
+            let _ = window.eval(POPUP_HOOK_JS);
             let arl = match tauri::async_runtime::spawn_blocking({
                 let app = app.clone();
                 move || crate::webview_cookies::collect_deezer_arl(&app)

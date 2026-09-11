@@ -93,7 +93,9 @@ function ServiceRow({ status }: { status: ProviderStatus }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<"ok" | "fail" | null>(null);
   const meta = SERVICE_META[status.kind];
-  const isYoutubeMusic = status.kind === "you_tube_music";
+  // Бэкенд сериализует kind в snake_case: "youtube_music" (не "you_tube_music").
+  const isYoutubeMusic =
+    status.kind === "youtube_music" || status.kind === "you_tube_music";
 
   const connect = async () => {
     if (!value.trim()) return;
