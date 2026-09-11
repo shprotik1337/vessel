@@ -1055,6 +1055,212 @@ pub async fn spotify_capture_cookies(
     Ok("sp_dc сохранён".to_string())
 }
 
+// ---------- Вход через браузер: SoundCloud (client_id) ----------
+
+/// JS-хук, который вешается на страницу soundcloud.com: перехватывает все
+/// fetch/XHR и вычленяет client_id из URL запросов к API. Найдя его, пишет
+/// в document.title — watcher читает заголовок окна и забирает ключ.
+const SOUNDCLOUD_HOOK_JS: &str = r#"(function(){
+  if (window.__vesselScHook) return;
+  window.__vesselScHook = true;
+  var apply = function(id){
+    if (id && /^[a-zA-Z0-9_-]{24,40}$/.test(id)) { document.title = 'SC_ID:' + id; }
+  };
+  var extract = function(u){
+    try {
+      if (typeof u === 'string' && u.indexOf('client_id=') !== -1) {
+        apply(u.split('client_id=')[1].split('&')[0]);
+      }
+    } catch (e) {}
+  };
+  var origFetch = window.fetch;
+  window.fetch = function(){
+    try {
+      var input = arguments[0];
+      extract((input && input.url) ? input.url : input);
+    } catch (e) {}
+    return origFetch.apply(this, arguments);
+  };
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(m, u){
+    extract(u);
+    return origOpen.apply(this, arguments);
+  };
+})();"#;
+
+/// Открывает окно WebView со soundcloud.com. Клиент_id нужен даже анониму —
+/// страница сама шлёт его в каждом запросе к API, watcher перехватит и сохранит.
+/// Логиниться не обязательно, но можно.
+#[tauri::command]
+pub async fn soundcloud_browser_login(app: AppHandle, core: CoreState<'_>) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("soundcloud_login") {
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let url = WebviewUrl::External(
+        url::Url::parse("https://soundcloud.com/").map_err(|e| e.to_string())?,
+    );
+    WebviewWindowBuilder::new(&app, "soundcloud_login", url)
+        .title("SoundCloud — подключение")
+        .inner_size(1000.0, 720.0)
+        .min_inner_size(600.0, 500.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    spawn_soundcloud_client_id_watcher(app, core);
+    Ok(())
+}
+
+/// Фоновая задача: каждые 2с инжектит хук в окно и проверяет заголовок.
+/// Как только в заголовке появился SC_ID:<client_id> — сохраняем credential
+/// и закрываем окно.
+fn spawn_soundcloud_client_id_watcher(app: AppHandle, core: CoreState<'_>) {
+    let core: Arc<Mutex<GuiCore>> = core.inner().clone();
+    tokio::spawn(async move {
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2000);
+        for _attempt in 0..450u32 {
+            tokio::time::sleep(POLL_INTERVAL).await;
+            let Some(window) = app.get_webview_window("soundcloud_login") else {
+                vessel_core::dlog!("[soundcloud] auth window closed without capture — cancelled");
+                return;
+            };
+            if window.is_visible().unwrap_or(false) == false {
+                continue;
+            }
+            // (Пере)инжектим хук: на случай полной перезагрузки страницы.
+            let _ = window.eval(SOUNDCLOUD_HOOK_JS);
+            let title = window.title().unwrap_or_default();
+            let Some(client_id) = title.strip_prefix("SC_ID:").map(str::trim) else {
+                continue;
+            };
+            if client_id.is_empty() {
+                continue;
+            }
+            vessel_core::dlog!(
+                "[soundcloud] client_id detected ({} bytes) — saving",
+                client_id.len()
+            );
+            {
+                let mut core = core
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let _ = core
+                    .runtime
+                    .save_credential(CredentialKind::SoundCloudClientId, client_id);
+                core.app.soundcloud_enabled = true;
+                core.app.config_dirty = true;
+                core.app.status_message = "SoundCloud подключён".to_string();
+            }
+            if let Some(window) = app.get_webview_window("soundcloud_login") {
+                let _ = window.close();
+            }
+            vessel_core::dlog!("[soundcloud] authenticated: credential saved, window closed");
+            return;
+        }
+        vessel_core::dlog!("[soundcloud] auth watcher timed out (15 min) — cancelled");
+    });
+}
+
+/// Открыто ли окно входа SoundCloud (для UI-поллинга автоподключения).
+#[tauri::command]
+pub async fn soundcloud_login_window_open(app: AppHandle) -> Result<bool, String> {
+    Ok(app.get_webview_window("soundcloud_login").is_some())
+}
+
+/// Отменяет вход в SoundCloud: закрывает окно, мониторинг остановится сам.
+#[tauri::command]
+pub async fn soundcloud_auth_cancel(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("soundcloud_login") {
+        let _ = window.close();
+    }
+    vessel_core::dlog!("[soundcloud] auth cancelled by user");
+    Ok(())
+}
+
+// ---------- Вход через браузер: Deezer (cookie arl) ----------
+
+/// Открывает окно WebView со страницей входа Deezer. После логина сайт ставит
+/// cookie `arl` — watcher перехватит её, сохранит и закроет окно.
+#[tauri::command]
+pub async fn deezer_browser_login(app: AppHandle, core: CoreState<'_>) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("deezer_login") {
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let url = WebviewUrl::External(
+        url::Url::parse("https://www.deezer.com/login").map_err(|e| e.to_string())?,
+    );
+    WebviewWindowBuilder::new(&app, "deezer_login", url)
+        .title("Deezer — вход")
+        .inner_size(1000.0, 720.0)
+        .min_inner_size(600.0, 500.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    spawn_deezer_arl_watcher(app, core);
+    Ok(())
+}
+
+/// Фоновая задача: опрашивает cookies окна, ждёт `arl`. Появилась — сохраняем
+/// credential и закрываем окно. Ошибка сбора (пользователь ещё не вошёл) —
+/// не фатальна, продолжаем ждать.
+fn spawn_deezer_arl_watcher(app: AppHandle, core: CoreState<'_>) {
+    let core: Arc<Mutex<GuiCore>> = core.inner().clone();
+    tokio::spawn(async move {
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2000);
+        for _attempt in 0..450u32 {
+            tokio::time::sleep(POLL_INTERVAL).await;
+            let Some(window) = app.get_webview_window("deezer_login") else {
+                vessel_core::dlog!("[deezer] auth window closed without login — cancelled");
+                return;
+            };
+            if window.is_visible().unwrap_or(false) == false {
+                continue;
+            }
+            let arl = match tauri::async_runtime::spawn_blocking({
+                let app = app.clone();
+                move || crate::webview_cookies::collect_deezer_arl(&app)
+            })
+            .await
+            {
+                Ok(Ok(arl)) => arl,
+                Ok(Err(_)) => continue, // arl ещё нет — ждём, это не ошибка
+                Err(_) => continue,
+            };
+            vessel_core::dlog!("[deezer] arl detected ({} bytes) — saving", arl.len());
+            {
+                let mut core = core
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let _ = core.runtime.save_credential(CredentialKind::DeezerArl, &arl);
+                core.app.deezer_enabled = true;
+                core.app.config_dirty = true;
+                core.app.status_message = "Deezer подключён".to_string();
+            }
+            if let Some(window) = app.get_webview_window("deezer_login") {
+                let _ = window.close();
+            }
+            vessel_core::dlog!("[deezer] authenticated: credential saved, window closed");
+            return;
+        }
+        vessel_core::dlog!("[deezer] auth watcher timed out (15 min) — cancelled");
+    });
+}
+
+/// Открыто ли окно входа Deezer (для UI-поллинга автоподключения).
+#[tauri::command]
+pub async fn deezer_login_window_open(app: AppHandle) -> Result<bool, String> {
+    Ok(app.get_webview_window("deezer_login").is_some())
+}
+
+/// Отменяет вход в Deezer: закрывает окно, мониторинг остановится сам.
+#[tauri::command]
+pub async fn deezer_auth_cancel(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("deezer_login") {
+        let _ = window.close();
+    }
+    vessel_core::dlog!("[deezer] auth cancelled by user");
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn save_credential(
     core: CoreState<'_>,
