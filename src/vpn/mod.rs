@@ -83,6 +83,10 @@ pub struct VpnConnectRequest {
     pub profile_id: String,
     pub profile_name: String,
     pub kind: String,
+    /// Адрес и порт из метаданных профиля — fallback, если в секретном JSON
+    /// их нет (профили, созданные до появления этих полей).
+    pub server: String,
+    pub port: u16,
     /// Секретный JSON: {"uuid","pbk","sid"} для vless,
     /// {"private_key","peer_public_key","preshared_key"} для amnezia.
     pub secret_json: String,

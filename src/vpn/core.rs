@@ -299,10 +299,15 @@ fn build_config(request: &VpnConnectRequest, listen_port: u16) -> Result<Value> 
                 address: get_list("address"),
                 peer_public_key: get("peer_public_key").context("в профиле нет ключа пира")?,
                 preshared_key: get("preshared_key"),
-                endpoint_host: get("endpoint_host").context("в профиле нет адреса сервера")?,
+                endpoint_host: get("endpoint_host")
+                    .or_else(|| (!request.server.is_empty()).then_some(request.server.clone()))
+                    .context("в профиле нет адреса сервера")?,
                 endpoint_port: secret
                     .get("endpoint_port")
                     .and_then(Value::as_u64)
+                    .map(|v| v as u16)
+                    .filter(|v| *v != 0)
+                    .or_else(|| (request.port != 0).then_some(request.port))
                     .context("в профиле нет порта сервера")? as u16,
                 allowed_ips: get_list("allowed_ips"),
                 dns_servers: get_list("dns_servers"),

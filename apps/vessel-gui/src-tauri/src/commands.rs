@@ -2023,6 +2023,8 @@ pub fn vpn_add_amnezia(
     };
     let secret = serde_json::json!({
         "private_key": parsed.private_key,
+        "endpoint_host": parsed.endpoint_host,
+        "endpoint_port": parsed.endpoint_port,
         "address": parsed.address,
         "peer_public_key": parsed.peer_public_key,
         "preshared_key": parsed.preshared_key,
@@ -2082,6 +2084,8 @@ pub fn vpn_connect(core: CoreState<'_>, id: String) -> Result<(), String> {
             profile_id: profile.id,
             profile_name: profile.name,
             kind: profile.kind,
+            server: profile.server,
+            port: profile.port,
             secret_json,
         })
         .map_err(|e| e.to_string())
@@ -2118,6 +2122,8 @@ pub fn vpn_set_enabled(core: CoreState<'_>, enabled: bool) -> Result<(), String>
             profile_id: profile.id,
             profile_name: profile.name,
             kind: profile.kind,
+            server: profile.server,
+            port: profile.port,
             secret_json,
         })
         .map_err(|e| e.to_string())
@@ -2147,6 +2153,8 @@ pub fn vpn_select_profile(core: CoreState<'_>, id: String) -> Result<(), String>
                 profile_id: profile.id,
                 profile_name: profile.name,
                 kind: profile.kind,
+                server: profile.server,
+                port: profile.port,
                 secret_json,
             })
             .map_err(|e| e.to_string())?;
