@@ -687,13 +687,26 @@ impl Runtime {
                 {
                     match spotify_provider.playback_source(&track).await {
                         Ok(source_stream) => {
-                            crate::dlog!("[Playback][{session}] spotify resolved via server");
-                            let _ = sender.send(RuntimeMessage::PlaybackReady {
-                                generation,
-                                source: source_stream,
-                                video_only_notice: None,
-                            });
-                            return;
+                            // Скачиваем серверный источник в локальный кэш и играем
+                            // оттуда: symphonia ищет moov m4a в конце файла и не
+                            // умеет seeks по relay-потоку. Не скачалось — уходим в
+                            // обычную цепочку каталогов.
+                            match Self::stage_server_source(&track, &source_stream).await {
+                                Ok(staged) => {
+                                    crate::dlog!("[Playback][{session}] spotify resolved via server");
+                                    let _ = sender.send(RuntimeMessage::PlaybackReady {
+                                        generation,
+                                        source: staged,
+                                        video_only_notice: None,
+                                    });
+                                    return;
+                                }
+                                Err(error) => {
+                                    crate::dlog!(
+                                        "[Playback][{session}] server source staging failed ({error}), local chain next"
+                                    );
+                                }
+                            }
                         }
                         Err(error) => {
                             crate::dlog!(
@@ -1164,6 +1177,22 @@ impl Runtime {
         }
         self.onboarding_generation = self.onboarding_generation.wrapping_add(1);
         self.onboarding_task = Some(spawn(self.sender.clone(), self.onboarding_generation));
+    }
+
+    /// Стаджер серверных источников: скачал full-файл с Vessel Server в локальный
+    /// кэш и отдал file-источник. Без seek-проблем symphonia по relay-m4a.
+    async fn stage_server_source(
+        track: &crate::model::TrackRef,
+        source: &crate::model::PlaybackSource,
+    ) -> Result<crate::model::PlaybackSource, String> {
+        use crate::provider::cache;
+        if let Some(cached) = cache::cached_source(track) {
+            return Ok(cached);
+        }
+        cache::download_track_to_cache(track, source)
+            .await
+            .map_err(|error| format!("{error:#}"))?;
+        cache::cached_source(track).ok_or_else(|| "файл не появился в кэше".to_string())
     }
 
     fn record_current(&mut self, completed: bool, skipped: bool) {
