@@ -74,7 +74,8 @@ pub fn build_vless_config(uri: &VlessUri, listen_port: u16) -> Result<Value> {
     }
 
     Ok(json!({
-        "log": { "level": "warn", "timestamp": true },
+        // debug: видно хендшейки wireguard/awg — нужно для диагностики в UI-логах
+        "log": { "level": "debug", "timestamp": true },
         "inbounds": [{
             "type": "mixed",
             "tag": INBOUND_TAG,
@@ -156,7 +157,8 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
         .collect();
 
     Ok(json!({
-        "log": { "level": "warn", "timestamp": true },
+        // debug: видно хендшейки wireguard/awg — нужно для диагностики в UI-логах
+        "log": { "level": "debug", "timestamp": true },
         "dns": { "servers": dns_entries },
         "inbounds": [{
             "type": "mixed",
