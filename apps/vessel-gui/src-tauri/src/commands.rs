@@ -311,22 +311,34 @@ pub async fn download_track(
     core: CoreState<'_>,
     track: TrackRef,
 ) -> Result<String, String> {
-    let registry = {
-        let core = lock(&core);
-        core.runtime.provider_registry()
+    use vessel_core::model::ProviderKind;
+    // Spotify: скачиваем ТОТ ЖЕ аудио-кандидат из Deezer/YTM, что играет
+    // (native-аудио Spotify не используется нигде).
+    let (key_track, source) = if track.provider == ProviderKind::Spotify {
+        let resolver = {
+            let core = lock(&core);
+            core.runtime.playback_resolver()
+        };
+        resolver.playable_for(&track).await.map_err(|e| format!("{e:#}"))?
+    } else {
+        let registry = {
+            let core = lock(&core);
+            core.runtime.provider_registry()
+        };
+        let Some(provider) = registry.get(track.provider) else {
+            return Err("провайдер не подключён".to_string());
+        };
+        let source = provider
+            .download_source(&track)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        (track.clone(), source)
     };
-    let Some(provider) = registry.get(track.provider) else {
-        return Err("РїСЂРѕРІР°Р№РґРµСЂ РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ".to_string());
-    };
-    let source = provider
-        .download_source(&track)
-        .await
-        .map_err(|e| format!("{e:#}"))?;
     let dir = {
         let core = lock(&core);
         resolve_download_dir(&core)
     };
-    let file_name = vessel_core::provider::download::track_file_name(&track, &source);
+    let file_name = vessel_core::provider::download::track_file_name(&key_track, &source);
     let dest = std::path::Path::new(&dir).join(file_name);
     if dest.exists() {
         return Ok(dest.display().to_string());
@@ -342,23 +354,36 @@ pub async fn download_track_to_cache(
     core: CoreState<'_>,
     track: TrackRef,
 ) -> Result<String, String> {
-    let registry = {
-        let core = lock(&core);
-        core.runtime.provider_registry()
-    };
-    let Some(provider) = registry.get(track.provider) else {
-        return Err("РїСЂРѕРІР°Р№РґРµСЂ РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ".to_string());
-    };
-    if vessel_core::provider::cache::is_cached(&track) {
-        if let Some(path) = vessel_core::provider::cache::cached_track_path(&track) {
-            return Ok(path.display().to_string());
+    use vessel_core::model::ProviderKind;
+    let (key_track, source) = if track.provider == ProviderKind::Spotify {
+        let resolver = {
+            let core = lock(&core);
+            core.runtime.playback_resolver()
+        };
+        match resolver.playable_for(&track).await {
+            Ok(pair) => pair,
+            Err(error) => return Err(format!("{error:#}")),
         }
-    }
-    let source = provider
-        .download_source(&track)
-        .await
-        .map_err(|e| format!("{e:#}"))?;
-    let path = vessel_core::provider::cache::download_track_to_cache(&track, &source)
+    } else {
+        if vessel_core::provider::cache::is_cached(&track) {
+            if let Some(path) = vessel_core::provider::cache::cached_track_path(&track) {
+                return Ok(path.display().to_string());
+            }
+        }
+        let registry = {
+            let core = lock(&core);
+            core.runtime.provider_registry()
+        };
+        let Some(provider) = registry.get(track.provider) else {
+            return Err("провайдер не подключён".to_string());
+        };
+        let source = provider
+            .download_source(&track)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
+        (track.clone(), source)
+    };
+    let path = vessel_core::provider::cache::download_track_to_cache(&key_track, &source)
         .await
         .map_err(|e| format!("{e:#}"))?;
     Ok(path.display().to_string())
@@ -377,32 +402,51 @@ pub async fn download_all_to_cache(
     core: CoreState<'_>,
     tracks: Vec<TrackRef>,
 ) -> Result<DownloadBatchResult, String> {
+    use vessel_core::model::ProviderKind;
+    let resolver = {
+        let core = lock(&core);
+        core.runtime.playback_resolver()
+    };
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
     let total = tracks.len();
     let mut result = DownloadBatchResult {
         total,
         ..Default::default()
     };
     for track in tracks {
-        if vessel_core::provider::cache::is_cached(&track) {
+        let (key_track, source) = if track.provider == ProviderKind::Spotify {
+            match resolver.playable_for(&track).await {
+                Ok(pair) => pair,
+                Err(_) => {
+                    result.failed += 1;
+                    continue;
+                }
+            }
+        } else {
+            if vessel_core::provider::cache::is_cached(&track) {
+                result.skipped += 1;
+                continue;
+            }
+            let Some(provider) = registry.get(track.provider) else {
+                result.failed += 1;
+                continue;
+            };
+            match provider.download_source(&track).await {
+                Ok(source) => (track.clone(), source),
+                Err(_) => {
+                    result.failed += 1;
+                    continue;
+                }
+            }
+        };
+        if vessel_core::provider::cache::is_cached(&key_track) {
             result.skipped += 1;
             continue;
         }
-        let registry = {
-            let core = lock(&core);
-            core.runtime.provider_registry()
-        };
-        let Some(provider) = registry.get(track.provider) else {
-            result.failed += 1;
-            continue;
-        };
-        let source = match provider.download_source(&track).await {
-            Ok(source) => source,
-            Err(_) => {
-                result.failed += 1;
-                continue;
-            }
-        };
-        match vessel_core::provider::cache::download_track_to_cache(&track, &source).await {
+        match vessel_core::provider::cache::download_track_to_cache(&key_track, &source).await {
             Ok(_) => result.downloaded += 1,
             Err(_) => result.failed += 1,
         }

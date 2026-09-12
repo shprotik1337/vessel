@@ -459,6 +459,12 @@ impl Runtime {
         Arc::clone(&self.providers)
     }
 
+    /// Резолвер цепочки Deezer/YouTube — единственный путь к аудио Spotify
+    /// (и для проигрывания, и для скачивания в «Скачать в кэш»).
+    pub fn playback_resolver(&self) -> Arc<playback_resolver::PlaybackResolver> {
+        Arc::clone(&self.playback_resolver)
+    }
+
     /// Текущий источник аудио для Spotify-треков.
     pub fn spotify_playback_source(&self) -> playback_resolver::PlaybackSourceKind {
         self.playback_resolver.source()
@@ -640,19 +646,13 @@ impl Runtime {
                 .filter(|source| self.playback_resolver.source_available(*source))
                 .collect();
             if chain.is_empty() {
-                // Ни один источник не настроен — пробуем родной Spotify
-                // (premium-путь), если и он не настроен — ошибка
-                match self.providers.get(track.provider) {
-                    Some(provider) => {
-                        self.start_native_playback(provider, track, actions);
-                    }
-                    None => {
-                        actions.push(Action::PlaybackFailed(format!(
-                            "источник {} не подключён — добавь его в Настройках",
-                            requested_source.label()
-                        )));
-                    }
-                }
+                // Аудио Spotify нативным путём не играется НИКОГДА: только
+                // Deezer / YouTube Music каталоги.
+                actions.push(Action::PlaybackFailed(format!(
+                    "Spotify играет через Deezer/YouTube Music — ни один источник \
+                     не подключён (Настройки → источник аудио для Spotify: {label})",
+                    label = requested_source.label()
+                )));
                 return;
             }
 
@@ -678,43 +678,10 @@ impl Runtime {
                 // пометка для предупреждения в UI
                 let mut candidates_from_general = false;
 
-                // Spotify на Vessel Server: сначала прямой резолв на сервере
-                // (его внутренний матчинг и premium-источники) — он работает с
-                // выходного IP сервера. Не вышло — обычная локальная цепочка.
-                if let Some(spotify_provider) =
-                    providers.get(crate::model::ProviderKind::Spotify)
-                    && spotify_provider.is_remote()
-                {
-                    match spotify_provider.playback_source(&track).await {
-                        Ok(source_stream) => {
-                            // Скачиваем серверный источник в локальный кэш и играем
-                            // оттуда: symphonia ищет moov m4a в конце файла и не
-                            // умеет seeks по relay-потоку. Не скачалось — уходим в
-                            // обычную цепочку каталогов.
-                            match Self::stage_server_source(&track, &source_stream).await {
-                                Ok(staged) => {
-                                    crate::dlog!("[Playback][{session}] spotify resolved via server");
-                                    let _ = sender.send(RuntimeMessage::PlaybackReady {
-                                        generation,
-                                        source: staged,
-                                        video_only_notice: None,
-                                    });
-                                    return;
-                                }
-                                Err(error) => {
-                                    crate::dlog!(
-                                        "[Playback][{session}] server source staging failed ({error}), local chain next"
-                                    );
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            crate::dlog!(
-                                "[Playback][{session}] server resolve failed, local chain next: {error:#}"
-                            );
-                        }
-                    }
-                }
+                // Spotify на Vessel Server остаётся тем, чем и был: провайдер
+                // метаданных. Аудио играет цепочка Deezer → YouTube Music
+                // (её кандидаты ищутся в выбранных каталогах — хоть локальных,
+                // хоть на сервере, как настроено в «Настройки → Сервер»).
 
                 for source in chain {
                     crate::dlog!("[Playback][{session}] trying provider={}", source.label());
@@ -1177,22 +1144,6 @@ impl Runtime {
         }
         self.onboarding_generation = self.onboarding_generation.wrapping_add(1);
         self.onboarding_task = Some(spawn(self.sender.clone(), self.onboarding_generation));
-    }
-
-    /// Стаджер серверных источников: скачал full-файл с Vessel Server в локальный
-    /// кэш и отдал file-источник. Без seek-проблем symphonia по relay-m4a.
-    async fn stage_server_source(
-        track: &crate::model::TrackRef,
-        source: &crate::model::PlaybackSource,
-    ) -> Result<crate::model::PlaybackSource, String> {
-        use crate::provider::cache;
-        if let Some(cached) = cache::cached_source(track) {
-            return Ok(cached);
-        }
-        cache::download_track_to_cache(track, source)
-            .await
-            .map_err(|error| format!("{error:#}"))?;
-        cache::cached_source(track).ok_or_else(|| "файл не появился в кэше".to_string())
     }
 
     fn record_current(&mut self, completed: bool, skipped: bool) {

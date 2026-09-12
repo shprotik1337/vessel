@@ -328,6 +328,88 @@ impl PlaybackResolver {
             .drop_key(&Self::cache_key(track, source.provider_kind()));
     }
 
+    /// Единственный разрешённый путь к аудио. Spotify — ТОЛЬКО чужие каталоги
+    /// (Deezer/YouTube Music, плюс общий поиск клипов как при игре);
+    /// native-источник Spotify не используется нигде и никогда. Возвращает трек
+    /// кандидата (под ним и кэшируется файл) и его PlaybackSource.
+    pub async fn playable_for(
+        &self,
+        track: &TrackRef,
+    ) -> Result<(TrackRef, crate::model::PlaybackSource)> {
+        use crate::model::ProviderKind;
+
+        if track.provider != ProviderKind::Spotify {
+            let provider = self
+                .registry
+                .get(track.provider)
+                .ok_or_else(|| anyhow::anyhow!("провайдер {} недоступен", track.provider.label()))?;
+            let source = provider.playback_source(track).await?;
+            return Ok((track.clone(), source));
+        }
+
+        let requested = self.source();
+        let chain: Vec<_> = requested
+            .chain()
+            .into_iter()
+            .filter(|source| self.source_available(*source))
+            .collect();
+        if chain.is_empty() {
+            bail!(
+                "Spotify играет через Deezer/YouTube Music — включите хотя бы один \
+                 источник в Настройках (источник аудио для Spotify)"
+            );
+        }
+
+        let mut failures: Vec<String> = Vec::new();
+        for source in &chain {
+            let candidates = match self.resolve_candidates_in(*source, track).await {
+                Ok((Some(candidates), _)) => candidates,
+                Ok((None, stage)) => {
+                    // клип-фолбэк так же, как в живом воспроизведении
+                    if requested == PlaybackSourceKind::Auto
+                        && *source == PlaybackSourceKind::YouTubeMusic
+                    {
+                        match self.resolve_candidates_general(track).await {
+                            Ok((Some(video), _)) => video,
+                            _ => {
+                                failures.push(format!("{}: {}", source.label(), stage.describe()));
+                                continue;
+                            }
+                        }
+                    } else {
+                        failures.push(format!("{}: {}", source.label(), stage.describe()));
+                        continue;
+                    }
+                }
+                Err(error) => {
+                    failures.push(format!("{}: {error:#}", source.label()));
+                    continue;
+                }
+            };
+            for candidate in &candidates {
+                let Some(provider) = self.registry.get(candidate.provider) else {
+                    continue;
+                };
+                match provider.playback_source(candidate).await {
+                    Ok(source_stream) => return Ok((candidate.clone(), source_stream)),
+                    Err(error) => {
+                        self.drop_cache(track, *source);
+                        return Err(anyhow::anyhow!(
+                            "аудио нашлось в {}, но не играется: {error:#}",
+                            source.label()
+                        ));
+                    }
+                }
+            }
+            failures.push(format!("{}: нет играбельных кандидатов", source.label()));
+        }
+        bail!(
+            "Не удалось найти аудио для «{}» в Deezer/YouTube Music ({})",
+            track.title,
+            failures.join("; ")
+        )
+    }
+
     /// Последний шанс в Auto-цепочке: общий поиск в YouTube Music БЕЗ
     /// фильтра «Композиции». Там всплывают официальные клипы удалённых
     /// из каталога треков (пример: «Розовое вино» — трека нет, клип есть).

@@ -329,6 +329,16 @@ async fn resolve(
     Json(body): Json<ResolveSourceRequest>,
 ) -> Api<Json<ResolveSourceResponse>> {
     let provider = state.provider(&provider_segment)?;
+    // Принцип Vessel: Spotify — метаданные, аудио играет цепочка Deezer/YTM.
+    // На сервере этот путь закрыт: никаких сырых spotify-файлов под чужой сессией.
+    if body.track.provider == vessel_core::model::ProviderKind::Spotify
+        && provider.kind() == vessel_core::model::ProviderKind::Spotify
+    {
+        return Err(ApiError(
+            StatusCode::NOT_IMPLEMENTED,
+            "Spotify играет через Deezer/YouTube Music — сервер не отдаёт аудио Spotify".into(),
+        ));
+    }
     let source: PlaybackSource = provider.playback_source(&body.track).await?;
 
     let is_file = source.url.scheme() == "file";

@@ -309,6 +309,19 @@ impl MusicProvider for ServerProvider {
     }
 
     async fn playback_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
+        // Принцип Vessel: Spotify — провайдер метаданных, аудио берётся из
+        // Deezer/YouTube Music цепочкой. Сервер никогда не отдаёт сырой
+        // spotify-файл под чужой premium-сессией.
+        if self.kind == ProviderKind::Spotify && track.provider == ProviderKind::Spotify {
+            bail!(
+                "Spotify играет через Deezer/YouTube Music — сервер не отдаёт \
+                 собственные аудио-источники Spotify"
+            );
+        }
+        // Офлайн и повторные прослушивания: локальный кэш важнее сервера
+        if let Some(cached) = crate::provider::cache::cached_source(track) {
+            return Ok(cached);
+        }
         self.client.playback_source(track, false).await
     }
 }
