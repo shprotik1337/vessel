@@ -100,13 +100,10 @@ impl ServerClient {
     }
 
     pub async fn info(&self) -> Result<ServerInfo> {
+        // через send(): обязательный Authorization: Bearer
         let response = self
-            .http
-            .get(self.endpoint("/capabilities"))
-            .timeout(REQUEST_TIMEOUT)
-            .send()
-            .await
-            .map_err(|error| anyhow!("Vessel Server недоступен: {error}"))?;
+            .send(self.http.get(self.endpoint("/capabilities")).timeout(REQUEST_TIMEOUT))
+            .await?;
         Self::decode(response, "/capabilities").await
     }
 
