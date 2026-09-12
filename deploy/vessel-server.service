@@ -1,0 +1,21 @@
+[Unit]
+Description=Vessel Server (remote provider runner for Vessel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vessel
+Group=vessel
+ExecStart=/opt/vessel/bin/vessel-server /opt/vessel/server.toml
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/vessel
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

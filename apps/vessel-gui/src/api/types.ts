@@ -56,6 +56,7 @@ export interface ProviderStatus {
   connected: boolean;
   has_credentials: boolean;
   enabled: boolean;
+  origin: string;
 }
 
 export interface FullState {

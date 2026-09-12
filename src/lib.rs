@@ -8,6 +8,7 @@ pub mod effect;
 pub mod importer;
 pub mod model;
 pub mod onboarding;
+pub mod protocol;
 pub mod provider;
 pub mod recommendation;
 pub mod runtime;

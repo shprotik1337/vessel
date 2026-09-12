@@ -1,4 +1,4 @@
-﻿import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 
 import type {
   ArtistProfile,
@@ -499,3 +499,54 @@ export async function vpnLogs(tail?: number): Promise<string[]> {
 export async function vpnCheck(): Promise<string | null> {
   return invoke<string | null>("vpn_check");
 }
+
+// ---------- Vessel Server ----------
+
+export interface VesselServerView {
+  id: string;
+  name: string;
+  url: string;
+  has_token: boolean;
+  providers: string[];
+}
+
+export interface VesselServerProbe {
+  name: string;
+  version: string;
+  api_version: string;
+  providers: string[];
+  capabilities: { processing: boolean; user_storage: boolean; playback_relay: boolean };
+}
+
+export async function vesselServers(): Promise<VesselServerView[]> {
+  return invoke<VesselServerView[]>("vessel_servers");
+}
+
+export async function vesselRoutes(): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("vessel_routes");
+}
+
+export async function vesselServerProbe(input: { id?: string; url?: string; token?: string }): Promise<VesselServerProbe> {
+  return invoke<VesselServerProbe>("vessel_server_probe", { id: input.id ?? null, url: input.url ?? null, token: input.token ?? null });
+}
+
+export async function vesselServerAdd(name: string, url: string, token: string): Promise<VesselServerView> {
+  return invoke<VesselServerView>("vessel_server_add", { name, url, token });
+}
+
+export async function vesselServerRemove(id: string): Promise<void> {
+  return invoke("vessel_server_remove", { id });
+}
+
+export async function vesselRouteSet(provider: string, target: string): Promise<void> {
+  return invoke("vessel_route_set", { provider, target });
+}
+
+// kind (GUI) -> protocol-сегмент провайдера для маршрутов
+export const PROVIDER_SEGMENT: Record<string, string> = {
+  soundcloud: "soundcloud",
+  yandex: "yandex_music",
+  deezer: "deezer",
+  spotify: "spotify",
+  youtube_music: "youtube_music",
+};

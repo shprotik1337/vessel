@@ -2189,3 +2189,186 @@ pub async fn vpn_check(core: CoreState<'_>) -> Result<Option<String>, String> {
     .map(Some)
     .map_err(|e| e.to_string())
 }
+// ---------- Vessel Server ----------
+
+#[derive(Serialize)]
+pub struct VesselServerView {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub has_token: bool,
+    /// Сегменты провайдеров, маршрутизированных на этот сервер.
+    pub providers: Vec<String>,
+}
+
+fn vessel_secret_name(id: &str) -> String {
+    format!("vessel-server:{id}")
+}
+
+fn server_view(core: &GuiCore, server: &vessel_core::config::VesselServerConfig) -> VesselServerView {
+    let prefix = format!("server:{}", server.id);
+    let routed = core
+        .config
+        .provider_routing
+        .iter()
+        .filter(|(_, target)| **target == prefix)
+        .map(|(segment, _)| segment.clone())
+        .collect();
+    VesselServerView {
+        id: server.id.clone(),
+        name: server.name.clone(),
+        url: server.url.clone(),
+        has_token: core
+            .runtime
+            .get_named_secret(&vessel_secret_name(&server.id))
+            .ok()
+            .flatten()
+            .is_some_and(|token| !token.is_empty()),
+        providers: routed,
+    }
+}
+
+fn server_client(core: &GuiCore, server_id: &str) -> Result<vessel_core::provider::remote::ServerClient, String> {
+    let config_server = core
+        .config
+        .vessel_servers
+        .iter()
+        .find(|s| s.id == server_id)
+        .ok_or_else(|| "сервер не найден".to_string())?;
+    let token = core
+        .runtime
+        .get_named_secret(&vessel_secret_name(server_id))
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    vessel_core::provider::remote::ServerClient::new(&config_server.url, &token)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Подключённые экземпляры Vessel Server + кто на них маршрутизирован.
+#[tauri::command]
+pub fn vessel_servers(core: CoreState<'_>) -> Result<Vec<VesselServerView>, String> {
+    let core = lock(&core);
+    Ok(core.config.vessel_servers.iter().map(|s| server_view(&core, s)).collect())
+}
+
+/// Все маршруты «провайдер → локально/сервер».
+#[tauri::command]
+pub fn vessel_routes(core: CoreState<'_>) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let core = lock(&core);
+    Ok(core.config.provider_routing.clone())
+}
+
+/// Проба чужого сервера по url+токену (до сохранения) — capabilities как рукопожатие.
+#[tauri::command]
+pub async fn vessel_server_probe(
+    core: CoreState<'_>,
+    id: Option<String>,
+    url: Option<String>,
+    token: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let arc = core.inner().clone();
+    let client = {
+        let core = arc.lock().unwrap_or_else(|p| p.into_inner());
+        match (&id, &url) {
+            (Some(id), _) => server_client(&core, id)?,
+            (None, Some(url)) => vessel_core::provider::remote::ServerClient::new(
+                url,
+                token.as_deref().unwrap_or_default(),
+            )
+            .map_err(|e| format!("{e:#}"))?,
+            _ => return Err("нужен id сервера или url".to_string()),
+        }
+    };
+    let info = client.info().await.map_err(|e| format!("{e:#}"))?;
+    Ok(serde_json::json!({
+        "name": info.name,
+        "version": info.version,
+        "api_version": info.api_version,
+        "providers": info.providers,
+        "capabilities": {
+            "processing": info.capabilities.processing,
+            "user_storage": info.capabilities.user_storage,
+            "playback_relay": info.capabilities.playback_relay,
+        },
+    }))
+}
+
+/// Добавить и проверить сервер (рукопожатие обязательно).
+#[tauri::command]
+pub async fn vessel_server_add(
+    core: CoreState<'_>,
+    name: String,
+    url: String,
+    token: String,
+) -> Result<VesselServerView, String> {
+    if name.trim().is_empty() {
+        return Err("нужно название сервера".to_string());
+    }
+    let client = vessel_core::provider::remote::ServerClient::new(url.trim(), token.trim())
+        .map_err(|e| format!("{e:#}"))?;
+    client.info().await.map_err(|error| {
+        format!("Vessel Server не ответил: {error:#} — проверь адрес, токен и что сервер запущен")
+    })?;
+    let arc = core.inner().clone();
+    let mut core = arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let id = uuid::Uuid::new_v4().simple().to_string();
+    core.runtime
+        .save_named_secret(&vessel_secret_name(&id), token.trim())
+        .map_err(|e| e.to_string())?;
+    core.config.vessel_servers.push(vessel_core::config::VesselServerConfig {
+        id: id.clone(),
+        name: name.trim().to_string(),
+        url: url.trim().trim_end_matches('/').to_string(),
+    });
+    core.app.config_dirty = true;
+    let view = core
+        .config
+        .vessel_servers
+        .iter()
+        .find(|s| s.id == id)
+        .map(|s| server_view(&core, s))
+        .ok_or_else(|| "не удалось сохранить сервер".to_string())?;
+    drop(core);
+    let mut core = arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    core.runtime.reload_providers();
+    Ok(view)
+}
+
+#[tauri::command]
+pub fn vessel_server_remove(core: CoreState<'_>, id: String) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.vessel_servers.retain(|s| s.id != id);
+    let prefix = format!("server:{id}");
+    core.config.provider_routing.retain(|_, target| target != &prefix);
+    let _ = core.runtime.remove_named_secret(&vessel_secret_name(&id));
+    core.app.config_dirty = true;
+    core.runtime.reload_providers();
+    Ok(())
+}
+
+/// Сменить место исполнения провайдера: "local" или "server:<id>".
+#[tauri::command]
+pub fn vessel_route_set(
+    core: CoreState<'_>,
+    provider: String,
+    target: String,
+) -> Result<(), String> {
+    if vessel_core::protocol::kind_from_segment(&provider).is_none() {
+        return Err(format!("неизвестный провайдер «{provider}»"));
+    }
+    let mut core = lock(&core);
+    if target == "local" || target.is_empty() {
+        core.config.provider_routing.remove(&provider);
+    } else {
+        let Some(id) = target.strip_prefix("server:") else {
+            return Err("маршрут должен быть «local» или «server:<id>»".to_string());
+        };
+        if !core.config.vessel_servers.iter().any(|s| s.id == id) {
+            return Err("такого сервера нет — сначала добавь его".to_string());
+        }
+        core.config.provider_routing.insert(provider.clone(), target.clone());
+    }
+    core.app.config_dirty = true;
+    core.runtime.reload_providers();
+    Ok(())
+}

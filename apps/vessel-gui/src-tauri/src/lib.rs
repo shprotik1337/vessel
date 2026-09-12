@@ -68,6 +68,8 @@ pub struct ProviderStatus {
     pub connected: bool,
     pub has_credentials: bool,
     pub enabled: bool,
+    /// "local" или "server:<название>" — где реально исполняется провайдер.
+    pub origin: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -138,12 +140,25 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::YouTubeMusic => true,
         };
         let connected = registry.get(kind).is_some() && enabled;
+        let origin = match core.config.provider_routing.get(vessel_core::protocol::kind_segment(kind)) {
+            Some(target) if target.starts_with("server:") => {
+                let id = &target["server:".len()..];
+                core.config
+                    .vessel_servers
+                    .iter()
+                    .find(|s| s.id == id)
+                    .map(|s| format!("server:{}", s.name))
+                    .unwrap_or_else(|| "local".to_string())
+            }
+            _ => "local".to_string(),
+        };
         statuses.push(ProviderStatus {
             kind: kind_str,
             label,
             connected,
             has_credentials,
             enabled,
+            origin,
         });
     }
     statuses
@@ -506,6 +521,12 @@ pub fn run() {
             commands::vpn_disconnect,
             commands::vpn_logs,
             commands::vpn_check,
+            commands::vessel_servers,
+            commands::vessel_routes,
+            commands::vessel_server_probe,
+            commands::vessel_server_add,
+            commands::vessel_server_remove,
+            commands::vessel_route_set,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

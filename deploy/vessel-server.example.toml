@@ -1,0 +1,36 @@
+# Пример Vessel Server. Скопируй на сервере:
+#   cp deploy/vessel-server.example.toml /opt/vessel/server.toml
+# Сгенерируй токен:  openssl rand -hex 24   (или pwgen)
+# Запуск:           vessel-server /opt/vessel/server.toml
+# systemd unit:     deploy/vessel-server.service
+
+[server]
+name = "My Vessel Server"
+listen = "0.0.0.0:7700"
+# HTTPS termination is out of scope for alpha: put caddy/nginx in front if tokens
+# must not cross public internet.
+tokens = ["REPLACE-ME-long-random-hex"]
+
+# auto — через сервер идёт только то, что иначе не заиграет с клиентского IP
+# (googlevideo, расшифрованные файлы). always — весь аудио-трафик через сервер.
+# off — relay запрещён (только метаданные/URL, провайдеры с file:// не отдадутся).
+relay = "auto"
+max_streams = 64
+# TTL relay-токенов, сек (аудиосессии живут часами — ставь с запасом)
+relay_ttl_secs = 14400
+data_dir = "/opt/vessel"
+# user_storage / auth — фаза B, здесь ещё нет.
+
+# Дальше — обычные провайдерские секции Vessel: сервер сам хранит credentials
+# этого экземпляра в data_dir/secrets.json (или keyring, если есть).
+# НЕ переноси в него приватные cookie со своего рабочего компьютера, если не
+# хочешь, чтобы сервер ходил в сервисы под твоей учёткой.
+
+soundcloud_enabled = true
+yandex_enabled = false
+deezer_enabled = false
+spotify_enabled = true
+youtube_music_enabled = true
+
+# после старта:
+# curl -H "Authorization: Bearer <токен>" http://127.0.0.1:7700/api/v1/capabilities
