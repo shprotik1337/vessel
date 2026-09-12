@@ -91,6 +91,8 @@ jobs:
 
       - name: Тесты
         run: cargo test --lib --locked -j 2
+      - name: Тесты vessel-server
+        run: cargo test -p vessel-server --locked -j 2
 
       - name: Зависимости GUI
         working-directory: apps/vessel-gui

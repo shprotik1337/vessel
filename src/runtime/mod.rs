@@ -81,7 +81,7 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(config: &AppConfig, secrets: &SecretStore, storage: Storage) -> Self {
-        let setup = build_registry(config, secrets);
+        let setup = build_registry(config, secrets, true);
         let mut notices = setup.notices;
         let account_client = match AccountClient::new(&config.server_url, secrets) {
             Ok(client) => Some(Arc::new(client)),
@@ -513,7 +513,7 @@ impl Runtime {
                 self.config.youtube_music_enabled = true;
             }
         }
-        let setup = build_registry(&self.config, &self.secrets);
+        let setup = build_registry(&self.config, &self.secrets, true);
         self.providers = Arc::new(setup.registry);
         self.notices.extend(setup.notices);
         Ok(())
@@ -1098,7 +1098,7 @@ impl Runtime {
     }
 
     pub fn reload_providers(&mut self) {
-        let setup = build_registry(&self.config, &self.secrets);
+        let setup = build_registry(&self.config, &self.secrets, true);
         self.providers = Arc::new(setup.registry);
         self.notices.extend(setup.notices);
     }

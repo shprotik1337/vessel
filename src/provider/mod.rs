@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use futures_util::{StreamExt, stream::FuturesUnordered};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::model::{PlaybackSource, Playlist, ProviderKind, SearchProvider, TrackRef};
@@ -11,18 +11,19 @@ use crate::model::{PlaybackSource, Playlist, ProviderKind, SearchProvider, Track
 pub mod cache;
 pub mod deezer;
 pub mod download;
+pub mod remote;
 pub mod soundcloud;
 pub mod spotify;
 pub mod yandex;
 pub mod youtube;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SearchPage {
     pub tracks: Vec<TrackRef>,
     pub next_cursor: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ImportedPlaylist {
     pub title: String,
     pub description: String,
@@ -31,13 +32,13 @@ pub struct ImportedPlaylist {
     pub tracks: Vec<TrackRef>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Attribution {
     pub label: String,
     pub url: Url,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionKind {
     Playlist,
@@ -45,7 +46,7 @@ pub enum CollectionKind {
     Artist,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CollectionItem {
     pub kind: CollectionKind,
     pub provider: ProviderKind,
@@ -57,7 +58,7 @@ pub struct CollectionItem {
     pub track_count: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArtistProfile {
     pub name: String,
     pub avatar_url: Option<Url>,

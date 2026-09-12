@@ -4,11 +4,12 @@ import { useApp } from "../store";
 import { PlatformIcon } from "../components/PlatformIcon";
 import { TextInputModal, ConfirmModal, PathModal } from "../components/Modal";
 import { VpnTab } from "../components/VpnTab";
+import { ServersTab } from "./Servers";
 import type { ProviderStatus, UserProfile } from "../api/types";
 import * as api from "../api/commands";
 import { t } from "../i18n";
 
-type Tab = "services" | "playback" | "storage" | "users" | "recommendations" | "vpn";
+type Tab = "services" | "playback" | "storage" | "users" | "recommendations" | "vpn" | "servers";
 
 type ConfirmTarget = "settings" | "data" | null;
 type DirTarget = "download" | "cache" | null;
@@ -1076,6 +1077,12 @@ export function Settings() {
           >
             <span>VPN</span>
           </button>
+          <button
+            className={`sett-item ${tab === "servers" ? "active" : ""}`}
+            onClick={() => setTab("servers")}
+          >
+            <span>{t(lang, "server.title")}</span>
+          </button>
         </div>
 
         <div className="sett-body">
@@ -1296,6 +1303,7 @@ export function Settings() {
 
           {tab === "users" && <UsersTab />}
           {tab === "vpn" && <VpnTab />}
+          {tab === "servers" && <ServersTab />}
           {tab === "recommendations" && <RecommendationsTab />}
         </div>
       </div>

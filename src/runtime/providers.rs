@@ -1,8 +1,15 @@
 use crate::{
     config::AppConfig,
+    model::ProviderKind,
+    protocol::kind_from_segment,
     provider::{
-        ProviderRegistry, deezer::DeezerProvider, soundcloud::SoundCloudProvider,
-        spotify::SpotifyProvider, yandex::YandexProvider, youtube::YouTubeMusicProvider,
+        ProviderRegistry,
+        remote::{ServerClient, ServerProvider},
+        deezer::DeezerProvider,
+        soundcloud::SoundCloudProvider,
+        spotify::SpotifyProvider,
+        yandex::YandexProvider,
+        youtube::YouTubeMusicProvider,
     },
     secrets::{SecretKey, SecretStore},
 };
@@ -12,7 +19,7 @@ pub struct ProviderSetup {
     pub notices: Vec<String>,
 }
 
-pub fn build_registry(config: &AppConfig, secrets: &SecretStore) -> ProviderSetup {
+pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: bool) -> ProviderSetup {
     let mut registry = ProviderRegistry::default();
     let mut notices = Vec::new();
 
@@ -73,7 +80,43 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore) -> ProviderSetu
         Err(error) => notices.push(format!("YouTube Music не настроен: {error}")),
     }
 
+    if allow_remote {
+        apply_provider_routing(&mut registry, config, secrets, &mut notices);
+    }
+
     ProviderSetup { registry, notices }
+}
+
+/// Подмена локальных реализаций на `ServerProvider` по `config.provider_routing`
+/// (`spotify` → `"server:<id>" | "local"`). Ключ карты — сегмент из protocol.
+fn apply_provider_routing(
+    registry: &mut ProviderRegistry,
+    config: &AppConfig,
+    secrets: &SecretStore,
+    notices: &mut Vec<String>,
+) {
+    for (segment, target) in &config.provider_routing {
+        let Some(kind) = kind_from_segment(segment) else {
+            notices.push(format!("Маршрут «{segment}»: неизвестный провайдер — игнорируем"));
+            continue;
+        };
+        let Some(server_id) = target.strip_prefix("server:") else {
+            continue; // "local" и пустое — локальный режим уже собран выше
+        };
+        let Some(server) = config.vessel_servers.iter().find(|s| s.id == server_id) else {
+            notices.push(format!("Маршрут «{segment}»: Vessel Server «{server_id}» не найден — остался локальный режим"));
+            continue;
+        };
+        let token = secrets
+            .get_named(&format!("vessel-server:{server_id}"))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        match ServerClient::new(&server.url, &token) {
+            Ok(client) => registry.register(ServerProvider::new(kind, client)),
+            Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),
+        }
+    }
 }
 
 fn load_secret(secrets: &SecretStore, key: SecretKey, notices: &mut Vec<String>) -> Option<String> {
@@ -105,7 +148,7 @@ mod tests {
             ..AppConfig::default()
         };
 
-        let setup = build_registry(&config, &secrets);
+        let setup = build_registry(&config, &secrets, true);
 
         assert!(
             setup
@@ -118,6 +161,67 @@ mod tests {
                 .registry
                 .get(crate::model::ProviderKind::YandexMusic)
                 .is_none()
+        );
+    }
+
+    #[cfg(test)]
+    fn routing_config() -> AppConfig {
+        AppConfig {
+            vessel_servers: vec![crate::config::VesselServerConfig {
+                id: "s1".to_string(),
+                name: "Home Server".to_string(),
+                url: "http://127.0.0.1:7710".to_string(),
+            }],
+            provider_routing: std::collections::BTreeMap::from([(
+                "soundcloud".to_string(),
+                "server:s1".to_string(),
+            )]),
+            ..AppConfig::default()
+        }
+    }
+
+    #[test]
+    fn provider_routing_replaces_local_with_server_provider() {
+        let temp = tempfile::tempdir().unwrap();
+        let secrets = SecretStore::file_only(temp.path().join("secrets.json"));
+        secrets
+            .set_named("vessel-server:s1", "super-secret-token")
+            .unwrap();
+        let config = routing_config();
+
+        let setup = build_registry(&config, &secrets, true);
+        let provider = setup
+            .registry
+            .get(crate::model::ProviderKind::SoundCloud)
+            .expect("SoundCloud обязан появиться как remote");
+        assert!(
+            provider.attribution().label.contains("Vessel Server"),
+            "атрибуция remote-провайдера: {}",
+            provider.attribution().label
+        );
+
+        // allow_remote=false (режим самого Vessel Server) — remote не подключается
+        let setup = build_registry(&config, &secrets, false);
+        assert!(setup.registry.get(crate::model::ProviderKind::SoundCloud).is_none());
+    }
+
+    #[test]
+    fn provider_routing_missing_server_keeps_local_and_warns() {
+        let temp = tempfile::tempdir().unwrap();
+        let secrets = SecretStore::file_only(temp.path().join("secrets.json"));
+        let mut config = routing_config();
+        config
+            .provider_routing
+            .insert("spotify".to_string(), "server:nope".to_string());
+
+        let setup = build_registry(&config, &secrets, true);
+        assert!(
+            setup
+                .notices
+                .iter()
+                .any(|n| n.contains("nope") && n.contains("не найден")),
+            "ожидали предупреждение: {:?}",
+            setup.notices
         );
     }
 }

@@ -79,6 +79,16 @@ pub struct VpnProfileConfig {
     pub updated_at_ms: i64,
 }
 
+/// Экземпляр Vessel Server (не тип! тип всегда Vessel Server, это конфиг
+/// подключения): id — стабильный ключ в provider_routing и в SecretStore
+/// (`vessel-server:<id>`), url — базовый адрес API.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct VesselServerConfig {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+}
+
 impl Default for HotkeyBindings {
     fn default() -> Self {
         Self {
@@ -146,6 +156,14 @@ pub struct AppConfig {
     /// Мастер-выключатель VPN: включён — подключается сам при каждом старте.
     #[serde(default)]
     pub vpn_enabled: bool,
+    /// Экземпляры Vessel Server, к которым может обращаться клиент.
+    #[serde(default)]
+    pub vessel_servers: Vec<VesselServerConfig>,
+    /// Маршрутизация «провайдер → где обрабатывать»: ключ — сегмент
+    /// провайдера (`spotify`, `youtube_music`, …), значение — `local` или
+    /// `server:<id>` из `vessel_servers`.
+    #[serde(default)]
+    pub provider_routing: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for AppConfig {
@@ -185,6 +203,8 @@ impl Default for AppConfig {
             vpn_profiles: Vec::new(),
             vpn_active_profile_id: None,
             vpn_enabled: false,
+            vessel_servers: Vec::new(),
+            provider_routing: std::collections::BTreeMap::new(),
         }
     }
 }
