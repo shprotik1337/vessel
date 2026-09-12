@@ -61,7 +61,7 @@ fn cache_stem(track: &TrackRef) -> String {
 pub fn cached_track_path(track: &TrackRef) -> Option<PathBuf> {
     let dir = track_cache_dir();
     let stem = cache_stem(track);
-    for ext in ["mp3", "m4a", "aac", "flac", "ogg", "wav"] {
+    for ext in ["mp3", "m4a", "mp4", "aac", "flac", "ogg", "wav"] {
         let path = dir.join(format!("{stem}.{ext}"));
         if path.is_file() {
             return Some(path);
@@ -185,11 +185,13 @@ fn probe_duration_ms(path: &Path) -> Option<u64> {
     let track = format.default_track(TrackType::Audio)?;
     let duration = track.duration.as_ref()?;
     let time_base = track.time_base.as_ref()?;
-    Some(
-        duration.get() as u64 * u64::from(time_base.numer.get())
-            / u64::from(time_base.denom.get())
-            * 1000,
-    )
+    let numer = u64::from(time_base.numer.get());
+    let denom = u64::from(time_base.denom.get());
+    if denom == 0 {
+        // Файл с побитым time_base — не паникуем, считаем что длительность неизвестна
+        return None;
+    }
+    Some(duration.get() as u64 * numer / denom * 1000)
 }
 
 /// Пустой источник для file-кэша без capability (для тестов/заглушек).
