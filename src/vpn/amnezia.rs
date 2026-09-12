@@ -157,6 +157,8 @@ pub struct AwgConfig {
     pub endpoint_host: String,
     pub endpoint_port: u16,
     pub allowed_ips: Vec<String>,
+    /// DNS из [Interface] — резолвим через туннель, чтобы не было утечек.
+    pub dns_servers: Vec<String>,
     pub keepalive: Option<u16>,
     pub mtu: Option<u16>,
     pub obfuscation: AwgObfuscation,
@@ -227,6 +229,11 @@ pub fn parse_awg_conf(raw: &str) -> Result<AwgConfig> {
         bail!("в конфигурации отсутствует AllowedIPs — без них не построить маршрут");
     }
 
+    let dns_servers = split_list(&get("interface", "dns").unwrap_or_default())
+        .into_iter()
+        .filter(|ip| ip.trim().parse::<std::net::IpAddr>().is_ok())
+        .collect();
+
     let preshared_key = get("peer", "presharedkey").filter(|v| !v.is_empty());
     let keepalive = get("peer", "persistentkeepalive")
         .and_then(|v| v.parse().ok());
@@ -257,6 +264,7 @@ pub fn parse_awg_conf(raw: &str) -> Result<AwgConfig> {
         endpoint_host: endpoint_host.trim().to_string(),
         endpoint_port,
         allowed_ips,
+        dns_servers,
         keepalive,
         mtu,
         obfuscation,
@@ -286,7 +294,7 @@ mod tests {
     const AWG_CONF: &str = "[Interface]\n\
         PrivateKey = yAnz5fB4eQqTJ5hVvWXGJp3kL9K2mN8qRs4TuV1wXy0=\n\
         Address = 10.8.1.2/32, fd42:42:42::2/128\n\
-        DNS = 1.1.1.1\n\
+        DNS = 1.1.1.1, 8.8.8.8\n\
         MTU = 1408\n\
         Jc = 4\n\
         Jmin = 40\n\
@@ -312,6 +320,7 @@ mod tests {
         assert_eq!(conf.endpoint_host, "vpn.example.com");
         assert_eq!(conf.endpoint_port, 51820);
         assert_eq!(conf.allowed_ips, vec!["0.0.0.0/0", "::/0"]);
+        assert_eq!(conf.dns_servers, vec!["1.1.1.1", "8.8.8.8"]);
         assert_eq!(conf.keepalive, Some(25));
         assert_eq!(conf.mtu, Some(1408));
         assert_eq!(conf.obfuscation.jc, Some(4));
@@ -363,7 +372,7 @@ mod tests {
         let inner = serde_json::json!({
             "H1": "1", "H2": "2", "H3": "3", "H4": "4",
             "Jc": 4, "Jmin": 40, "Jmax": 70, "S1": 116, "S2": 61,
-            "config": "[Interface]\nPrivateKey = k1=\nAddress = 10.8.1.2/32\nMTU = 1408\nJc = 4\nH1 = 1\n\n[Peer]\nPublicKey = k2=\nAllowedIPs = 0.0.0.0/0\nEndpoint = vpn.example.com:51820\nPersistentKeepalive = 25",
+            "config": "[Interface]\nPrivateKey = k1=\nAddress = 10.8.1.2/32\nDNS = 1.1.1.1, 8.8.8.8\nMTU = 1408\nJc = 4\nH1 = 1\n\n[Peer]\nPublicKey = k2=\nAllowedIPs = 0.0.0.0/0\nEndpoint = vpn.example.com:51820\nPersistentKeepalive = 25",
             "port": "51820",
         });
         let link = make_vpn_link(&serde_json::json!({
@@ -378,6 +387,7 @@ mod tests {
         assert_eq!(config.private_key, "k1=");
         assert_eq!(config.endpoint_host, "vpn.example.com");
         assert_eq!(config.endpoint_port, 51820);
+        assert_eq!(config.dns_servers, vec!["1.1.1.1", "8.8.8.8"]);
         assert_eq!(config.obfuscation.jc, Some(4));
         assert_eq!(name.as_deref(), Some("Мой сервер Amnezia"));
     }

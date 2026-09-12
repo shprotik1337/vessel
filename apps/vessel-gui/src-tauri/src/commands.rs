@@ -2027,6 +2027,7 @@ pub fn vpn_add_amnezia(
         "peer_public_key": parsed.peer_public_key,
         "preshared_key": parsed.preshared_key,
         "allowed_ips": parsed.allowed_ips,
+        "dns_servers": parsed.dns_servers,
         "keepalive": parsed.keepalive,
         "mtu": parsed.mtu,
         "obfuscation": parsed.obfuscation,

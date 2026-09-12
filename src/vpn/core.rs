@@ -305,6 +305,7 @@ fn build_config(request: &VpnConnectRequest, listen_port: u16) -> Result<Value> 
                     .and_then(Value::as_u64)
                     .context("в профиле нет порта сервера")? as u16,
                 allowed_ips: get_list("allowed_ips"),
+                dns_servers: get_list("dns_servers"),
                 keepalive: secret.get("keepalive").and_then(Value::as_u64).map(|v| v as u16),
                 mtu: secret.get("mtu").and_then(Value::as_u64).map(|v| v as u16),
                 obfuscation: serde_json::from_value(
