@@ -160,8 +160,11 @@ fn bring_up_and_supervise(
     }
 
     // Health-check: настоящий сетевой запрос через прокси — «процесс запущен»
-    // не считается «VPN работает».
-    let proxy = format!("socks5h://127.0.0.1:{listen_port}");
+    // не считается «VPN работает». Для AWG — локальный резолвинг (socks5://):
+    // gvisor-стек эндпоинта не умеет сам резолвить домены, и netstack-dns
+    // падает на «cannot marshal DNS message». VLESS (socks5h) режет домены сам.
+    let scheme = if request.kind == "amnezia" { "socks5" } else { "socks5h" };
+    let proxy = format!("{scheme}://127.0.0.1:{listen_port}");
     let mut healthy = false;
     for _ in 0..HEALTH_TRIES {
         if should_stop(inner, stop, generation) {

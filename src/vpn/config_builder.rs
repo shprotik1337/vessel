@@ -109,9 +109,16 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
     if let Some(keepalive) = config.keepalive {
         endpoint["peers"][0]["persistent_keepalive_interval"] = json!(keepalive);
     }
-    if let Some(mtu) = config.mtu {
-        endpoint["mtu"] = json!(mtu);
-    }
+        if let Some(mtu) = config.mtu {
+            endpoint["mtu"] = json!(mtu);
+        }
+
+        // Разрешение DOOMEN до отправки в AWG-stack: сам gvisor-stack не умеет
+        // строить DNS-пакеты внутри туннеля и падает на "cannot marshal DNS
+        // message". domain_strategy заставляет sing-box резолвить хосты самому.
+        endpoint["domain_strategy"] = json!("prefer_ipv4");
+        // Куда сингу слать запросы (наш прямой DNS без detour)
+        endpoint["domain_resolver"] = json!({ "server": "dns", "strategy": "prefer_ipv4" });
 
     let obf = &config.obfuscation;
     if let Some(jc) = obf.jc {
@@ -233,6 +240,9 @@ mod tests {
         let endpoint = &config["endpoints"][0];
         assert_eq!(endpoint["type"], "awg");
         assert_eq!(endpoint["private_key"], "k1=");
+        // Endpoint должен сам резолвить домены ДО передачи в gvisor-stack
+        assert_eq!(endpoint["domain_strategy"], "prefer_ipv4");
+        assert_eq!(endpoint["domain_resolver"]["server"], "dns");
         assert_eq!(endpoint["peers"][0]["address"], "host.io");
         assert_eq!(endpoint["peers"][0]["port"], 51820);
         assert_eq!(endpoint["peers"][0]["persistent_keepalive_interval"], 25);
