@@ -148,9 +148,11 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
         .enumerate()
         .map(|(i, server)| {
             // Первый сервер носит тег "dns" — это дефолтный резолвер sing-box.
+            // tcp, а не udp: UDP-пакеты через gvisor-туннель AWG на Windows
+            // падают в «cannot marshal DNS message»; TCP — обычный поток.
             let tag = if i == 0 { "dns".to_string() } else { format!("dns-{i}") };
             json!({
-                "type": "udp",
+                "type": "tcp",
                 "tag": tag,
                 "server": server.trim(),
                 "detour": PROXY_TAG,
@@ -161,7 +163,7 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
     Ok(json!({
         // debug: видно хендшейки wireguard/awg — нужно для диагностики в UI-логах
         "log": { "level": "debug", "timestamp": true },
-        "dns": { "servers": dns_entries },
+        "dns": { "servers": dns_entries, "final": "dns", "strategy": "ipv4_only" },
         "inbounds": [{
             "type": "mixed",
             "tag": INBOUND_TAG,
