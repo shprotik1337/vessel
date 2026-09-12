@@ -529,6 +529,13 @@ async fn serve_file(path: &Path, range: Option<&str>, content_type: Option<Strin
 
 fn parse_range(range: Option<&str>, size: u64) -> Option<(u64, u64)> {
     let spec = range?.strip_prefix("bytes=")?;
+    // суффиксный диапазон "bytes=-N" = последние N байт (symphonia ищет moov в конце)
+    if let Some(suffix) = spec.strip_prefix('-') {
+        let n: u64 = suffix.trim().parse().ok()?;
+        let n = n.min(size);
+        let start = size.checked_sub(n)?;
+        return Some((start, size.saturating_sub(1)));
+    }
     let (from, to) = spec.split_once('-')?;
     let start: u64 = from.trim().parse().ok()?;
     let end_raw = to.trim();
@@ -556,5 +563,8 @@ mod tests {
         assert_eq!(parse_range(Some("bytes=0-250"), 100), Some((0, 99)));
         assert_eq!(parse_range(Some("bytes=200-300"), 100), None);
         assert_eq!(parse_range(Some("bytes=x-y"), 100), None);
+        // суффиксный диапазон — последние N байт (moov в конце m4a)
+        assert_eq!(parse_range(Some("bytes=-12"), 100), Some((88, 99)));
+        assert_eq!(parse_range(Some("bytes=-512"), 6815744), Some((6815232, 6815743)));
     }
 }
