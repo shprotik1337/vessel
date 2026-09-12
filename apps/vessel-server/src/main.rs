@@ -206,23 +206,29 @@ async fn shutdown_signal() {
 
 /// Bearer-проверка; /api/v1/health открыт для пинга.
 async fn require_token(State(state): State<AppState>, request: Request, next: Next) -> Response {
-    if request.method() == Method::GET && request.uri().path() == "/api/v1/health" {
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    let response = if method == Method::GET && path == "/api/v1/health" {
         return next.run(request).await;
-    }
-    let bearer = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::to_string);
-    match bearer {
-        Some(token) if state.tokens.iter().any(|allowed| allowed == &token) => next.run(request).await,
-        _ => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "detail": "нужен корректный Authorization: Bearer <токен>" })),
-        )
-            .into_response(),
-    }
+    } else {
+        let bearer = request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .map(str::to_string);
+        match bearer {
+            Some(token) if state.tokens.iter().any(|allowed| allowed == &token) => next.run(request).await,
+            _ => (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "detail": "нужен корректный Authorization: Bearer <токен>" })),
+            )
+                .into_response(),
+        }
+    };
+    // однопоточный лог запроса: видно ВСЁ, что шло через сервер (без секретов)
+    println!("[api] {method} {path} -> {}", response.status().as_u16());
+    response
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -340,8 +346,10 @@ async fn resolve(
         ));
     }
     if !use_relay {
+        println!("[api] resolve direct: {}", body.track.title);
         return Ok(Json(ResolveSourceResponse { source, relay_path: None }));
     }
+    println!("[api] resolve relay: {} ({})", body.track.title, if is_file { "file" } else { &host });
 
     let target = if is_file {
         let path = source
