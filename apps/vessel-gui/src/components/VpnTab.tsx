@@ -150,7 +150,7 @@ export function VpnTab() {
               <button
                 className={status?.enabled ? "btn btn-outline btn-sm" : "btn btn-primary btn-sm"}
                 onClick={() => void toggleEnabled()}
-                disabled={busy || transitioning || !status?.core_present}
+                disabled={busy || !status?.core_present}
                 title={t(lang, "vpn.enabledHint")}
               >
                 {status?.enabled ? t(lang, "vpn.disable") : t(lang, "vpn.enable")}

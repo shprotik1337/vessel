@@ -148,14 +148,16 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
         .enumerate()
         .map(|(i, server)| {
             // Первый сервер носит тег "dns" — это дефолтный резолвер sing-box.
-            // tcp, а не udp: UDP-пакеты через gvisor-туннель AWG на Windows
-            // падают в «cannot marshal DNS message»; TCP — обычный поток.
+            // БЕЗ detour: эндпоинт (endpoint) нельзя использовать как
+            // DNS-транспорт (синг это не поддерживает — падает
+            // 'cannot marshal DNS message' на любом типе). Без detour синг
+            // резолвит напрямую: утечка DNS остаётся, но туннель работает,
+            // данные идут через AWG.
             let tag = if i == 0 { "dns".to_string() } else { format!("dns-{i}") };
             json!({
                 "type": "tcp",
                 "tag": tag,
                 "server": server.trim(),
-                "detour": PROXY_TAG,
             })
         })
         .collect();
@@ -223,9 +225,10 @@ mod tests {
         .unwrap();
         let config = build_awg_config(&awg, 40001).unwrap();
         assert_eq!(config["route"]["final"], "vessel-proxy");
-        // DNS-серверы идут через туннель, дефолтный резолвер ссылается на тег "dns"
+        // DNS без detour (endpoint не тянет DNS-транспорт) и final=tag
         assert_eq!(config["dns"]["servers"][0]["tag"], "dns");
-        assert_eq!(config["dns"]["servers"][0]["detour"], "vessel-proxy");
+        assert!(config["dns"]["servers"][0].get("detour").is_none());
+        assert_eq!(config["dns"]["final"], "dns");
         assert_eq!(config["route"]["default_domain_resolver"]["server"], "dns");
         let endpoint = &config["endpoints"][0];
         assert_eq!(endpoint["type"], "awg");
