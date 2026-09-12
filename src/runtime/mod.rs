@@ -678,6 +678,31 @@ impl Runtime {
                 // пометка для предупреждения в UI
                 let mut candidates_from_general = false;
 
+                // Spotify на Vessel Server: сначала прямой резолв на сервере
+                // (его внутренний матчинг и premium-источники) — он работает с
+                // выходного IP сервера. Не вышло — обычная локальная цепочка.
+                if let Some(spotify_provider) =
+                    providers.get(crate::model::ProviderKind::Spotify)
+                    && spotify_provider.is_remote()
+                {
+                    match spotify_provider.playback_source(&track).await {
+                        Ok(source_stream) => {
+                            crate::dlog!("[Playback][{session}] spotify resolved via server");
+                            let _ = sender.send(RuntimeMessage::PlaybackReady {
+                                generation,
+                                source: source_stream,
+                                video_only_notice: None,
+                            });
+                            return;
+                        }
+                        Err(error) => {
+                            crate::dlog!(
+                                "[Playback][{session}] server resolve failed, local chain next: {error:#}"
+                            );
+                        }
+                    }
+                }
+
                 for source in chain {
                     crate::dlog!("[Playback][{session}] trying provider={}", source.label());
 

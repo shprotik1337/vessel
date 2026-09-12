@@ -261,6 +261,10 @@ impl MusicProvider for ServerProvider {
         self.kind
     }
 
+    fn is_remote(&self) -> bool {
+        true
+    }
+
     fn attribution(&self) -> crate::provider::Attribution {
         crate::provider::Attribution {
             label: format!("{} · Vessel Server", self.kind.label()),

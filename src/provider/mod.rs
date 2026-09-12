@@ -111,6 +111,12 @@ pub trait MusicProvider: Send + Sync {
         self.playback_source(track).await
     }
 
+    /// true у ServerProvider: провайдер исполняется на Vessel Server. Плеер
+    /// сначала пробует серверный резолв, и только потом локальную цепочку.
+    fn is_remote(&self) -> bool {
+        false
+    }
+
     /// Импорт лайков (избранных треков) пользователя с этой платформы.
     /// Возвращает пустой вектор, если платформа не поддерживает импорт лайков.
     async fn liked_tracks(&self, profile_url: Option<&str>) -> Result<Vec<TrackRef>> {
