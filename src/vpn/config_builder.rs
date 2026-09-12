@@ -86,7 +86,9 @@ pub fn build_vless_config(uri: &VlessUri, listen_port: u16) -> Result<Value> {
     }))
 }
 
-/// Конфиг для Amnezia (AmneziaWG endpoint).
+/// Конфиг для Amnezia (AmneziaWG endpoint). DNS из [Interface] резолвится
+/// через туннель (detour) — без этого ядро ломается на системном резолвере,
+/// а домены утекают мимо VPN.
 pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
     let mut endpoint = json!({
         "type": "awg",
@@ -135,8 +137,27 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
         }
     }
 
+    let mut dns_servers = config.dns_servers.clone();
+    dns_servers.retain(|s| !s.trim().is_empty());
+    if dns_servers.is_empty() {
+        dns_servers.push("1.1.1.1".to_string());
+    }
+    let dns_entries: Vec<Value> = dns_servers
+        .iter()
+        .enumerate()
+        .map(|(i, server)| {
+            json!({
+                "type": "udp",
+                "tag": format!("dns-{i}"),
+                "server": server.trim(),
+                "detour": PROXY_TAG,
+            })
+        })
+        .collect();
+
     Ok(json!({
         "log": { "level": "warn", "timestamp": true },
+        "dns": { "servers": dns_entries },
         "inbounds": [{
             "type": "mixed",
             "tag": INBOUND_TAG,
@@ -145,7 +166,10 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
         }],
         "endpoints": [endpoint],
         "outbounds": [{ "type": "direct", "tag": DIRECT_TAG }],
-        "route": { "final": PROXY_TAG },
+        "route": {
+            "final": PROXY_TAG,
+            "default_domain_resolver": "dns-0",
+        },
     }))
 }
 
