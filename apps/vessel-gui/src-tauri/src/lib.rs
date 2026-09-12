@@ -562,6 +562,8 @@ pub fn run() {
                                 profile_id: profile.id.clone(),
                                 profile_name: profile.name.clone(),
                                 kind: profile.kind.clone(),
+                                server: profile.server.clone(),
+                                port: profile.port,
                                 secret_json,
                             };
                             if let Err(error) = guard.vpn.connect(request) {
