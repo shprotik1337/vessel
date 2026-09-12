@@ -147,9 +147,11 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
         .iter()
         .enumerate()
         .map(|(i, server)| {
+            // Первый сервер носит тег "dns" — это дефолтный резолвер sing-box.
+            let tag = if i == 0 { "dns".to_string() } else { format!("dns-{i}") };
             json!({
                 "type": "udp",
-                "tag": format!("dns-{i}"),
+                "tag": tag,
                 "server": server.trim(),
                 "detour": PROXY_TAG,
             })
@@ -170,7 +172,7 @@ pub fn build_awg_config(config: &AwgConfig, listen_port: u16) -> Result<Value> {
         "outbounds": [{ "type": "direct", "tag": DIRECT_TAG }],
         "route": {
             "final": PROXY_TAG,
-            "default_domain_resolver": "dns-0",
+            "default_domain_resolver": { "server": "dns" },
         },
     }))
 }
@@ -219,6 +221,10 @@ mod tests {
         .unwrap();
         let config = build_awg_config(&awg, 40001).unwrap();
         assert_eq!(config["route"]["final"], "vessel-proxy");
+        // DNS-серверы идут через туннель, дефолтный резолвер ссылается на тег "dns"
+        assert_eq!(config["dns"]["servers"][0]["tag"], "dns");
+        assert_eq!(config["dns"]["servers"][0]["detour"], "vessel-proxy");
+        assert_eq!(config["route"]["default_domain_resolver"]["server"], "dns");
         let endpoint = &config["endpoints"][0];
         assert_eq!(endpoint["type"], "awg");
         assert_eq!(endpoint["private_key"], "k1=");
