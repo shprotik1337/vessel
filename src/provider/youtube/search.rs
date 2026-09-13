@@ -14,10 +14,20 @@ const PARAMS_SONG: &str = "EgWKAQIIAWoMEAMQBBAJEAoQDhAV";
 const PARAMS_ALBUM: &str = "EgWKAQIYAWoMEAMQBBAJEAoQDhAV";
 const PARAMS_ARTIST: &str = "EgWKAQIgAWoMEAMQBBAJEAoQDhAV";
 
-/// Поиск песен. Возвращает треки из musicShelfRenderer.
+/// Песни. Со старым Kopuz-фильтром Google отвечает нормально только с чистых
+/// IP; с датацентровых (VPS: Hetzner и т.п.) `params=EgWKAQII…` отдаёт пустой
+/// рендер, хотя без params top-shelf приходит. Поэтому: сначала как локально
+/// (с фильтром), пусто — тот же запрос без params.
 pub async fn search_tracks(client: &YoutubeClient, query: &str) -> Result<Vec<TrackRef>> {
-    let response = client.search(query, Some(PARAMS_SONG)).await?;
-    Ok(collect_songs(&response))
+    let mut tracks = Vec::new();
+    if let Ok(response) = client.search(query, Some(PARAMS_SONG)).await {
+        tracks = collect_songs(&response);
+    }
+    if tracks.is_empty() {
+        let response = client.search(query, None).await?;
+        tracks = collect_songs(&response);
+    }
+    Ok(tracks)
 }
 
 /// Общий поиск YTM (без songs-фильтра): здесь всплывают официальные клипы
@@ -42,7 +52,13 @@ pub async fn search_collections(
         CollectionKind::Artist => Some(PARAMS_ARTIST),
     };
     let response = client.search(query, params).await?;
-    Ok(collect_items(&response, kind))
+    let mut items = collect_items(&response, kind);
+    // Старые Kopuz-фильтры мертвы на датацентровых IP — тот же поиск без них.
+    if items.is_empty() && params.is_some() {
+        let retry = client.search(query, None).await?;
+        items = collect_items(&retry, kind);
+    }
+    Ok(items)
 }
 
 /// Собирает треки из musicResponsiveListItemRenderer в ответе поиска.
