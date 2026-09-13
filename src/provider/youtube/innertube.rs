@@ -28,10 +28,7 @@ fn http_client() -> std::sync::Arc<Client> {
 }
 
 fn new_client() -> Client {
-    Client::builder()
-        .apply_vpn_proxy()
-        .build()
-        .expect("innertube http client")
+    super::clients::build_http(Client::builder().apply_vpn_proxy())
 }
 
 /// `Authorization: SAPISIDHASH <ts>_<sha1(ts " " SAPISID " " origin)>`.
