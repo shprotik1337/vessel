@@ -118,8 +118,9 @@ impl YoutubeResolver {
 
         let match_track = best.ok_or_else(|| anyhow::anyhow!("YouTube не нашёл подходящего трека"))?;
 
-        // Полный стрим через Kopuz-путь (WEB_REMIX+decipher+pot).
-        let source = super::player::resolve_stream(&match_track.id).await?;
+        // Полный стрим через Kopuz-путь. Клиент несёт cookie/OAuth (проходят
+        // бот-чек на серверных IP) и potoken-провайдер (POT без BotGuard).
+        let source = super::player::resolve_stream(self.innertube.client.as_ref(), &match_track.id).await?;
         let mut source = source;
         if !source.range_safe {
             source.source.supports_range = false;
@@ -171,7 +172,7 @@ impl YoutubeResolver {
 
     /// Получает стрим по videoId (для YouTubeMusicProvider).
     pub async fn stream_for(&self, video_id: &str, _title: &str) -> Result<PlaybackSource> {
-        let mut source = super::player::resolve_stream(video_id).await?;
+        let mut source = super::player::resolve_stream(self.innertube.client.as_ref(), video_id).await?;
         if !source.range_safe {
             source.source.supports_range = false;
         }

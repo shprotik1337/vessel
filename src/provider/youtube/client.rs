@@ -436,7 +436,9 @@ impl YoutubeClient {
 
     /// Получает PO token у провайдера (bgutil-совместимый HTTP API).
     /// Возвращает None, если провайдер не настроен или недоступен.
-    async fn fetch_po_token(&self, video_id: &str) -> Option<String> {
+    /// crate-видимость: player.rs использует как первичный источник POT
+    /// (стабильнее локального BotGuard-mint на серверных IP).
+    pub(crate) async fn fetch_po_token(&self, video_id: &str) -> Option<String> {
         let provider = self.potoken_provider.lock().unwrap().clone()?;
         let url = format!("{provider}/get_pot");
         let response = self

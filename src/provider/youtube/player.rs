@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::model::{PlaybackCapability, PlaybackSource};
 
+use super::client::YoutubeClient;
 use super::clients::{ANDROID_VR_1_61_48, WEB_REMIX, clients_http};
 use super::decipher;
 use super::innertube::{self, PlayerExtras};
@@ -121,16 +122,22 @@ pub async fn decipher_player_js(
     decipher::player_js(http, video_id, None).await
 }
 
-/// Полный резолв стрима по Kopuz-методу, анонимно (cookie не используется).
+/// Полный резолв стрима по Kopuz-методу.
 ///
-/// 1. WEB_REMIX (анонимно) + decipher + `&pot=` в URL — полные range-стримы.
-/// 2. ANDROID_VR + POT в body (Kopuz-метод для анонима).
+/// `client` — общий Innertube-клиент: его cookie/OAuth проходят бот-чек на
+/// серверных (DC) IP и дают полные форматы WEB_REMIX; его potoken-провайдер
+/// (bgutil HTTP) — первичный источник POT, BotGuard — фолбэк.
+///
+/// 1. WEB_REMIX (cookie если есть) + decipher + `&pot=` в URL — полные range-стримы.
+/// 2. ANDROID_VR + POT в body (Kopuz-метод).
 /// 3. ANDROID_VR без POT — только первый мегабайт.
-pub async fn resolve_stream(video_id: &str) -> Result<ResolvedStream> {
+pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<ResolvedStream> {
     let http = clients_http();
+    let cookie_raw = client.cookie_value();
+    let cookie = if cookie_raw.is_empty() { None } else { Some(cookie_raw.as_str()) };
 
-    // --- Путь 1: WEB_REMIX анонимно + decipher + pot= в URL ---
-    match try_web_remix_anon(&http, video_id).await {
+    // --- Путь 1: WEB_REMIX + decipher + pot= в URL ---
+    match try_web_remix(&http, client, cookie, video_id).await {
         Ok(stream) => {
             crate::dlog!(
                 "[Playback] WEB_REMIX ok: clen={} range_safe={}",
@@ -143,8 +150,8 @@ pub async fn resolve_stream(video_id: &str) -> Result<ResolvedStream> {
         }
     }
 
-    // --- Путь 2: ANDROID_VR + POT в body (анонимный, Kopuz-метод) ---
-    match try_android_vr_pot(&http, video_id).await {
+    // --- Путь 2: ANDROID_VR + POT в body (Kopuz-метод) ---
+    match try_android_vr_pot(&http, client, cookie, video_id).await {
         Ok(stream) => {
             crate::dlog!(
                 "[Playback] ANDROID_VR+POT ok: clen={} range_safe=true",
@@ -158,7 +165,7 @@ pub async fn resolve_stream(video_id: &str) -> Result<ResolvedStream> {
     }
 
     // --- Путь 3: ANDROID_VR без POT — только первый мегабайт ---
-    match try_android_vr(&http, video_id).await {
+    match try_android_vr(cookie, video_id).await {
         Ok(stream) => {
             crate::dlog!(
                 "[Playback] ANDROID_VR (без POT): clen={} range_safe=false (обрыв после ~1 MiB)",
@@ -173,25 +180,18 @@ pub async fn resolve_stream(video_id: &str) -> Result<ResolvedStream> {
     }
 }
 
-/// itag из googlevideo url (параметр itag=NNN).
-fn stream_source_itag(url: &str) -> Option<u32> {
-    url.split(['?', '&']).find_map(|kv| {
-        let (k, v) = kv.split_once('=')?;
-        (k == "itag").then(|| v.parse().ok()).flatten()
-    })
-}
-
-/// Анонимный WEB_REMIX: работает без cookies, POT в URL всё равно нужен.
-async fn try_web_remix_anon(http: &reqwest::Client, video_id: &str) -> Result<ResolvedStream> {
-    web_remix_impl(http, video_id).await
-}
-
-async fn web_remix_impl(http: &reqwest::Client, video_id: &str) -> Result<ResolvedStream> {
-    let (base_js, sts) = decipher::player_js(http, video_id, None).await?;
+async fn try_web_remix(
+    http: &reqwest::Client,
+    client: &YoutubeClient,
+    cookie: Option<&str>,
+    video_id: &str,
+) -> Result<ResolvedStream> {
+    // base.js качаем с cookie (если есть) — watch-страницы реже CAPTCHA'тся
+    let (base_js, sts) = decipher::player_js(http, video_id, cookie).await?;
     let player = innertube::player(
         WEB_REMIX,
         video_id,
-        None,
+        cookie,
         PlayerExtras {
             signature_timestamp: Some(sts),
             ..Default::default()
@@ -265,17 +265,25 @@ async fn web_remix_impl(http: &reqwest::Client, video_id: &str) -> Result<Resolv
     // Контент-bound токен от BotGuard в query — классический путь.
     // Content-bound токен от BotGuard в query — классический путь.
     // Ретрай: первый mint после старта процесса бывает медленным/нестабильным.
+    // POT: сначала potoken-провайдер клиента (bgutil HTTP — стабилен на VPS),
+    // затем BotGuard локально (3 ретрая: первый mint после старта бывает
+    // медленным/нестабильным).
     let mut pot_ok = false;
     let mut url = url;
-    for attempt in 0..3 {
-        match super::botguard::mint_content_pot(video_id).await {
-            Ok(pot) => {
-                url = format!("{url}&pot={pot}");
-                pot_ok = true;
-                break;
-            }
-            Err(e) => {
-                crate::dlog!("[Playback] POT mint failed (попытка {}): {e:#}", attempt + 1);
+    if let Some(pot) = client.fetch_po_token(video_id).await {
+        url = format!("{url}&pot={pot}");
+        pot_ok = true;
+    } else {
+        for attempt in 0..3 {
+            match super::botguard::mint_content_pot(video_id).await {
+                Ok(pot) => {
+                    url = format!("{url}&pot={pot}");
+                    pot_ok = true;
+                    break;
+                }
+                Err(e) => {
+                    crate::dlog!("[Playback] POT mint failed (попытка {}): {e:#}", attempt + 1);
+                }
             }
         }
     }
@@ -292,13 +300,13 @@ async fn web_remix_impl(http: &reqwest::Client, video_id: &str) -> Result<Resolv
     })
 }
 
-async fn try_android_vr(_http: &reqwest::Client, video_id: &str) -> Result<ResolvedStream> {
+async fn try_android_vr(cookie: Option<&str>, video_id: &str) -> Result<ResolvedStream> {
     // Без POT ANDROID_VR отдаёт plain URL, но глубокие range 403.
     // Это всё равно лучше полного отказа: работает первый мегабайт.
     let player = innertube::player(
         ANDROID_VR_1_61_48,
         video_id,
-        None,
+        cookie,
         PlayerExtras::default(),
     )
     .await?;
@@ -306,11 +314,21 @@ async fn try_android_vr(_http: &reqwest::Client, video_id: &str) -> Result<Resol
 }
 
 /// ANDROID_VR + content POT + visitor_data — снимает 1 MiB cap (метод Kopuz).
-async fn try_android_vr_pot(_http: &reqwest::Client, video_id: &str) -> Result<ResolvedStream> {
-    let (pot, visitor) = tokio::join!(
-        super::botguard::mint_content_pot(video_id),
-        innertube::visitor_id(),
-    );
+async fn try_android_vr_pot(
+    _http: &reqwest::Client,
+    client: &YoutubeClient,
+    cookie: Option<&str>,
+    video_id: &str,
+) -> Result<ResolvedStream> {
+    // POT: potoken-провайдер клиента первичен (стабилен на серверных IP),
+    // BotGuard — фолбэк.
+    let pot_result = async {
+        if let Some(pot) = client.fetch_po_token(video_id).await {
+            return Ok(pot);
+        }
+        super::botguard::mint_content_pot(video_id).await
+    };
+    let (pot, visitor) = tokio::join!(pot_result, innertube::visitor_id_maybe_auth(cookie),);
     let pot = pot.context("POT mint")?;
     let visitor = visitor.unwrap_or_default();
     let visitor_opt = if visitor.is_empty() { None } else { Some(visitor.as_str()) };
@@ -318,7 +336,7 @@ async fn try_android_vr_pot(_http: &reqwest::Client, video_id: &str) -> Result<R
     let player = innertube::player(
         ANDROID_VR_1_61_48,
         video_id,
-        None,
+        cookie,
         PlayerExtras {
             content_pot: Some(&pot),
             visitor_data: visitor_opt,
@@ -396,5 +414,4 @@ fn stream_android_vr(player: Value) -> Result<ResolvedStream> {
     )?;
     Ok(ResolvedStream { source, range_safe: false, content_length, duration_ms })
 }
-
 
