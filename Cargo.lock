@@ -7617,10 +7617,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vessel-egress"
-version = "0.1.0"
-
-[[package]]
 name = "vessel-server"
 version = "0.2.0"
 dependencies = [
