@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/vessel-gui/src-tauri", "apps/vessel-server"]
+members = ["apps/vessel-gui/src-tauri", "apps/vessel-server", "apps/vessel-egress"]
 resolver = "2"
 
 [package]
