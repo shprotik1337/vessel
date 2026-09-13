@@ -146,26 +146,6 @@ async fn main() -> anyhow::Result<()> {
         cfg.server.tokens.len(),
     );
 
-    let mut http_builder = reqwest::Client::builder()
-        .user_agent(concat!("vessel-server/", env!("CARGO_PKG_VERSION")))
-        .timeout(std::time::Duration::from_secs(60));
-    // googlevideo/youtube стримы привязаны к IP, который их получил (через
-    // egress), поэтому relay-вытягивание идёт тем же SOCKS5- exit'ом.
-    if let Ok(egress) = std::env::var("VESSEL_YT_PROXY")
-        && !egress.is_empty()
-    {
-        let egress = egress.clone();
-        let proxy = reqwest::Proxy::custom(move |url| {
-            let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
-            if host.contains("googlevideo") || host.ends_with("youtube.com") {
-                Some(egress.clone())
-            } else {
-                None
-            }
-        });
-        http_builder = http_builder.proxy(proxy);
-    }
-
     let state = AppState {
         registry: Arc::new(setup.registry),
         tokens: Arc::new(cfg.server.tokens.clone()),
@@ -173,7 +153,10 @@ async fn main() -> anyhow::Result<()> {
         relay: Arc::new(RelayStore::new(cfg.server.relay_ttl_secs)),
         limiter: RelayLimiter::new(cfg.server.max_streams.max(1)),
         relay_policy,
-        http: http_builder.build()?,
+        http: reqwest::Client::builder()
+            .user_agent(concat!("vessel-server/", env!("CARGO_PKG_VERSION")))
+            .timeout(std::time::Duration::from_secs(60))
+            .build()?,
     };
 
     {
