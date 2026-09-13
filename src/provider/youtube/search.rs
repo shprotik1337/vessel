@@ -20,12 +20,40 @@ const PARAMS_ARTIST: &str = "EgWKAQIgAWoMEAMQBBAJEAoQDhAV";
 /// (с фильтром), пусто — тот же запрос без params.
 pub async fn search_tracks(client: &YoutubeClient, query: &str) -> Result<Vec<TrackRef>> {
     let mut tracks = Vec::new();
-    if let Ok(response) = client.search(query, Some(PARAMS_SONG)).await {
-        tracks = collect_songs(&response);
+    match client.search(query, Some(PARAMS_SONG)).await {
+        Ok(response) => {
+            eprintln!(
+                "youtube: search {query:?} params -> {} items",
+                collect_songs(&response).len()
+            );
+            tracks = collect_songs(&response);
+        }
+        Err(e) => eprintln!("youtube: search {query:?} params ERR {e:#}"),
     }
     if tracks.is_empty() {
-        let response = client.search(query, None).await?;
-        tracks = collect_songs(&response);
+        match client.search(query, None).await {
+            Ok(response) => {
+                eprintln!(
+                    "youtube: search {query:?} noparams -> {} items",
+                    collect_songs(&response).len()
+                );
+                tracks = collect_songs(&response);
+                if tracks.is_empty() {
+                    if let Some(first) = response
+                        .pointer("/contents/tabbedSearchResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0")
+                    {
+                        let s = first.to_string();
+                        eprintln!("youtube: raw0: {}", &s[..s.len().min(300)]);
+                    } else {
+                        eprintln!(
+                            "youtube: top keys={:?}",
+                            response.as_object().map(|m| m.keys().collect::<Vec<_>>())
+                        );
+                    }
+                }
+            }
+            Err(e) => eprintln!("youtube: search {query:?} noparams ERR {e:#}"),
+        }
     }
     Ok(tracks)
 }
