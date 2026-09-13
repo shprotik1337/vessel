@@ -472,11 +472,21 @@ impl PlaybackResolver {
     }
 }
 
-fn search_query(track: &TrackRef) -> String {
-    if track.artists.is_empty() {
-        track.title.clone()
-    } else {
-        format!("{} - {}", track.artists.join(", "), track.title)
+/// Запрос к чужому каталогу: главный артист + ЧИСТОЕ название. Без этого
+/// Deezer отдаёт 0 на «TWIN TRIM (with Lil Uzi Vert)», хотя трек там есть
+/// как «TWIN TRIM» — скобки/списки артистов через запятую только мешают.
+pub fn search_query(track: &TrackRef) -> String {
+    let title = normalize_title(&track.title);
+    let artist = track
+        .artists
+        .first()
+        .map(|a| normalize_title(a))
+        .unwrap_or_default();
+    match (artist.is_empty(), title.is_empty()) {
+        (false, false) => format!("{artist} {title}"),
+        (false, true) => artist,
+        (true, false) => title,
+        (true, true) => track.title.clone(),
     }
 }
 
@@ -620,6 +630,11 @@ fn artist_alias_keys(norm: &str) -> Vec<String> {
     }
 }
 
+/// Публичный доступ к уверенности матча — для диагностики и тестов.
+pub fn match_confidence_public(a: &TrackRef, b: &TrackRef) -> Option<f32> {
+    match_confidence(a, b)
+}
+
 /// Совпадение артиста для ОБЩЕГО поиска (клипы): ключ артиста (с алиасами)
 /// должен встретиться в артистах кандидата ИЛИ в самом названии видео
 /// (в клипах «Feduk & Элджей — Розовое вино» имя в названии).
@@ -722,6 +737,7 @@ pub fn normalize_title(raw: &str) -> String {
     // убираем содержимое скобок с типовыми маркерами
     for marker in [
         "official", "audio", "video", "lyric", "remaster", "remix", "feat", "ft", "live",
+        "with",
     ] {
         // (…marker…) и […]marker…]
         strip_parenthesized(&mut s, marker);
@@ -896,6 +912,23 @@ mod tests {
         );
         assert_eq!(normalize_title("Around the World - Topic"), "around the world");
         assert_eq!(normalize_title("One More Time"), "one more time");
+    }
+
+    #[test]
+    fn with_marker_and_clean_query_match_feat_variants() {
+        // «(with X)» — спотовская запись фита: чистим и в normalize, и в query
+        assert_eq!(normalize_title("CRUSH (with Travis Scott)"), "crush");
+        assert_eq!(normalize_title("TWIN TRIM (with Lil Uzi Vert)"), "twin trim");
+        let spot = track(
+            ProviderKind::Spotify,
+            "1",
+            "TWIN TRIM (with Lil Uzi Vert)",
+            "Playboi Carti",
+            94_825,
+        );
+        assert_eq!(search_query(&spot), "playboi carti twin trim");
+        let dz = track(ProviderKind::Deezer, "9", "TWIN TRIM", "Playboi Carti", 94_000);
+        assert_eq!(match_confidence(&spot, &dz), Some(0.95));
     }
 
     #[test]
