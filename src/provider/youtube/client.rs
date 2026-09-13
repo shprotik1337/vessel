@@ -61,11 +61,17 @@ impl Clone for YoutubeClient {
 
 impl YoutubeClient {
     pub fn new() -> Result<Self> {
-        let http = Client::builder()
-            .apply_vpn_proxy()
-            .user_agent(BROWSER_UA)
-            .build()
-            .context("не удалось создать HTTP-клиент YouTube")?;
+        let mut builder = Client::builder().apply_vpn_proxy().user_agent(BROWSER_UA);
+        // Egress для сервера: Google с датацентровых IP не отдаёт ни одного
+        // играбельного результата поиска, поэтому InnerTube прокидывается через
+        // SOCKS5 на домашней машине (VESSEL_YT_PROXY=socks5h://host:port).
+        if let Ok(proxy) = std::env::var("VESSEL_YT_PROXY")
+            && !proxy.is_empty()
+        {
+            let parsed = reqwest::Proxy::all(&proxy).context("VESSEL_YT_PROXY повреждён")?;
+            builder = builder.proxy(parsed);
+        }
+        let http = builder.build().context("не удалось создать HTTP-клиент YouTube")?;
         Ok(Self {
             http,
             api_key: Mutex::new(INNERTUBE_API_KEY.to_string()),
