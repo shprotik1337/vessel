@@ -39,10 +39,21 @@ pub fn clients_http() -> std::sync::Arc<reqwest::Client> {
 }
 
 fn new_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .apply_vpn_proxy()
-        .build()
-        .expect("youtube http client")
+    build_http(reqwest::Client::builder().apply_vpn_proxy())
+}
+
+/// VESSEL_YT_PROXY (socks5h://...) — серверный egress через домашний выход:
+/// Google с датацентровых IP режет InnerTube (пустой поиск, стримы без pot),
+/// а с чистых всё как у пользователя на десктопе.
+pub(crate) fn build_http(builder: reqwest::ClientBuilder) -> reqwest::Client {
+    let mut builder = builder;
+    if let Ok(proxy) = std::env::var("VESSEL_YT_PROXY")
+        && !proxy.is_empty()
+        && let Ok(parsed) = reqwest::Proxy::all(&proxy)
+    {
+        builder = builder.proxy(parsed);
+    }
+    builder.build().expect("youtube http client")
 }
 
 const USER_AGENT_WEB: &str =
