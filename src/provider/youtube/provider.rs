@@ -129,8 +129,10 @@ impl YouTubeMusicProvider {
     }
 
     /// Стрим по videoId: Kopuz-путь (WEB_REMIX+cookie+decipher → ANDROID_VR).
+    /// Использует общий клиент: его cookie/OAuth проходят бот-чек на серверных
+    /// IP, potoken-провайдер даёт POT там, где локальный BotGuard не тянет.
     pub async fn stream(&self, video_id: &str) -> Result<PlaybackSource> {
-        let resolved = super::player::resolve_stream(video_id).await?;
+        let resolved = super::player::resolve_stream(&self.client, video_id).await?;
         let mut source = resolved.source;
         if !resolved.range_safe {
             // ANDROID_VR без POT: сервер отдаст ~1 MiB; запрещаем seek,

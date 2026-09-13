@@ -64,7 +64,18 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: b
         let proxy = config.spotify_proxy.as_deref();
         match SpotifyProvider::with_proxy(sp_dc, proxy) {
             Ok(mut provider) => {
-                if let Ok(resolver) = crate::provider::youtube::YoutubeResolver::new() {
+                // Резолвер Spotify→YouTube получает те же YouTube-секреты:
+                // на сервере без них матч в YTM пустой, а стрим режется до 1 MiB.
+                if let Ok(mut resolver) = crate::provider::youtube::YoutubeResolver::new() {
+                    if let Some(cookie) = youtube_cookie(secrets, &mut notices) {
+                        resolver.set_cookie(Some(cookie));
+                    }
+                    if let Some(refresh) = youtube_refresh(secrets, &mut notices) {
+                        resolver.set_oauth_refresh(Some(refresh));
+                    }
+                    if let Some(potoken_url) = youtube_potoken_url(config) {
+                        resolver.set_potoken_provider(Some(potoken_url));
+                    }
                     provider.set_youtube_resolver(resolver);
                 }
                 registry.register(provider);
@@ -73,10 +84,25 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: b
         }
     }
 
-    // YouTube Music всегда включён: поиск и стримы работают анонимно
-    // (Kopuz-пайплайн: WEB_REMIX+decipher+pot), cookie не требуется.
+    // YouTube Music работает анонимно, но ключи сильно расширяют возможности:
+    // - cookie/OAuth: поиск и browse проходят бот-чек на серверных (DC) IP,
+    //   WEB_REMIX отдаёт полные форматы вместо 1 MiB preview;
+    // - potoken-провайдер (bgutil HTTP): стабильный POT там, где BotGuard
+    //   mint ненадёжен (датацентровые IP, слабые VPS).
+    // Один и тот же код обслуживает и локальный клиент, и Vessel Server.
     match YouTubeMusicProvider::new() {
-        Ok(provider) => registry.register(provider),
+        Ok(mut provider) => {
+            if let Some(cookie) = youtube_cookie(secrets, &mut notices) {
+                provider.set_cookie(Some(cookie));
+            }
+            if let Some(refresh) = youtube_refresh(secrets, &mut notices) {
+                provider.set_oauth_refresh(Some(refresh));
+            }
+            if let Some(potoken_url) = youtube_potoken_url(config) {
+                provider.set_potoken_provider(Some(potoken_url));
+            }
+            registry.register(provider);
+        }
         Err(error) => notices.push(format!("YouTube Music не настроен: {error}")),
     }
 
@@ -128,6 +154,27 @@ fn load_secret(secrets: &SecretStore, key: SecretKey, notices: &mut Vec<String>)
             None
         }
     }
+}
+
+/// Cookie YouTube из SecretStore (даёт полные стримы и поиск с серверных IP).
+fn youtube_cookie(secrets: &SecretStore, notices: &mut Vec<String>) -> Option<String> {
+    load_secret(secrets, SecretKey::YouTubeCookie, notices).filter(|value| !value.trim().is_empty())
+}
+
+/// OAuth refresh_token YouTube из SecretStore (для стримов после перезапуска).
+fn youtube_refresh(secrets: &SecretStore, notices: &mut Vec<String>) -> Option<String> {
+    load_secret(secrets, SecretKey::YouTubeOAuthRefresh, notices)
+        .filter(|value| !value.trim().is_empty())
+}
+
+/// URL potoken-провайдера (bgutil-совместимый HTTP API) из конфига.
+fn youtube_potoken_url(config: &AppConfig) -> Option<String> {
+    config
+        .youtube_potoken_provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]

@@ -154,18 +154,19 @@ pub async fn player(
             .header("X-Origin", ORIGIN_YOUTUBE_MUSIC)
             .header("Referer", format!("{ORIGIN_YOUTUBE_MUSIC}/"));
     }
-    if client.login_supported
-        && let Some(c) = cookies.filter(|c| !c.is_empty())
-    {
-        let auth =
-            sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC).context("SAPISID отсутствует в cookie")?;
-        req = req.header("Cookie", c).header("Authorization", auth);
-    } else if !client.login_supported
-        && let Some(c) = cookies.filter(|c| !c.is_empty())
-    {
-        // Не-WEB клиенты: куки можно слать как есть (без SAPISIDHASH) —
-        // помогает на IP, где Google требует логин.
-        req = req.header("Cookie", c);
+    if let Some(c) = cookies.filter(|c| !c.is_empty()) {
+        // SAPISIDHASH только когда в cookie реально есть SAPISID; иначе (куки
+        // без логина, OAuth-сессия) — шлём cookie как есть, не роняя запрос.
+        // Это критично для сервера: playbook «нет SAPISID → bail» убивал
+        // все player-запросы с частичной cookie.
+        match sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC) {
+            Some(auth) if client.login_supported => {
+                req = req.header("Cookie", c).header("Authorization", auth);
+            }
+            _ => {
+                req = req.header("Cookie", c);
+            }
+        }
     }
 
     let resp = req.json(&body).send().await.context("player HTTP")?;
@@ -198,9 +199,10 @@ pub async fn browse_maybe_auth(browse_id: &str, cookies: Option<&str>) -> Result
         .header("X-Origin", ORIGIN_YOUTUBE_MUSIC)
         .header("Referer", format!("{ORIGIN_YOUTUBE_MUSIC}/"));
     if let Some(c) = cookies.filter(|c| !c.is_empty()) {
-        let auth =
-            sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC).context("SAPISID отсутствует в cookie")?;
-        req = req.header("Cookie", c).header("Authorization", auth);
+        match sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC) {
+            Some(auth) => req = req.header("Cookie", c).header("Authorization", auth),
+            None => req = req.header("Cookie", c),
+        }
     }
     let resp = req.json(&body).send().await.context("browse HTTP")?;
     if !resp.status().is_success() {
@@ -231,9 +233,10 @@ pub async fn browse_continuation_maybe_auth(
         .header("X-Origin", ORIGIN_YOUTUBE_MUSIC)
         .header("Referer", format!("{ORIGIN_YOUTUBE_MUSIC}/"));
     if let Some(c) = cookies.filter(|c| !c.is_empty()) {
-        let auth =
-            sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC).context("SAPISID отсутствует в cookie")?;
-        req = req.header("Cookie", c).header("Authorization", auth);
+        match sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC) {
+            Some(auth) => req = req.header("Cookie", c).header("Authorization", auth),
+            None => req = req.header("Cookie", c),
+        }
     }
     let resp = req.json(&body).send().await.context("browse continuation HTTP")?;
     if !resp.status().is_success() {
@@ -273,9 +276,10 @@ pub async fn visitor_id_maybe_auth(cookies: Option<&str>) -> Result<String> {
         .header("X-Origin", ORIGIN_YOUTUBE_MUSIC)
         .header("Referer", format!("{ORIGIN_YOUTUBE_MUSIC}/"));
     if let Some(c) = cookies.filter(|c| !c.is_empty()) {
-        let auth =
-            sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC).context("SAPISID отсутствует в cookie")?;
-        req = req.header("Cookie", c).header("Authorization", auth);
+        match sapisid_hash(c, ORIGIN_YOUTUBE_MUSIC) {
+            Some(auth) => req = req.header("Cookie", c).header("Authorization", auth),
+            None => req = req.header("Cookie", c),
+        }
     }
     let resp = req.json(&body).send().await.context("visitor_id HTTP")?;
     if !resp.status().is_success() {

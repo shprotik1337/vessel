@@ -14,10 +14,10 @@ const PARAMS_SONG: &str = "EgWKAQIIAWoMEAMQBBAJEAoQDhAV";
 const PARAMS_ALBUM: &str = "EgWKAQIYAWoMEAMQBBAJEAoQDhAV";
 const PARAMS_ARTIST: &str = "EgWKAQIgAWoMEAMQBBAJEAoQDhAV";
 
-/// Песни. Со старым Kopuz-фильтром Google отвечает нормально только с чистых
-/// IP; с датацентровых (VPS: Hetzner и т.п.) `params=EgWKAQII…` отдаёт пустой
-/// рендер, хотя без params top-shelf приходит. Поэтому: сначала как локально
-/// (с фильтром), пусто — тот же запрос без params.
+/// Песни. Лестница: со старым Kopuz-фильтром, пусто — тот же запрос без него.
+/// Страховка на случай, когда Google начинает игнорировать/резать фильтры
+/// (с IPv6-выходов VPS Google отдавал пустой рендер вообще всегда — см.
+/// VESSEL_YT_PROXY; на IPv4 оба варианта рабочие).
 pub async fn search_tracks(client: &YoutubeClient, query: &str) -> Result<Vec<TrackRef>> {
     let mut tracks = Vec::new();
     if let Ok(response) = client.search(query, Some(PARAMS_SONG)).await {
@@ -53,7 +53,7 @@ pub async fn search_collections(
     };
     let response = client.search(query, params).await?;
     let mut items = collect_items(&response, kind);
-    // Старые Kopuz-фильтры мертвы на датацентровых IP — тот же поиск без них.
+    // Если с фильтром пусто — повторяем без него (тот же страховочный путь).
     if items.is_empty() && params.is_some() {
         let retry = client.search(query, None).await?;
         items = collect_items(&retry, kind);
