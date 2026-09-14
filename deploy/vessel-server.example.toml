@@ -19,13 +19,10 @@ max_streams = 64
 # TTL relay-токенов, сек (аудиосессии живут часами — ставь с запасом)
 relay_ttl_secs = 14400
 data_dir = "/opt/vessel"
-# user_storage / auth — фаза B, здесь ещё нет.
 
-# Дальше — обычные провайдерские секции Vessel: сервер сам хранит credentials
-# этого экземпляра в data_dir/secrets.json (или keyring, если есть).
-# НЕ переноси в него приватные cookie со своего рабочего компьютера, если не
-# хочешь, чтобы сервер ходил в сервисы под твоей учёткой.
-
+# Сервер НЕ хранит аккаунтов: каждый запрос работает под учётными данными
+# клиента (заголовок x-vessel-credentials: sp_dc, ARL, OAuth-токен и т.д.).
+# Здесь только флаги, какие провайдеры включены на сервере.
 soundcloud_enabled = true
 yandex_enabled = false
 deezer_enabled = false
@@ -34,21 +31,10 @@ youtube_music_enabled = true
 
 # --- YouTube Music на сервере ---------------------------------------------
 # YTM на датацентровых IP без логина режется Google: поиск пустой, стримы
-# обрезаются до ~1 MiB. Сервер поддерживает три ключа (клиентские credentials
-# НЕ переносить — ключи ниже живут только в этом secrets.json):
-#
-# 1) youtube-cookie — cookie залогиненного YouTube-аккаунта (SID, HSID, SSID,
-#    SAPISID, LOGIN_INFO и др. одной строкой). Снимает бот-чек поиска и даёт
-#    полные форматы WEB_REMIX. Самый простой и надёжный путь.
-#    Заполни через:  cargo run -p vessel-server -- ...  или впиши в secrets.json:
-#      {"values": {"youtube-cookie": "SID=...; HSID=...; SSID=...; SAPISID=...;"}}
-#
-# 2) youtube-oauth-refresh — refresh_token TV device-flow (альтернатива cookie).
-#
-# 3) youtube_potoken_provider — URL bgutil-совместимого HTTP-провайдера PO
-#    token (bgutil-ytdlp-pot-provider, /get_pot). POT обязателен: без него
-#    googlevideo отдаёт только первый MiB. Провайдер держи на той же машине
-#    (127.0.0.1:4416) — токен привязан к IP выхода.
+# обрезаются до ~1 MiB. Вместо серверной cookie (которой больше нет) клиент
+# передаёт свою cookie/refresh_token в x-vessel-credentials. Дополнительно
+# можно держать bgutil-совместимый HTTP-провайдер PO token на той же машине
+# (127.0.0.1:4416) — токен привязан к IP выхода.
 youtube_potoken_provider = "http://127.0.0.1:4416"
 
 # после старта:

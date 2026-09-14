@@ -12,14 +12,18 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use crate::model::{PlaybackSource, ProviderKind, TrackRef};
-use crate::protocol::{
-    API_PREFIX, CollectionsResponse, ImportPlaylistRequest, ImportedPlaylistResponse,
-    LikedRequest, PageResponse, ProfileResponse, RelatedRequest, ResolveSourceRequest,
-    ResolveSourceResponse, ServerInfo, TracksResponse, collection_segment, kind_segment,
-};
-use crate::provider::{
-    ArtistProfile, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider, SearchPage,
+use crate::{
+    model::{PlaybackSource, ProviderKind, TrackRef},
+    protocol::{
+        API_PREFIX, CREDENTIALS_HEADER, CollectionsResponse, ImportPlaylistRequest,
+        ImportedPlaylistResponse, LikedRequest, PageResponse, ProfileResponse, RelatedRequest,
+        ResolveSourceRequest, ResolveSourceResponse, ServerInfo, TracksResponse,
+        collection_segment, kind_segment,
+    },
+    provider::{
+        ArtistProfile, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider, SearchPage,
+    },
+    secrets::SecretStore,
 };
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -31,11 +35,25 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct ServerClient {
     base: String,
     token: String,
+    /// Локальные секреты клиента: из них каждый запрос собирает учётные
+    /// данные пользователя (`x-vessel-credentials`) — сервер работает под
+    /// аккаунтом клиента, а не под своими.
+    secrets: Option<SecretStore>,
     http: reqwest::Client,
 }
 
 impl ServerClient {
     pub fn new(base: &str, token: &str) -> Result<Self> {
+        Self::with_secrets(base, token, None)
+    }
+
+    /// Тот же клиент, но с доступом к локальному SecretStore — запросы к
+    /// серверу будут нести credentials пользователя (sp_dc/ARL/…).
+    pub fn with_secrets(
+        base: &str,
+        token: &str,
+        secrets: Option<SecretStore>,
+    ) -> Result<Self> {
         let base = base.trim().trim_end_matches('/').to_string();
         let probe = Url::parse(&format!("{base}{API_PREFIX}/health")).context("некорректный адрес Vessel Server")?;
         let _ = probe;
@@ -44,7 +62,7 @@ impl ServerClient {
             .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .context("не удалось создать HTTP-клиент Vessel Server")?;
-        Ok(Self { base, token: token.trim().to_string(), http })
+        Ok(Self { base, token: token.trim().to_string(), secrets, http })
     }
 
     pub fn base_url(&self) -> &str {
@@ -56,8 +74,17 @@ impl ServerClient {
     }
 
     async fn send(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+        let mut request = request
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", self.token));
+        if let Some(secrets) = &self.secrets {
+            let credentials = crate::runtime::providers::collect_credentials(secrets);
+            if !credentials.is_empty() {
+                if let Ok(encoded) = credentials.encode() {
+                    request = request.header(CREDENTIALS_HEADER, encoded);
+                }
+            }
+        }
         let response = request
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", self.token))
             .send()
             .await
             .map_err(|error| anyhow!("Vessel Server недоступен: {error}"))?;

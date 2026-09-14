@@ -6,7 +6,7 @@
 mod config;
 mod relay;
 
-use std::{net::SocketAddr, path::Path, path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::Path, path::PathBuf, sync::Arc, sync::Mutex};
 
 use anyhow::anyhow;
 use axum::{
@@ -25,41 +25,98 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use url::Url;
 use vessel_core::{
+    config::AppConfig,
     model::PlaybackSource,
     protocol::{
-        API_PREFIX, CollectionsResponse, ImportPlaylistRequest, ImportedPlaylistResponse,
-        LikedRequest, PageResponse, ProfileResponse, RelatedRequest, ResolveSourceRequest,
-        ResolveSourceResponse, ServerCapabilities, ServerInfo, TracksResponse,
-        collection_from_segment, kind_from_segment, kind_segment,
+        API_PREFIX, CREDENTIALS_HEADER, CollectionsResponse, ImportPlaylistRequest,
+        ImportedPlaylistResponse, LikedRequest, PageResponse, ProfileResponse, RelatedRequest,
+        ResolveSourceRequest, ResolveSourceResponse, ServerCapabilities, ServerInfo,
+        TracksResponse, UserCredentials, collection_from_segment, kind_from_segment, kind_segment,
     },
-    provider::{CollectionKind, MusicProvider, ProviderRegistry},
-    secrets::SecretStore,
+    provider::{CollectionKind, MusicProvider},
+    runtime::providers::build_provider,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone)]
 struct AppState {
-    registry: Arc<ProviderRegistry>,
+    /// Параметры провайдеров (spotify proxy, potoken URL) — без секретов.
+    config: Arc<AppConfig>,
+    /// Сегменты провайдеров, доступных на сервере (для capabilities).
+    enabled: Arc<Vec<String>>,
     tokens: Arc<Vec<String>>,
     info: Arc<ServerInfo>,
     relay: Arc<RelayStore>,
     limiter: RelayLimiter,
     relay_policy: RelayPolicy,
     http: reqwest::Client,
+    /// Кэш автообнаруженного публичного client_id SoundCloud (не аккаунт).
+    soundcloud_id: Arc<Mutex<Option<String>>>,
 }
 
 impl AppState {
-    fn provider(&self, segment: &str) -> Result<Arc<dyn MusicProvider>, ApiError> {
+    /// Провайдер для конкретного запроса: строим из credentials клиента.
+    /// Свои сохранённые аккаунты сервер не хранит и не использует.
+    async fn provider(
+        &self,
+        segment: &str,
+        creds: &UserCredentials,
+    ) -> Result<Arc<dyn MusicProvider>, ApiError> {
         let kind = kind_from_segment(segment)
             .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "неизвестный провайдер".into()))?;
-        self.registry
-            .get(kind)
-            .ok_or_else(|| ApiError(
+        if !self.enabled.iter().any(|enabled| enabled == segment) {
+            return Err(ApiError(
                 StatusCode::NOT_FOUND,
                 format!("провайдер {} не настроен на сервере", kind.label()),
-            ))
+            ));
+        }
+        let mut creds = creds.clone();
+        // SoundCloud: публичный client_id может обнаружить сам сервер
+        // (это не аккаунт, а публичный ключ веб-плеера).
+        if kind == vessel_core::model::ProviderKind::SoundCloud
+            && creds.soundcloud_client_id.as_deref().map(str::trim).unwrap_or_default().is_empty()
+        {
+            creds.soundcloud_client_id = self.soundcloud_client_id().await?;
+        }
+        build_provider(kind, &creds, &self.config)
+            .map(Arc::from)
+            .map_err(ApiError::from)
     }
+
+    async fn soundcloud_client_id(&self) -> Result<Option<String>, ApiError> {
+        if let Some(id) = self
+            .soundcloud_id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+        {
+            return Ok(Some(id));
+        }
+        let discovered = vessel_core::provider::soundcloud::discover_client_id()
+            .await
+            .ok();
+        if let Some(id) = &discovered {
+            *self
+                .soundcloud_id
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(id.clone());
+        }
+        Ok(discovered)
+    }
+}
+
+/// Учётные данные пользователя из заголовка запроса; отсутствие заголовка —
+/// пустые credentials (для анонимно-работоспособных провайдеров).
+fn user_credentials(headers: &HeaderMap) -> Result<UserCredentials, ApiError> {
+    let Some(raw) = headers.get(CREDENTIALS_HEADER) else {
+        return Ok(UserCredentials::default());
+    };
+    let raw = raw
+        .to_str()
+        .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "заголовок учётных данных не-ASCII".into()))?;
+    UserCredentials::decode(raw)
+        .map_err(|error| ApiError(StatusCode::BAD_REQUEST, format!("{error}")))
 }
 
 struct ApiError(StatusCode, String);
@@ -119,12 +176,25 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ServerConfig::load(&config_path)?;
     std::fs::create_dir_all(&cfg.server.data_dir).ok();
 
-    let secrets = SecretStore::new(cfg.secrets_file());
-    let setup = vessel_core::runtime::providers::build_registry(&cfg.app, &secrets, false);
-    for notice in &setup.notices {
-        println!("[vessel-server] {notice}");
+    // Сервер НЕ хранит аккаунтов пользователей: провайдеры строятся на
+    // каждый запрос из credentials клиента (заголовок x-vessel-credentials).
+    // В capabilities попадают только включённые в конфиге провайдеры.
+    let mut enabled: Vec<String> = Vec::new();
+    if cfg.app.soundcloud_enabled {
+        enabled.push(kind_segment(vessel_core::model::ProviderKind::SoundCloud).to_string());
     }
-    let providers: Vec<String> = setup.registry.kinds().map(|k| kind_segment(k).to_string()).collect();
+    if cfg.app.yandex_enabled {
+        enabled.push(kind_segment(vessel_core::model::ProviderKind::YandexMusic).to_string());
+    }
+    if cfg.app.deezer_enabled {
+        enabled.push(kind_segment(vessel_core::model::ProviderKind::Deezer).to_string());
+    }
+    if cfg.app.spotify_enabled {
+        enabled.push(kind_segment(vessel_core::model::ProviderKind::Spotify).to_string());
+    }
+    if cfg.app.youtube_music_enabled {
+        enabled.push(kind_segment(vessel_core::model::ProviderKind::YouTubeMusic).to_string());
+    }
     let relay_policy = cfg.server.relay;
     let info = ServerInfo {
         name: cfg.server.name.clone(),
@@ -135,10 +205,10 @@ async fn main() -> anyhow::Result<()> {
             user_storage: false,
             playback_relay: relay_policy != RelayPolicy::Off,
         },
-        providers,
+        providers: enabled.clone(),
     };
     println!(
-        "[vessel-server] {} v{}: {} провайдеров на бэкенде, relay={:?}, {} access-токенов",
+        "[vessel-server] {} v{}: {} провайдеров (аккаунты — только от клиентов), relay={:?}, {} access-токенов",
         info.name,
         info.version,
         info.providers.len(),
@@ -147,7 +217,8 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let state = AppState {
-        registry: Arc::new(setup.registry),
+        config: Arc::new(cfg.app.clone()),
+        enabled: Arc::new(enabled),
         tokens: Arc::new(cfg.server.tokens.clone()),
         info: Arc::new(info),
         relay: Arc::new(RelayStore::new(cfg.server.relay_ttl_secs)),
@@ -157,6 +228,7 @@ async fn main() -> anyhow::Result<()> {
             .user_agent(concat!("vessel-server/", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(60))
             .build()?,
+        soundcloud_id: Arc::new(Mutex::new(None)),
     };
 
     {
@@ -255,8 +327,10 @@ async fn search(
     State(state): State<AppState>,
     AxPath(provider): AxPath<String>,
     Query(query): Query<SearchQuery>,
+    headers: HeaderMap,
 ) -> Api<Json<PageResponse>> {
-    let provider = state.provider(&provider)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider, &creds).await?;
     let page = provider.search(&query.q, query.cursor.as_deref()).await?;
     Ok(Json(PageResponse { page }))
 }
@@ -265,10 +339,12 @@ async fn collections(
     State(state): State<AppState>,
     AxPath(provider): AxPath<String>,
     Query(query): Query<CollectionsQuery>,
+    headers: HeaderMap,
 ) -> Api<Json<CollectionsResponse>> {
     let kind: CollectionKind = collection_from_segment(&query.kind)
         .ok_or_else(|| ApiError(StatusCode::BAD_REQUEST, "неизвестный тип коллекции".into()))?;
-    let provider = state.provider(&provider)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider, &creds).await?;
     let items = provider.search_collections(&query.q, kind).await?;
     Ok(Json(CollectionsResponse { items }))
 }
@@ -276,8 +352,10 @@ async fn collections(
 async fn artist_profile(
     State(state): State<AppState>,
     AxPath((provider, id)): AxPath<(String, String)>,
+    headers: HeaderMap,
 ) -> Api<Json<ProfileResponse>> {
-    let provider = state.provider(&provider)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider, &creds).await?;
     let profile = provider.artist_profile(&id).await?;
     Ok(Json(ProfileResponse { profile }))
 }
@@ -285,8 +363,10 @@ async fn artist_profile(
 async fn artist_tracks(
     State(state): State<AppState>,
     AxPath((provider, id)): AxPath<(String, String)>,
+    headers: HeaderMap,
 ) -> Api<Json<TracksResponse>> {
-    let provider = state.provider(&provider)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider, &creds).await?;
     let tracks = provider.artist_all_tracks(&id).await?;
     Ok(Json(TracksResponse { tracks }))
 }
@@ -295,8 +375,10 @@ async fn wave(
     State(state): State<AppState>,
     AxPath(provider): AxPath<String>,
     Query(query): Query<WaveQuery>,
+    headers: HeaderMap,
 ) -> Api<Json<TracksResponse>> {
-    let provider = state.provider(&provider)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider, &creds).await?;
     let tracks = provider.personal_wave(query.limit.unwrap_or(15)).await?;
     Ok(Json(TracksResponse { tracks }))
 }
@@ -304,9 +386,11 @@ async fn wave(
 async fn liked(
     State(state): State<AppState>,
     AxPath(provider): AxPath<String>,
+    headers: HeaderMap,
     Json(request): Json<LikedRequest>,
 ) -> Api<Json<TracksResponse>> {
-    let provider = state.provider(&provider)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider, &creds).await?;
     let tracks = provider.liked_tracks(request.profile_url.as_deref()).await?;
     Ok(Json(TracksResponse { tracks }))
 }
@@ -314,9 +398,11 @@ async fn liked(
 async fn import_playlist(
     State(state): State<AppState>,
     AxPath(provider): AxPath<String>,
+    headers: HeaderMap,
     Json(body): Json<ImportPlaylistRequest>,
 ) -> Api<Json<ImportedPlaylistResponse>> {
-    let provider = state.provider(&provider)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider, &creds).await?;
     let url = Url::parse(&body.url)
         .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "некорректный URL плейлиста".into()))?;
     let playlist = provider.import_playlist(&url).await?;
@@ -325,9 +411,11 @@ async fn import_playlist(
 
 async fn related(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<RelatedRequest>,
 ) -> Api<Json<TracksResponse>> {
-    let provider = state.provider(kind_segment(body.track.provider))?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(kind_segment(body.track.provider), &creds).await?;
     let tracks = provider.related(&body.track, body.limit).await?;
     Ok(Json(TracksResponse { tracks }))
 }
@@ -338,9 +426,11 @@ async fn related(
 async fn resolve(
     State(state): State<AppState>,
     AxPath(provider_segment): AxPath<String>,
+    headers: HeaderMap,
     Json(body): Json<ResolveSourceRequest>,
 ) -> Api<Json<ResolveSourceResponse>> {
-    let provider = state.provider(&provider_segment)?;
+    let creds = user_credentials(&headers)?;
+    let provider = state.provider(&provider_segment, &creds).await?;
     // Принцип Vessel: Spotify — метаданные, аудио играет цепочка Deezer/YTM.
     // На сервере этот путь закрыт: никаких сырых spotify-файлов под чужой сессией.
     if body.track.provider == vessel_core::model::ProviderKind::Spotify
