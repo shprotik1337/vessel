@@ -1,8 +1,9 @@
 use crate::{
     config::AppConfig,
-    protocol::kind_from_segment,
+    model::ProviderKind,
+    protocol::{UserCredentials, kind_from_segment},
     provider::{
-        ProviderRegistry,
+        MusicProvider, ProviderRegistry,
         remote::{ServerClient, ServerProvider},
         deezer::DeezerProvider,
         soundcloud::SoundCloudProvider,
@@ -16,6 +17,82 @@ use crate::{
 pub struct ProviderSetup {
     pub registry: ProviderRegistry,
     pub notices: Vec<String>,
+}
+
+/// Собирает учётные данные пользователя из SecretStore клиента — их клиент
+/// передаёт Vessel Server заголовком, чтобы сервер работал под аккаунтом
+/// пользователя, а не под своими сохранёнными аккаунтами.
+pub fn collect_credentials(secrets: &SecretStore) -> UserCredentials {
+    UserCredentials {
+        soundcloud_client_id: load_secret(secrets, SecretKey::SoundCloudClientIdOverride, &mut Vec::new())
+            .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientId, &mut Vec::new()))
+            .filter(|value| !value.trim().is_empty()),
+        yandex_token: load_secret(secrets, SecretKey::YandexToken, &mut Vec::new())
+            .filter(|value| !value.trim().is_empty()),
+        deezer_arl: load_secret(secrets, SecretKey::DeezerArl, &mut Vec::new())
+            .filter(|value| !value.trim().is_empty()),
+        spotify_sp_dc: load_secret(secrets, SecretKey::SpotifySpDc, &mut Vec::new())
+            .filter(|value| !value.trim().is_empty()),
+        spotify_oauth_refresh: load_secret(secrets, SecretKey::SpotifyOAuthRefreshToken, &mut Vec::new())
+            .filter(|value| !value.trim().is_empty()),
+        youtube_cookie: load_secret(secrets, SecretKey::YouTubeCookie, &mut Vec::new())
+            .filter(|value| !value.trim().is_empty()),
+        youtube_oauth_refresh: load_secret(secrets, SecretKey::YouTubeOAuthRefresh, &mut Vec::new())
+            .filter(|value| !value.trim().is_empty()),
+    }
+}
+
+/// Собирает одного провайдера из учётных данных (для Vessel Server: каждый
+/// запрос строит провайдера из credentials клиента, свои аккаунты сервер не
+/// хранит). YouTube Music работает и анонимно; SoundCloud может работать с
+/// публичным client_id (если его нет в credentials — ошибка, серверная
+/// обёртка подставит автообнаруженный ключ).
+pub fn build_provider(
+    kind: ProviderKind,
+    creds: &UserCredentials,
+    config: &AppConfig,
+) -> anyhow::Result<Box<dyn MusicProvider>> {
+    let provider: Box<dyn MusicProvider> = match kind {
+        ProviderKind::SoundCloud => Box::new(SoundCloudProvider::new(
+            creds.soundcloud_client_id.clone().ok_or_else(|| {
+                anyhow::anyhow!("SoundCloud: не передан client_id пользователя")
+            })?,
+        )?),
+        ProviderKind::YandexMusic => Box::new(YandexProvider::new(
+            creds.yandex_token.clone().ok_or_else(|| {
+                anyhow::anyhow!("Yandex Music: не передан OAuth-токен пользователя")
+            })?,
+        )?),
+        ProviderKind::Deezer => Box::new(DeezerProvider::new(
+            creds.deezer_arl.clone().ok_or_else(|| {
+                anyhow::anyhow!("Deezer: не передан ARL пользователя")
+            })?,
+        )?),
+        ProviderKind::Spotify => Box::new(SpotifyProvider::with_proxy(
+            creds.spotify_sp_dc.clone().ok_or_else(|| {
+                anyhow::anyhow!("Spotify: не передан sp_dc пользователя")
+            })?,
+            config.spotify_proxy.as_deref(),
+        )?),
+        ProviderKind::YouTubeMusic => {
+            let mut provider = YouTubeMusicProvider::new()?;
+            if let Some(cookie) = creds.youtube_cookie.clone().filter(|v| !v.trim().is_empty()) {
+                provider.set_cookie(Some(cookie));
+            }
+            if let Some(refresh) = creds
+                .youtube_oauth_refresh
+                .clone()
+                .filter(|v| !v.trim().is_empty())
+            {
+                provider.set_oauth_refresh(Some(refresh));
+            }
+            if let Some(potoken_url) = youtube_potoken_url(config) {
+                provider.set_potoken_provider(Some(potoken_url));
+            }
+            Box::new(provider)
+        }
+    };
+    Ok(provider)
 }
 
 pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: bool) -> ProviderSetup {
@@ -127,7 +204,7 @@ fn apply_provider_routing(
             ));
             continue;
         }
-        match ServerClient::new(&server.url, &token) {
+        match ServerClient::with_secrets(&server.url, &token, Some(secrets.clone())) {
             Ok(client) => registry.register(ServerProvider::new(kind, client)),
             Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),
         }

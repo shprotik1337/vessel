@@ -14,6 +14,63 @@ use crate::{
 pub const API_PREFIX: &str = "/api/v1";
 pub const API_VERSION: &str = "v1";
 
+/// Заголовок, в котором клиент передаёт серверу свои учётные данные
+/// (sp_dc, ARL, …). Значение — base64url(JSON `UserCredentials`).
+/// Сервер НЕ хранит аккаунтов: каждый запрос работает под аккаунтом клиента.
+pub const CREDENTIALS_HEADER: &str = "x-vessel-credentials";
+
+/// Учётные данные клиента для серверной обработки. Клиент собирает их из
+/// своего SecretStore, сервер строит провайдера на каждый запрос из этих
+/// полей вместо собственных сохранённых аккаунтов.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct UserCredentials {
+    #[serde(default)]
+    pub soundcloud_client_id: Option<String>,
+    #[serde(default)]
+    pub yandex_token: Option<String>,
+    #[serde(default)]
+    pub deezer_arl: Option<String>,
+    #[serde(default)]
+    pub spotify_sp_dc: Option<String>,
+    #[serde(default)]
+    pub spotify_oauth_refresh: Option<String>,
+    #[serde(default)]
+    pub youtube_cookie: Option<String>,
+    #[serde(default)]
+    pub youtube_oauth_refresh: Option<String>,
+}
+
+impl UserCredentials {
+    /// true, если не передано ни одного ключа — заголовок можно не слать.
+    pub fn is_empty(&self) -> bool {
+        self.soundcloud_client_id.is_none()
+            && self.yandex_token.is_none()
+            && self.deezer_arl.is_none()
+            && self.spotify_sp_dc.is_none()
+            && self.spotify_oauth_refresh.is_none()
+            && self.youtube_cookie.is_none()
+            && self.youtube_oauth_refresh.is_none()
+    }
+
+    /// base64url(JSON) для транспорта в заголовке.
+    pub fn encode(&self) -> Result<String, serde_json::Error> {
+        use base64::Engine;
+        let json = serde_json::to_vec(self)?;
+        Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json))
+    }
+
+    /// Обратная операция: заголовок → credentials. Пустое/отсутствующее
+    /// значение — дефолт (None везде).
+    pub fn decode(raw: &str) -> Result<Self, anyhow::Error> {
+        use anyhow::Context;
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(raw.trim())
+            .context("заголовок учётных данных повреждён (base64)")?;
+        serde_json::from_slice(&bytes).context("заголовок учётных данных повреждён (JSON)")
+    }
+}
+
 /// Сегмент провайдера в URL (`/providers/youtube_music/...`).
 pub fn kind_segment(kind: ProviderKind) -> &'static str {
     match kind {
@@ -149,6 +206,24 @@ pub fn collection_from_segment(segment: &str) -> Option<CollectionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credentials_roundtrip() {
+        let creds = UserCredentials {
+            deezer_arl: Some("arl=abc-123".to_string()),
+            spotify_sp_dc: Some("sp-dc-secret".to_string()),
+            youtube_cookie: Some("SID=xxx; LOGIN_INFO=yyy".to_string()),
+            ..UserCredentials::default()
+        };
+        let encoded = creds.encode().unwrap();
+        let decoded = UserCredentials::decode(&encoded).unwrap();
+        assert_eq!(decoded, creds);
+        // пустые credentials — тоже валидны и не требуют заголовка
+        assert!(UserCredentials::default().is_empty());
+        assert!(!creds.is_empty());
+        // мусор — понятная ошибка
+        assert!(UserCredentials::decode("@@not-base64@@").is_err());
+    }
 
     #[test]
     fn kind_segments_roundtrip() {

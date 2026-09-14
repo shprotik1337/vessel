@@ -77,3 +77,38 @@ jobs:
             target/release/bundle/nsis/Vessel_${{ inputs.version }}_x64-setup.exe
           draft: false
           prerelease: false
+
+  linux-server:
+    name: Linux vessel-server
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Системные зависимости
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libasound2-dev libdbus-1-dev libssl-dev
+
+      - name: Сборка vessel-server
+        run: cargo build -p vessel-server --release --locked -j 2
+
+      - name: Проверка артефакта
+        run: |
+          test -x target/release/vessel-server
+          ls -lh target/release/vessel-server
+
+      - name: Публикация в Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          files: target/release/vessel-server
+          fail_on_unmatched_files: false

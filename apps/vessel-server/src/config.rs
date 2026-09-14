@@ -79,10 +79,6 @@ impl ServerConfig {
         }
         Ok(Self { server: file.server, app })
     }
-
-    pub fn secrets_file(&self) -> PathBuf {
-        self.server.data_dir.join("secrets.json")
-    }
 }
 
 use std::path::Path;
