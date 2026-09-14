@@ -105,7 +105,8 @@ impl SecretStore {
         self.remove_named(key.name())
     }
 
-    /// Динамический ключ по имени — для VPN-профилей (`vpn-profile:<id>`).
+    /// Динамический ключ по имени — для токенов Vessel Server (`vessel-server:<id>`)
+    /// и других именованных секретов.
     pub fn set_named(&self, name: &str, value: &str) -> Result<SecretBackend> {
         if self.system_enabled
             && Entry::new(SERVICE_NAME, name)

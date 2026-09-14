@@ -63,22 +63,6 @@ pub struct HotkeyBindings {
     pub volume_down: String,
 }
 
-/// Метаданные VPN-профиля. Секреты (uuid, ключи) лежат в SecretStore
-/// под именем `vpn-profile:<id>` — здесь только то, что не жалко показывать.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct VpnProfileConfig {
-    pub id: String,
-    pub name: String,
-    /// "vless" | "amnezia"
-    pub kind: String,
-    pub server: String,
-    pub port: u16,
-    /// Человекочитаемая подпись транспорта: "Reality", "TLS", "WS", "AWG"…
-    pub transport: String,
-    pub created_at_ms: i64,
-    pub updated_at_ms: i64,
-}
-
 /// Экземпляр Vessel Server (не тип! тип всегда Vessel Server, это конфиг
 /// подключения): id — стабильный ключ в provider_routing и в SecretStore
 /// (`vessel-server:<id>`), url — базовый адрес API.
@@ -104,7 +88,6 @@ impl Default for HotkeyBindings {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AppConfig {
-    pub server_url: String,
     pub theme: String,
     pub language: String,
     pub audio_output: Option<String>,
@@ -113,14 +96,12 @@ pub struct AppConfig {
     pub search_debounce_ms: u64,
     pub frame_limit: u16,
     pub onboarding_completed: bool,
-    pub guest_mode: bool,
     pub soundcloud_enabled: bool,
     pub yandex_enabled: bool,
     pub deezer_enabled: bool,
     pub spotify_enabled: bool,
     pub youtube_music_enabled: bool,
     pub soundcloud_client_id_override: Option<String>,
-    pub soundcloud_client_id_refresh_at_ms: Option<i64>,
     pub global_hotkeys_enabled: bool,
     pub hotkeys: HotkeyBindings,
     pub keybindings_notice_seen: bool,
@@ -145,17 +126,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub youtube_potoken_provider: Option<String>,
     /// Источник аудио для Spotify-треков: "youtube_music" | "deezer".
-    /// None = родной Spotify-плеер (premium).
+    /// None = авто (цепочка Deezer → YouTube Music).
     #[serde(default)]
     pub spotify_playback_source: Option<String>,
-    #[serde(default)]
-    pub vpn_profiles: Vec<VpnProfileConfig>,
-    /// Последний профиль, к которому подключались (для UI).
-    #[serde(default)]
-    pub vpn_active_profile_id: Option<String>,
-    /// Мастер-выключатель VPN: включён — подключается сам при каждом старте.
-    #[serde(default)]
-    pub vpn_enabled: bool,
     /// Экземпляры Vessel Server, к которым может обращаться клиент.
     #[serde(default)]
     pub vessel_servers: Vec<VesselServerConfig>,
@@ -169,7 +142,6 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server_url: "https://api.noverplay.space".to_string(),
             theme: "cyan".to_string(),
             language: "ru".to_string(),
             audio_output: None,
@@ -178,14 +150,12 @@ impl Default for AppConfig {
             search_debounce_ms: 280,
             frame_limit: 30,
             onboarding_completed: false,
-            guest_mode: false,
             soundcloud_enabled: true,
             yandex_enabled: true,
             deezer_enabled: true,
             spotify_enabled: true,
             youtube_music_enabled: true,
             soundcloud_client_id_override: None,
-            soundcloud_client_id_refresh_at_ms: None,
             global_hotkeys_enabled: false,
             hotkeys: HotkeyBindings::default(),
             keybindings_notice_seen: false,
@@ -200,9 +170,6 @@ impl Default for AppConfig {
             recommendation_providers: None,
             youtube_potoken_provider: None,
             spotify_playback_source: None,
-            vpn_profiles: Vec::new(),
-            vpn_active_profile_id: None,
-            vpn_enabled: false,
             vessel_servers: Vec::new(),
             provider_routing: std::collections::BTreeMap::new(),
         }
@@ -232,14 +199,6 @@ impl AppConfig {
         self.cover_cache_mb = self.cover_cache_mb.clamp(16, 1024);
         self.search_debounce_ms = self.search_debounce_ms.clamp(100, 2_000);
         self.frame_limit = self.frame_limit.clamp(10, 60);
-        self.server_url = self.server_url.trim_end_matches('/').to_string();
-        if matches!(
-            self.server_url.as_str(),
-            "https://api.noverplay.ru" | "http://api.noverplay.ru"
-        ) {
-            // старый домен умер даже не родившись, тащить его дальше было бы некромантией для бедных
-            self.server_url = "https://api.noverplay.space".to_string();
-        }
         self.soundcloud_client_id_override = self
             .soundcloud_client_id_override
             .map(|value| value.trim().to_string())
@@ -288,16 +247,6 @@ mod tests {
         assert_eq!(config.volume_percent, 100);
         assert_eq!(config.frame_limit, 60);
         assert_eq!(config.search_debounce_ms, 100);
-    }
-
-    #[test]
-    fn dead_server_domain_is_moved_to_the_real_one() {
-        let config = AppConfig {
-            server_url: "https://api.noverplay.ru/".to_string(),
-            ..AppConfig::default()
-        }
-        .normalized();
-        assert_eq!(config.server_url, "https://api.noverplay.space");
     }
 
     #[test]

@@ -111,8 +111,9 @@ pub trait MusicProvider: Send + Sync {
         self.playback_source(track).await
     }
 
-    /// true у ServerProvider: провайдер исполняется на Vessel Server. Плеер
-    /// сначала пробует серверный резолв, и только потом локальную цепочку.
+    /// true у ServerProvider: провайдер исполняется на Vessel Server.
+    /// Маркировка для диагностики/аттрибуции — Runtime маршрутизацию
+    /// определяет по реестру (apply_provider_routing), а не по этому флагу.
     fn is_remote(&self) -> bool {
         false
     }

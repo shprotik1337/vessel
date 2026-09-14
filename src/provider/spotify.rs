@@ -1,23 +1,13 @@
-﻿use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
-use aes::{
-    Aes128,
-    cipher::{BlockEncrypt, KeyInit as AesKeyInit, generic_array::GenericArray},
-};
 use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use hmac::{Hmac, Mac};
 use reqwest::{
     Client,
-    header::{AUTHORIZATION, COOKIE, HeaderValue, USER_AGENT},
+    header::{AUTHORIZATION, COOKIE, HeaderValue},
 };
-use serde::Deserialize;
 use serde_json::Value;
 use sha1::Sha1;
 use url::Url;
@@ -32,13 +22,11 @@ use crate::{
 
 type HmacSha1 = Hmac<Sha1>;
 
-const API: &str = "https://api.spotify.com/v1";
 const PATHFINDER: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
 const SESSION_TOKEN_URL: &str = "https://open.spotify.com/api/token";
 const SERVER_TIME_URL: &str = "https://open.spotify.com/api/server-time";
 const CLIENT_TOKEN_URL: &str = "https://clienttoken.spotify.com/v1/clienttoken";
 const TOTP_SECRETS_URL: &str = "https://git.gay/thereallo/totp-secrets/raw/branch/main/secrets/secretDict.json";
-const SPCLIENT: &str = "https://spclient.wg.spotify.com";
 const WEB_URL: &str = "https://open.spotify.com";
 const PAGE_SIZE: usize = 50;
 const CLIENT_VERSION: &str = "1.2.87.27.ga2033a72";
@@ -48,15 +36,10 @@ const SEARCH_TRACKS_HASH: &str = "5307479c18ff24aa1bd70691fdb0e77734bede8cce3bd7
 const SEARCH_ARTISTS_HASH: &str = "0e6f9020a66fe15b93b3bb5c7e6484d1d8cb3775963996eaede72bac4d97e909";
 const SEARCH_ALBUMS_HASH: &str = "a71d2c993fc98e1c880093738a55a38b57e69cc4ce5a8c113e6c5920f9513ee2";
 const SEARCH_PLAYLISTS_HASH: &str = "fc3a690182167dbad20ac7a03f842b97be4e9737710600874cb903f30112ad58";
-const GET_TRACK_HASH: &str = "ae85b52abb74d20a4c331d4143d4772c95f34757bfa8c625474b912b9055b5c0";
 const GET_ALBUM_HASH: &str = "8f4cd5650f9d80349dbe68684057476d8bf27a5c51687b2b1686099ab5631589";
 const FETCH_PLAYLIST_HASH: &str = "19ff1327c29e99c208c86d7a9d8f1929cfdf3d3202a0ff4253c821f1901aa94d";
 const ARTIST_OVERVIEW_HASH: &str = "4bc52527bb77a5f8bbb9afe491e9aa725698d29ab73bff58d49169ee29800167";
 const ARTIST_DISCOGRAPHY_HASH: &str = "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0";
-/// Секрет SpotiCrypt: ключ расшифровки выводится из file_id, IV — сам file_id.
-const SPOTICRYPT_SECRET: &[u8; 16] = b"g+1s?Fz?k=z?j1?0";
-/// Первые 0xA7 байт расшифрованного файла — заголовок, его отбрасываем.
-const AUDIO_HEADER_SKIP: usize = 0xA7;
 
 pub struct SpotifyProvider {
     http: Client,
@@ -64,8 +47,6 @@ pub struct SpotifyProvider {
     cookie: String,
     access_token: Mutex<Option<(String, String, Instant)>>,
     totp_state: Mutex<Option<(String, Vec<u8>)>>,
-    /// Резолвер Spotify → YouTube (для аудио без premium)
-    youtube: Option<super::youtube::YoutubeResolver>,
 }
 
 
@@ -83,13 +64,10 @@ impl SpotifyProvider {
         if !cookie.to_ascii_lowercase().contains("sp_dc=") {
             bail!("в строке нет cookie sp_dc — вставь хотя бы sp_dc")
         }
-        // Прокси: ручной из настроек, либо активный VPN-прокси (VPN приоритетнее,
-        // если ручной не задан).
         let proxy = proxy
             .map(str::trim)
             .filter(|proxy| !proxy.is_empty())
-            .map(str::to_owned)
-            .or_else(crate::vpn::current_proxy);
+            .map(str::to_owned);
         // Кладём sp_dc/sp_key в cookie jar, чтобы reqwest слал их автоматически
         // на все поддомены spotify.com.
         let jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
@@ -122,13 +100,7 @@ impl SpotifyProvider {
             cookie,
             access_token: Mutex::new(None),
             totp_state: Mutex::new(None),
-            youtube: None,
         })
-    }
-
-    /// Подключает резолвер Spotify → YouTube для аудио без premium.
-    pub fn set_youtube_resolver(&mut self, resolver: super::youtube::YoutubeResolver) {
-        self.youtube = Some(resolver);
     }
 
     /// Получает (и кэширует) access_token через sp_dc.
@@ -303,25 +275,6 @@ impl SpotifyProvider {
             .context("Spotify не вернул granted_token в client token")
     }
 
-    async fn get_json<T: serde::de::DeserializeOwned>(&self, url: Url) -> Result<T> {
-        let (token, client_token) = self.access_token().await?;
-        let response = self
-            .http
-            .get(url)
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .header("client-token", &client_token)
-            .header(COOKIE, &self.cookie)
-            .send()
-            .await
-            .context("Spotify не ответил")?
-            .error_for_status()
-            .context("Spotify отклонил запрос")?;
-        response
-            .json()
-            .await
-            .context("Spotify вернул непонятный JSON")
-    }
-
     /// Запрос к внутреннему GraphQL Pathfinder API (работает с web-player токеном).
     async fn pathfinder(
         &self,
@@ -358,128 +311,6 @@ impl SpotifyProvider {
             bail!("Pathfinder: {errors}")
         }
         Ok(value)
-    }
-
-    /// Полный трек: скачивает зашифрованный файл и расшифровывает его.
-    async fn prepare_full_track(&self, track_id: &str) -> Result<PathBuf> {
-        let cached_mp3 = spotify_cache_dir().join(format!("{track_id}.mp3"));
-        let cached_m4a = spotify_cache_dir().join(format!("{track_id}.m4a"));
-        if cached_mp3
-            .metadata()
-            .is_ok_and(|metadata| metadata.len() > 0)
-        {
-            return Ok(cached_mp3);
-        }
-        if cached_m4a
-            .metadata()
-            .is_ok_and(|metadata| metadata.len() > 0)
-        {
-            return Ok(cached_m4a);
-        }
-
-        let (token, client_token) = self.access_token().await?;
-        let spclient_headers = |req: reqwest::RequestBuilder| {
-            req.header(AUTHORIZATION, format!("Bearer {token}"))
-                .header("client-token", &client_token)
-                .header(COOKIE, &self.cookie)
-        };
-
-        // 1. track-playback: получаем file_id из манифеста
-        let playback_url = Url::parse(&format!(
-            "https://gue1-spclient.spotify.com/track-playback/v1/media/spotify:track:{track_id}?manifestFileFormat=file_ids_mp4"
-        ))?;
-        let playback: Value = spclient_headers(self.http.get(playback_url))
-            .send()
-            .await
-            .context("Spotify track-playback не ответил")?
-            .error_for_status()
-            .context("Spotify track-playback отклонил запрос")?
-            .json()
-            .await
-            .context("Spotify track-playback вернул непонятный JSON")?;
-
-        // Выбираем лучший аудиофайл (наибольший битрейт)
-        let manifest = playback
-            .pointer(&format!("/media/spotify:track:{track_id}/item/manifest/file_ids_mp4"))
-            .or_else(|| {
-                playback
-                    .get("media")
-                    .and_then(|m| m.as_object())
-                    .and_then(|map| map.values().next())
-                    .and_then(|item| item.get("item"))
-                    .and_then(|i| i.get("manifest"))
-                    .and_then(|m| m.get("file_ids_mp4"))
-            })
-            .and_then(Value::as_array)
-            .context("track-playback не отдал манифест")?;
-        let entry = manifest
-            .iter()
-            .filter(|entry| {
-                entry
-                    .get("track_type")
-                    .and_then(Value::as_str)
-                    .map(|t| t == "AUDIO")
-                    .unwrap_or(false)
-            })
-            .max_by_key(|entry| entry.get("bitrate").and_then(Value::as_u64).unwrap_or(0))
-            .context("в манифесте нет аудиофайлов")?;
-        let file_id = entry
-            .get("file_id")
-            .and_then(Value::as_str)
-            .context("у аудиофайла нет file_id")?
-            .to_string();
-        let format_id = entry
-            .get("format")
-            .and_then(Value::as_str)
-            .unwrap_or("11");
-
-        // 2. storage-resolve: получаем CDN URL
-        let resolve_url = Url::parse(&format!(
-            "https://gue1-spclient.spotify.com/storage-resolve/v2/files/audio/interactive/{format_id}/{file_id}?version=10000000&product=9&platform=39&alt=json"
-        ))?;
-        let resolved: Value = spclient_headers(self.http.get(resolve_url))
-            .send()
-            .await
-            .context("Spotify storage-resolve не ответил")?
-            .error_for_status()
-            .context("Spotify storage-resolve отклонил запрос")?
-            .json()
-            .await
-            .context("Spotify storage-resolve вернул непонятный JSON")?;
-        let cdn_url = resolved
-            .get("cdnurl")
-            .and_then(Value::as_array)
-            .and_then(|urls| urls.iter().find(|u| u.as_str().map(|s| !s.contains("scdn.co/audio/")).unwrap_or(false)))
-            .or_else(|| {
-                resolved
-                    .get("cdnurl")
-                    .and_then(Value::as_array)
-                    .and_then(|urls| urls.first())
-            })
-            .and_then(Value::as_str)
-            .context("storage-resolve не отдал CDN URL")?;
-        let media_url = Url::parse(cdn_url).context("Spotify отдал битую CDN ссылку")?;
-
-        // 3. Скачиваем аудио (формат 11 = MP4/AAC, расшифровка не нужна)
-        let bytes = self
-            .http
-            .get(media_url)
-            .header(USER_AGENT, HeaderValue::from_static(BROWSER_UA))
-            .send()
-            .await
-            .context("не удалось скачать аудио Spotify")?
-            .error_for_status()
-            .context("Spotify CDN отклонил запрос аудио")?
-            .bytes()
-            .await
-            .context("не удалось прочитать аудио Spotify")?;
-        if bytes.is_empty() {
-            bail!("Spotify CDN вернул пустое аудио")
-        }
-        let extension = if format_id == "11" { "m4a" } else { "m4a" };
-        let path = spotify_cache_dir().join(format!("{track_id}.{extension}"));
-        write_cache(&path, &bytes)?;
-        Ok(path)
     }
 }
 
@@ -842,20 +673,12 @@ let popular_tracks: Vec<TrackRef> = artist
     }
 
     async fn playback_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
-        // Если трек уже скачан в общий кэш — играем из него
-        if let Some(source) = crate::provider::cache::cached_source(track) {
-            return Ok(source);
-        }
-        // Spotify-аудио через YouTube (без premium)
-        if let Some(youtube) = &self.youtube {
-            match youtube.resolve_track(track).await {
-                Ok(source) => return Ok(source),
-                Err(error) => crate::dlog!("[spotify] YouTube resolve failed: {error:#}"),
-            }
-        }
-        // Fallback: оригинальный Spotify-поток (требует premium)
-        let path = self.prepare_full_track(&track.id).await?;
-        full_cache_source(&path)
+        // Spotify — только метаданные. Если трек уже скачан в общий кэш —
+        // играем из него; иначе отказ: аудио Spotify не получаем никогда
+        // (native premium-путь удалён), цепочка каталогов в Runtime
+        // подставит Deezer/YouTube Music.
+        crate::provider::cache::cached_source(track)
+            .context("аудио Spotify: нет в кэше — играет цепочка каталогов Runtime")
     }
 }
 
@@ -1560,32 +1383,6 @@ fn extract_pathfinder_playlists(value: &Value) -> Vec<CollectionItem> {
         .collect()
 }
 
-/// Извлекает csrf-токен из __NEXT_DATA__ на странице подтверждения.
-fn extract_csrf(html: &str) -> Option<String> {
-    let marker = r#"<script id="__NEXT_DATA__" type="application/json"#;
-    let start = html.find(marker)?;
-    let json_start = html[start..].find('>')?;
-    let json_str = &html[start + json_start + 1..];
-    let end = json_str.find("</script>")?;
-    let json: Value = serde_json::from_str(&json_str[..end]).ok()?;
-    json.pointer("/props/initialToken")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-/// Декодирует Spotify-идентификатор (base62, инвертированный алфавит) в 16-байтовый gid.
-fn base62_to_gid(media_id: &str) -> String {
-    const ALPHABET: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let mut value: u128 = 0;
-    for ch in media_id.chars() {
-        let Some(digit) = ALPHABET.find(ch) else {
-            return String::new();
-        };
-        value = value * 62 + digit as u128;
-    }
-    format!("{value:032x}")
-}
-
 fn browser_headers() -> reqwest::header::HeaderMap {
     use reqwest::header::*;
     let mut h = reqwest::header::HeaderMap::new();
@@ -1629,390 +1426,12 @@ fn client_token_headers(cookie: &str) -> reqwest::header::HeaderMap {
     h
 }
 
-fn spotify_cache_dir() -> PathBuf {
-    std::env::temp_dir().join("vessel").join("spotify-cache")
-}
-
-fn write_cache(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().context("повреждённый путь кэша Spotify")?;
-    fs::create_dir_all(parent).context("не удалось создать кэш Spotify")?;
-    let temporary = path.with_extension("part");
-    fs::write(&temporary, bytes).context("не удалось записать кэш Spotify")?;
-    if path.exists() {
-        fs::remove_file(path).context("не удалось обновить кэш Spotify")?;
-    }
-    fs::rename(temporary, path).context("не удалось завершить кэш Spotify")
-}
-
-fn full_cache_source(path: &Path) -> Result<PlaybackSource> {
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("mp3");
-    Ok(PlaybackSource {
-        url: Url::from_file_path(path)
-            .map_err(|_| anyhow::anyhow!("повреждённый путь кэша Spotify"))?,
-        headers: BTreeMap::new(),
-        mime_type: Some(
-            if extension.eq_ignore_ascii_case("ogg") {
-                "audio/ogg"
-            } else if extension.eq_ignore_ascii_case("m4a") {
-                "audio/mp4"
-            } else {
-                "audio/mpeg"
-            }
-            .to_string(),
-        ),
-        supports_range: true,
-        expires_at_ms: None,
-        capability: PlaybackCapability::Full,
-    })
-}
-
-fn file_extension_from_url(url: &Url) -> Option<&str> {
-    url.path_segments()
-        .and_then(|mut segments| segments.next_back())
-        .and_then(|segment| segment.rsplit_once('.').map(|(_, ext)| ext))
-}
-
-/// Дешифровка SpotiCrypt: AES-128-CTR, ключ = file_id XOR secret, IV = file_id.
-fn decrypt_audio(encrypted: &[u8], file_id: &str) -> Result<Vec<u8>> {
-    let file_id_bytes = decode_file_id(file_id)?;
-    let mut key = [0u8; 16];
-    for (index, byte) in file_id_bytes.iter().enumerate() {
-        key[index] = byte ^ SPOTICRYPT_SECRET[index];
-    }
-    let cipher = Aes128::new(GenericArray::from_slice(&key));
-    let mut counter = file_id_bytes;
-    let mut output = Vec::with_capacity(encrypted.len());
-    for chunk in encrypted.chunks(16) {
-        let mut keystream = GenericArray::clone_from_slice(&counter);
-        cipher.encrypt_block(&mut keystream);
-        for (byte, stream) in chunk.iter().zip(keystream.iter()) {
-            output.push(byte ^ stream);
-        }
-        increment_counter(&mut counter);
-    }
-    if output.len() <= AUDIO_HEADER_SKIP {
-        bail!("расшифрованный аудиофайл Spotify подозрительно мал")
-    }
-    output.drain(..AUDIO_HEADER_SKIP);
-    Ok(output)
-}
-
-fn decode_file_id(value: &str) -> Result<[u8; 16]> {
-    let decoded = hex::decode(value).context("повреждённый file_id Spotify")?;
-    decoded
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("file_id Spotify не 16 байт"))
-}
-
-fn increment_counter(counter: &mut [u8; 16]) {
-    for byte in counter.iter_mut().rev() {
-        *byte = byte.wrapping_add(1);
-        if *byte != 0 {
-            break;
-        }
-    }
-}
-
 fn entity_id(url: &Url, kind: &str) -> Option<String> {
     url.path_segments()?.collect::<Vec<_>>().windows(2).find_map(
         |pair| {
             (pair[0].eq_ignore_ascii_case(kind) && !pair[1].contains('/')).then(|| pair[1].to_string())
         },
     )
-}
-
-fn map_track(track: ApiTrack) -> Option<TrackRef> {
-    let id = track.id?;
-    if !id.starts_with("spotify:track:") {
-        return None;
-    }
-    let bare_id = id.trim_start_matches("spotify:track:");
-    Some(TrackRef {
-        provider: ProviderKind::Spotify,
-        id: bare_id.to_string(),
-        title: track.name,
-        artists: track
-            .artists
-            .into_iter()
-            .map(|artist| artist.name)
-            .collect(),
-        duration_ms: track.duration_ms,
-        artwork_url: track
-            .album
-            .as_ref()
-            .and_then(|album| album.images.first())
-            .and_then(|image| Url::parse(&image.url).ok()),
-        web_url: Url::parse(&format!("{WEB_URL}/track/{bare_id}"))
-            .expect("статический адрес трека Spotify"),
-        capability: PlaybackCapability::Full,
-        genres: Vec::new(),
-        explicit: track.explicit.unwrap_or(false),
-        drm: true,
-            isrc: None,
-    })
-}
-
-fn map_playlist_item(item: ApiPlaylistItem) -> Option<CollectionItem> {
-    let id = item.id?;
-    let bare_id = id.trim_start_matches("spotify:playlist:");
-    Some(CollectionItem {
-        kind: CollectionKind::Playlist,
-        provider: ProviderKind::Spotify,
-        id: bare_id.to_string(),
-        title: item.name,
-        subtitle: item.owner.map(|owner| owner.display_name).unwrap_or_default(),
-        artwork_url: item
-            .images
-            .first()
-            .and_then(|image| Url::parse(&image.url).ok()),
-        web_url: Url::parse(&format!("{WEB_URL}/playlist/{bare_id}"))
-            .expect("статический адрес плейлиста Spotify"),
-        track_count: item.tracks.map(|count| count.total).unwrap_or(0),
-    })
-}
-
-fn map_album_item(item: ApiAlbumItem) -> Option<CollectionItem> {
-    let id = item.id?;
-    let bare_id = id.trim_start_matches("spotify:album:");
-    Some(CollectionItem {
-        kind: CollectionKind::Album,
-        provider: ProviderKind::Spotify,
-        id: bare_id.to_string(),
-        title: item.name,
-        subtitle: item
-            .artists
-            .first()
-            .map(|artist| artist.name.clone())
-            .unwrap_or_default(),
-        artwork_url: item
-            .images
-            .first()
-            .and_then(|image| Url::parse(&image.url).ok()),
-        web_url: Url::parse(&format!("{WEB_URL}/album/{bare_id}"))
-            .expect("статический адрес альбома Spotify"),
-        track_count: item.total_tracks.unwrap_or(0),
-    })
-}
-
-fn map_artist_item(item: ApiArtistItem) -> Option<CollectionItem> {
-    let id = item.id?;
-    let bare_id = id.trim_start_matches("spotify:artist:");
-    let fans = item.followers.map(|count| count.total).unwrap_or(0);
-    Some(CollectionItem {
-        kind: CollectionKind::Artist,
-        provider: ProviderKind::Spotify,
-        id: bare_id.to_string(),
-        title: item.name,
-        subtitle: format!("Артист · {fans} слушателей"),
-        artwork_url: item
-            .images
-            .first()
-            .and_then(|image| Url::parse(&image.url).ok()),
-        web_url: Url::parse(&format!("{WEB_URL}/artist/{bare_id}"))
-            .expect("статический адрес артиста Spotify"),
-        track_count: 0,
-    })
-}
-
-fn map_album_as_release(album: ApiAlbumItem) -> Option<CollectionItem> {
-    let item = map_album_item(album)?;
-    Some(CollectionItem {
-        subtitle: item.subtitle,
-        ..item
-    })
-}
-
-#[derive(Deserialize)]
-struct SearchResponse {
-    #[serde(default)]
-    tracks: PagedItems<ApiTrack>,
-    #[serde(default)]
-    playlists: Option<PagedItems<ApiPlaylistItem>>,
-    #[serde(default)]
-    albums: Option<PagedItems<ApiAlbumItem>>,
-    #[serde(default)]
-    artists: Option<PagedItems<ApiArtistItem>>,
-}
-
-struct PagedItems<T> {
-    items: Vec<T>,
-    next: Option<String>,
-}
-
-impl<T> Default for PagedItems<T> {
-    fn default() -> Self {
-        Self {
-            items: Vec::new(),
-            next: None,
-        }
-    }
-}
-
-// Вручную реализуем Deserialize, чтобы не требовать T: Default
-impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for PagedItems<T> {
-    fn deserialize<D: serde::de::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        struct PagedVisitor<T>(std::marker::PhantomData<T>);
-
-        impl<'de, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for PagedVisitor<T> {
-            type Value = PagedItems<T>;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("объект с полями items и next")
-            }
-
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<Self::Value, A::Error> {
-                let mut items: Option<Vec<T>> = None;
-                let mut next: Option<String> = None;
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "items" => items = Some(map.next_value()?),
-                        "next" => next = Some(map.next_value()?),
-                        _ => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
-                        }
-                    }
-                }
-                Ok(PagedItems {
-                    items: items.unwrap_or_default(),
-                    next,
-                })
-            }
-        }
-
-        d.deserialize_map(PagedVisitor(std::marker::PhantomData))
-    }
-}
-
-#[derive(Deserialize)]
-struct ApiTrack {
-    id: Option<String>,
-    name: String,
-    duration_ms: Option<u64>,
-    explicit: Option<bool>,
-    artists: Vec<ApiArtist>,
-    album: Option<ApiAlbumRef>,
-}
-
-#[derive(Deserialize)]
-struct ApiArtist {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct ApiAlbumRef {
-    images: Vec<ApiImage>,
-}
-
-#[derive(Deserialize)]
-struct ApiImage {
-    url: String,
-}
-
-/// Страница /v1/me/tracks: items[].track (ApiTrack) + total.
-#[derive(Deserialize)]
-struct LikedPage {
-    items: Vec<LikedItem>,
-    total: usize,
-}
-
-#[derive(Deserialize)]
-struct LikedItem {
-    track: ApiTrack,
-}
-
-#[derive(Deserialize)]
-struct ApiPlaylistItem {
-    id: Option<String>,
-    name: String,
-    owner: Option<ApiOwner>,
-    images: Vec<ApiImage>,
-    tracks: Option<ApiTracksSummary>,
-}
-
-#[derive(Deserialize)]
-struct ApiOwner {
-    display_name: String,
-}
-
-#[derive(Deserialize)]
-struct ApiTracksSummary {
-    total: usize,
-}
-
-#[derive(Deserialize)]
-struct ApiAlbumItem {
-    id: Option<String>,
-    name: String,
-    artists: Vec<ApiArtist>,
-    images: Vec<ApiImage>,
-    total_tracks: Option<usize>,
-}
-
-#[derive(Deserialize)]
-struct ApiArtistItem {
-    id: Option<String>,
-    name: String,
-    images: Vec<ApiImage>,
-    followers: Option<ApiFollowers>,
-}
-
-#[derive(Deserialize)]
-struct ApiFollowers {
-    total: usize,
-}
-
-#[derive(Deserialize)]
-struct ArtistFull {
-    name: String,
-    images: Vec<ApiImage>,
-}
-
-#[derive(Deserialize)]
-struct TopTracks {
-    tracks: Vec<ApiTrack>,
-}
-
-#[derive(Deserialize)]
-struct AlbumsResponse {
-    #[serde(default)]
-    items: Vec<ApiAlbumItem>,
-    next: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct AlbumTracksResponse {
-    #[serde(default)]
-    items: Vec<ApiTrack>,
-    #[allow(dead_code)]
-    next: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct PlaylistDetails {
-    name: String,
-    description: Option<String>,
-    images: Vec<ApiImage>,
-    tracks: PagedItems<ApiTrack>,
-}
-
-#[derive(Deserialize)]
-struct AlbumDetails {
-    name: String,
-    artists: Vec<ApiArtist>,
-    images: Vec<ApiImage>,
-    tracks: PagedItems<ApiTrack>,
-}
-
-#[derive(Deserialize)]
-struct Recommendations {
-    #[serde(default)]
-    tracks: Vec<ApiTrack>,
 }
 
 #[cfg(test)]
@@ -2048,24 +1467,5 @@ mod tests {
             entity_id(&url, "playlist").as_deref(),
             Some("37i9dQZF1DXcBWIGoYBM5M")
         );
-    }
-
-    #[test]
-    fn spoticrypt_key_is_derived_from_file_id() {
-        let file_id = hex::decode("0123456789abcdef0123456789abcdef").unwrap();
-        let mut key = [0u8; 16];
-        for (index, byte) in file_id.iter().enumerate() {
-            key[index] = byte ^ SPOTICRYPT_SECRET[index];
-        }
-        assert_ne!(key, [0u8; 16]);
-    }
-
-    #[test]
-    fn full_cache_source_is_not_downgraded_to_preview() {
-        let path = std::path::Path::new("C:/cache/spotify-track.ogg");
-        let source = full_cache_source(path).unwrap();
-        assert_eq!(source.capability, PlaybackCapability::Full);
-        assert_eq!(source.mime_type.as_deref(), Some("audio/ogg"));
-        assert_eq!(source.url.scheme(), "file");
     }
 }

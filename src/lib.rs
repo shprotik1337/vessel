@@ -1,4 +1,3 @@
-pub mod account;
 pub mod action;
 pub mod app;
 pub mod audio;
@@ -15,7 +14,6 @@ pub mod runtime;
 pub mod secrets;
 pub mod storage;
 pub mod user;
-pub mod vpn;
 pub mod wave;
 
 pub const APP_NAME: &str = "vessel";

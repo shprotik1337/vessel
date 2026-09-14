@@ -46,11 +46,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 md5 = "0.7"
 aes = "0.8"
 open = "5"
-librespot-core = "0.8"
-librespot-audio = "0.8"
-librespot-oauth = "0.8"
-librespot-protocol = "0.8"
-protobuf = "3"
 vergen = "=9.0.6"
 
 [target.'cfg(unix)'.dependencies]

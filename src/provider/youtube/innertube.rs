@@ -4,7 +4,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use crate::vpn::ApplyVpnProxy;
 use reqwest::{
     Client,
     header::{CONTENT_TYPE, USER_AGENT},
@@ -15,21 +14,12 @@ use sha1::{Digest, Sha1};
 use super::clients::{ORIGIN_YOUTUBE_MUSIC, WEB_REMIX, YouTubeClient};
 
 fn http_client() -> std::sync::Arc<Client> {
-    use std::sync::{Arc, Mutex, OnceLock};
-    static CLIENT: OnceLock<Mutex<(Option<String>, Arc<Client>)>> = OnceLock::new();
-    let cell = CLIENT.get_or_init(|| Mutex::new((None, Arc::new(new_client()))));
-    let mut cached = cell.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let active = crate::vpn::current_proxy();
-    if cached.0 != active {
-        cached.1 = Arc::new(new_client());
-        cached.0 = active;
-    }
-    Arc::clone(&cached.1)
+    static CLIENT: std::sync::OnceLock<std::sync::Arc<Client>> = std::sync::OnceLock::new();
+    std::sync::Arc::clone(CLIENT.get_or_init(|| std::sync::Arc::new(new_client())))
 }
 
 fn new_client() -> Client {
     Client::builder()
-        .apply_vpn_proxy()
         .build()
         .expect("innertube http client")
 }

@@ -1,6 +1,5 @@
 use crate::{
     config::AppConfig,
-    model::ProviderKind,
     protocol::kind_from_segment,
     provider::{
         ProviderRegistry,
@@ -63,23 +62,7 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: b
     {
         let proxy = config.spotify_proxy.as_deref();
         match SpotifyProvider::with_proxy(sp_dc, proxy) {
-            Ok(mut provider) => {
-                // Резолвер Spotify→YouTube получает те же YouTube-секреты:
-                // на сервере без них матч в YTM пустой, а стрим режется до 1 MiB.
-                if let Ok(mut resolver) = crate::provider::youtube::YoutubeResolver::new() {
-                    if let Some(cookie) = youtube_cookie(secrets, &mut notices) {
-                        resolver.set_cookie(Some(cookie));
-                    }
-                    if let Some(refresh) = youtube_refresh(secrets, &mut notices) {
-                        resolver.set_oauth_refresh(Some(refresh));
-                    }
-                    if let Some(potoken_url) = youtube_potoken_url(config) {
-                        resolver.set_potoken_provider(Some(potoken_url));
-                    }
-                    provider.set_youtube_resolver(resolver);
-                }
-                registry.register(provider);
-            }
+            Ok(provider) => registry.register(provider),
             Err(error) => notices.push(format!("Spotify не настроен: {error}")),
         }
     }

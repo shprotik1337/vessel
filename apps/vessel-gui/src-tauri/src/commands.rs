@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use vessel_core::{
     credentials::CredentialKind,
     model::{Playlist, RepeatMode, SearchProvider, TrackRef},
-    secrets::SecretKey,
     storage::HistoryEntry,
 };
 use serde::Serialize;
@@ -156,7 +155,6 @@ pub async fn artist_profile(
     provider: String,
     artist_id: String,
 ) -> Result<vessel_core::provider::ArtistProfile, String> {
-    use vessel_core::model::ProviderKind;
     let kind = provider_kind_from_str(&provider)?;
     let registry = {
         let core = lock(&core);
@@ -1069,8 +1067,6 @@ pub async fn spotify_capture_cookies(
     app: AppHandle,
     core: CoreState<'_>,
 ) -> Result<String, String> {
-    use vessel_core::provider::spotify::SpotifyProvider;
-
     let cookie = crate::webview_cookies::collect_spotify_cookies(&app).map_err(|e| e.to_string())?;
     // Р”РѕСЃС‚Р°С‘Рј С‚РѕР»СЊРєРѕ sp_dc / sp_key вЂ” РёС… Р¶РґС‘С‚ РїСЂРѕРІР°Р№РґРµСЂ.
     let cookie_line = {
@@ -1600,7 +1596,6 @@ pub async fn set_recommendation_providers(core: CoreState<'_>, providers: String
 pub async fn reset_settings(core: CoreState<'_>) -> Result<(), String> {
     let mut core = lock(&core);
     let defaults = vessel_core::config::AppConfig::default();
-    core.config.server_url = defaults.server_url;
     core.config.volume_percent = defaults.volume_percent;
     core.config.global_hotkeys_enabled = false;
     core.app.player.volume_percent = defaults.volume_percent;
@@ -1940,299 +1935,6 @@ pub fn get_users_dir(core: CoreState<'_>) -> Result<String, String> {
     Ok(dir.to_string_lossy().into_owned())
 }
 
-
-
-
-// ---------- VPN ----------
-
-fn vpn_secret_name(id: &str) -> String {
-    format!("vpn-profile:{id}")
-}
-
-#[tauri::command]
-pub fn vpn_status(core: CoreState<'_>) -> Result<serde_json::Value, String> {
-    let core = lock(&core);
-    let status = core.vpn.status();
-    Ok(serde_json::json!({
-        "status": status.status,
-        "profile_id": status.profile_id,
-        "profile_name": status.profile_name,
-        "error": status.error,
-        "proxy_port": status.proxy_port,
-        "core_present": core.vpn.core_present(),
-        "core_path": core.vpn.core_binary_path(),
-        "enabled": core.config.vpn_enabled,
-    }))
-}
-
-#[tauri::command]
-pub fn vpn_profiles(
-    core: CoreState<'_>,
-) -> Result<Vec<vessel_core::config::VpnProfileConfig>, String> {
-    let core = lock(&core);
-    Ok(core.config.vpn_profiles.clone())
-}
-
-fn vless_transport_label(
-    security: &str,
-    transport: &vessel_core::vpn::vless::VlessTransport,
-) -> String {
-    let security_label = match security {
-        "reality" => "Reality",
-        "tls" => "TLS",
-        _ => "",
-    };
-    match (security_label.is_empty(), transport.kind()) {
-        (true, "tcp") => "TCP".to_string(),
-        (true, _) => transport.label(),
-        (false, "tcp") => security_label.to_string(),
-        (false, _) => format!("{security_label} · {}", transport.label()),
-    }
-}
-
-#[tauri::command]
-pub fn vpn_add_vless(
-    core: CoreState<'_>,
-    name: String,
-    uri: String,
-) -> Result<vessel_core::config::VpnProfileConfig, String> {
-    let uri = uri.trim();
-    let parsed = vessel_core::vpn::vless::parse_vless_uri(uri).map_err(|e| e.to_string())?;
-    let now = now_ms();
-    let display_name = {
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            parsed.name.clone().unwrap_or_else(|| parsed.host.clone())
-        } else {
-            trimmed.to_string()
-        }
-    };
-    let profile = vessel_core::config::VpnProfileConfig {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: display_name,
-        kind: "vless".to_string(),
-        server: parsed.host.clone(),
-        port: parsed.port,
-        transport: vless_transport_label(&parsed.security, &parsed.transport),
-        created_at_ms: now,
-        updated_at_ms: now,
-    };
-    let secret = serde_json::json!({ "uri": uri }).to_string();
-    let mut core = lock(&core);
-    core.runtime
-        .save_named_secret(&vpn_secret_name(&profile.id), &secret)
-        .map_err(|e| e.to_string())?;
-    core.config.vpn_profiles.push(profile.clone());
-    core.config.vpn_active_profile_id = Some(profile.id.clone());
-    core.app.config_dirty = true;
-    Ok(profile)
-}
-
-#[tauri::command]
-pub fn vpn_add_amnezia(
-    core: CoreState<'_>,
-    name: String,
-    config_text: String,
-) -> Result<vessel_core::config::VpnProfileConfig, String> {
-    let trimmed = config_text.trim();
-    // Amnezia экспортирует конфиг как ссылку vpn://… (zlib+base64url), либо
-    // можно вставить обычный текстовый AmneziaWG/WireGuard .conf.
-    let (parsed, description) = if trimmed.starts_with("vpn://") {
-        vessel_core::vpn::amnezia::parse_amnezia_vpn_uri(trimmed).map_err(|e| e.to_string())?
-    } else {
-        (
-            vessel_core::vpn::amnezia::parse_awg_conf(trimmed).map_err(|e| e.to_string())?,
-            None,
-        )
-    };
-    let now = now_ms();
-    let is_awg = parsed.obfuscation.jc.is_some() || parsed.obfuscation.h1.is_some();
-    let display_name = {
-        let trimmed = name.trim();
-        if trimmed.is_empty() {
-            description.unwrap_or_else(|| parsed.endpoint_host.clone())
-        } else {
-            trimmed.to_string()
-        }
-    };
-    let profile = vessel_core::config::VpnProfileConfig {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: display_name,
-        kind: "amnezia".to_string(),
-        server: parsed.endpoint_host.clone(),
-        port: parsed.endpoint_port,
-        transport: if is_awg { "AmneziaWG" } else { "WireGuard" }.to_string(),
-        created_at_ms: now,
-        updated_at_ms: now,
-    };
-    let secret = serde_json::json!({
-        "private_key": parsed.private_key,
-        "endpoint_host": parsed.endpoint_host,
-        "endpoint_port": parsed.endpoint_port,
-        "address": parsed.address,
-        "peer_public_key": parsed.peer_public_key,
-        "preshared_key": parsed.preshared_key,
-        "allowed_ips": parsed.allowed_ips,
-        "dns_servers": parsed.dns_servers,
-        "keepalive": parsed.keepalive,
-        "mtu": parsed.mtu,
-        "obfuscation": parsed.obfuscation,
-    })
-    .to_string();
-    let mut core = lock(&core);
-    core.runtime
-        .save_named_secret(&vpn_secret_name(&profile.id), &secret)
-        .map_err(|e| e.to_string())?;
-    core.config.vpn_profiles.push(profile.clone());
-    core.config.vpn_active_profile_id = Some(profile.id.clone());
-    core.app.config_dirty = true;
-    Ok(profile)
-}
-
-#[tauri::command]
-pub fn vpn_remove_profile(core: CoreState<'_>, id: String) -> Result<(), String> {
-    let mut core = lock(&core);
-    let active = core.vpn.status().profile_id;
-    if active.as_deref() == Some(id.as_str()) {
-        return Err("нельзя удалить подключённый профиль — сначала отключись".to_string());
-    }
-    core.config.vpn_profiles.retain(|p| p.id != id);
-    core.app.config_dirty = true;
-    let _ = core.runtime.remove_named_secret(&vpn_secret_name(&id));
-    Ok(())
-}
-
-#[tauri::command]
-pub fn vpn_connect(core: CoreState<'_>, id: String) -> Result<(), String> {
-    let profile = {
-        let core = lock(&core);
-        core.config
-            .vpn_profiles
-            .iter()
-            .find(|p| p.id == id)
-            .cloned()
-            .ok_or_else(|| "профиль не найден".to_string())?
-    };
-    let secret_json = {
-        let core = lock(&core);
-        core.runtime
-            .get_named_secret(&vpn_secret_name(&id))
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "секретные данные профиля не найдены — добавь профиль заново".to_string())?
-    };
-    let mut core = lock(&core);
-    core.config.vpn_active_profile_id = Some(id.clone());
-    core.app.config_dirty = true;
-    core.vpn
-        .connect(vessel_core::vpn::VpnConnectRequest {
-            profile_id: profile.id,
-            profile_name: profile.name,
-            kind: profile.kind,
-            server: profile.server,
-            port: profile.port,
-            secret_json,
-        })
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn vpn_set_enabled(core: CoreState<'_>, enabled: bool) -> Result<(), String> {
-    let mut core = lock(&core);
-    core.config.vpn_enabled = enabled;
-    core.app.config_dirty = true;
-    if !enabled {
-        core.vpn.disconnect();
-        return Ok(());
-    }
-    // Включаем: подключаемся к активному профилю (или первому доступному)
-    let profile = core
-        .config
-        .vpn_profiles
-        .iter()
-        .find(|p| Some(&p.id) == core.config.vpn_active_profile_id.as_ref())
-        .or_else(|| core.config.vpn_profiles.first())
-        .cloned();
-    let Some(profile) = profile else {
-        return Err("нет ни одного профиля — сначала добавь подключение".to_string());
-    };
-    let secret_json = core
-        .runtime
-        .get_named_secret(&vpn_secret_name(&profile.id))
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "секретные данные профиля не найдены — добавь профиль заново".to_string())?;
-    core.config.vpn_active_profile_id = Some(profile.id.clone());
-    core.vpn
-        .connect(vessel_core::vpn::VpnConnectRequest {
-            profile_id: profile.id,
-            profile_name: profile.name,
-            kind: profile.kind,
-            server: profile.server,
-            port: profile.port,
-            secret_json,
-        })
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn vpn_select_profile(core: CoreState<'_>, id: String) -> Result<(), String> {
-    let mut core = lock(&core);
-    let profile = core
-        .config
-        .vpn_profiles
-        .iter()
-        .find(|p| p.id == id)
-        .cloned()
-        .ok_or_else(|| "профиль не найден".to_string())?;
-    core.config.vpn_active_profile_id = Some(profile.id.clone());
-    core.app.config_dirty = true;
-    // VPN включён и активный профиль сменился — переподключаемся сами
-    if core.config.vpn_enabled {
-        let secret_json = core
-            .runtime
-            .get_named_secret(&vpn_secret_name(&profile.id))
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "секретные данные профиля не найдены — добавь профиль заново".to_string())?;
-        core.vpn
-            .connect(vessel_core::vpn::VpnConnectRequest {
-                profile_id: profile.id,
-                profile_name: profile.name,
-                kind: profile.kind,
-                server: profile.server,
-                port: profile.port,
-                secret_json,
-            })
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn vpn_disconnect(core: CoreState<'_>) -> Result<(), String> {
-    let core = lock(&core);
-    core.vpn.disconnect();
-    Ok(())
-}
-
-#[tauri::command]
-pub fn vpn_logs(core: CoreState<'_>, tail: Option<usize>) -> Result<Vec<String>, String> {
-    let core = lock(&core);
-    Ok(core.vpn.logs(tail.unwrap_or(80)))
-}
-
-#[tauri::command]
-pub async fn vpn_check(core: CoreState<'_>) -> Result<Option<String>, String> {
-    let proxy = lock(&core).vpn.active_proxy_string();
-    let Some(proxy) = proxy else {
-        return Ok(None);
-    };
-    tauri::async_runtime::spawn_blocking(move || {
-        vessel_core::vpn::core::fetch_external_ip(&proxy)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map(Some)
-    .map_err(|e| e.to_string())
-}
 // ---------- Vessel Server ----------
 
 #[derive(Serialize)]

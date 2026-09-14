@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::{
-    account::models::{AccountAction, CaptchaSolution},
     credentials::CredentialKind,
     model::{SearchProvider, TrackRef},
     onboarding::zapret::ZapretPlan,
@@ -29,17 +28,6 @@ pub enum AppEffect {
         value: String,
     },
     ImportPlaylist(String),
-    LoadAccountCaptcha(AccountAction),
-    AuthenticateAccount {
-        action: AccountAction,
-        username: String,
-        password: String,
-        captcha_id: String,
-        solution: CaptchaSolution,
-    },
-    RestoreAccount,
-    RefreshBootstrap,
-    LogoutAccount,
     ProbeSoundCloud,
     PlanZapret(PathBuf),
     ApplyZapret(Box<ZapretPlan>),

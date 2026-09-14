@@ -74,7 +74,6 @@ export interface FullState {
   deezer_enabled: boolean;
   spotify_enabled: boolean;
   youtube_music_enabled: boolean;
-  server_url: string;
   status_message: string;
   user_profile: UserProfile | null;
   needs_user_selection: boolean;
