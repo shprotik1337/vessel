@@ -3,17 +3,9 @@ use std::path::PathBuf;
 use crate::onboarding::{SoundCloudAccess, zapret::ZapretPlan};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum AccountMode {
-    Account,
-    #[default]
-    Guest,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum OnboardingStep {
     #[default]
     Welcome,
-    Account,
     Providers,
     Audio,
     CheckingSoundCloud,
@@ -28,7 +20,6 @@ pub enum OnboardingStep {
 pub enum OnboardingCommand {
     None,
     ProbeSoundCloud,
-    StartAccountLogin,
     PlanZapret(PathBuf),
     ApplyZapret(Box<ZapretPlan>),
     Finish,
@@ -38,7 +29,6 @@ pub enum OnboardingCommand {
 pub struct OnboardingState {
     pub step: OnboardingStep,
     pub selected: usize,
-    pub account_mode: AccountMode,
     pub soundcloud_enabled: bool,
     pub yandex_enabled: bool,
     pub audio_output: Option<String>,
@@ -51,7 +41,6 @@ pub struct OnboardingState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OnboardingResult {
-    pub account_mode: AccountMode,
     pub soundcloud_enabled: bool,
     pub yandex_enabled: bool,
     pub audio_output: Option<String>,
@@ -81,7 +70,6 @@ impl OnboardingState {
         Self {
             step: OnboardingStep::Welcome,
             selected: 0,
-            account_mode: AccountMode::Guest,
             soundcloud_enabled: true,
             yandex_enabled: true,
             audio_output,
@@ -130,19 +118,7 @@ impl OnboardingState {
     pub fn confirm(&mut self) -> OnboardingCommand {
         self.zapret_error = None;
         match self.step {
-            OnboardingStep::Welcome => self.go(OnboardingStep::Account),
-            OnboardingStep::Account => {
-                self.account_mode = if self.selected == 0 {
-                    AccountMode::Account
-                } else {
-                    AccountMode::Guest
-                };
-                let account = self.account_mode;
-                self.go(OnboardingStep::Providers);
-                if account == AccountMode::Account {
-                    return OnboardingCommand::StartAccountLogin;
-                }
-            }
+            OnboardingStep::Welcome => self.go(OnboardingStep::Providers),
             OnboardingStep::Providers if self.selected < 2 => {
                 self.toggle();
                 return OnboardingCommand::None;
@@ -225,7 +201,6 @@ impl OnboardingState {
 
     pub fn result(&self) -> OnboardingResult {
         OnboardingResult {
-            account_mode: self.account_mode,
             soundcloud_enabled: self.soundcloud_enabled,
             yandex_enabled: self.yandex_enabled,
             audio_output: self.audio_output.clone(),
@@ -244,7 +219,6 @@ impl OnboardingState {
 
     fn option_count(&self) -> usize {
         match self.step {
-            OnboardingStep::Account => 2,
             OnboardingStep::Providers | OnboardingStep::ZapretChoice => 3,
             OnboardingStep::Audio => self.audio_outputs.len(),
             _ => 1,
@@ -293,8 +267,6 @@ mod tests {
     #[test]
     fn provider_switches_are_not_radio_buttons_from_the_nineties() {
         let mut state = OnboardingState::new(None);
-        state.confirm();
-        state.selected = 1;
         state.confirm();
         assert_eq!(state.step, OnboardingStep::Providers);
 

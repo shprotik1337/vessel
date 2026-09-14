@@ -217,6 +217,18 @@ async fn require_token(State(state): State<AppState>, request: Request, next: Ne
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "))
             .map(str::to_string);
+        // отладка resolve-401: печатаем ПРЕФИКС токена (не секрет) + сам header
+        if path.contains("/playback/resolve") {
+            let header_present = request
+                .headers()
+                .get(header::AUTHORIZATION)
+                .map(|v| v.to_str().map(|s| s.chars().take(12).collect::<String>()).unwrap_or_default())
+                .unwrap_or_else(|| "<нет header>".to_string());
+            println!(
+                "[auth] {method} {path}: header={header_present} bearer_prefix={}",
+                bearer.as_deref().map(|t| t.chars().take(8).collect::<String>()).unwrap_or_else(|| "<нет>".to_string())
+            );
+        }
         match bearer {
             Some(token) if state.tokens.iter().any(|allowed| allowed == &token) => next.run(request).await,
             _ => (

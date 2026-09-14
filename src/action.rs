@@ -1,8 +1,4 @@
 use crate::{
-    account::{
-        error::AccountApiError,
-        models::{AccountAction, AccountSession, BootstrapUpdate, CaptchaChallenge},
-    },
     audio::AudioEvent,
     model::TrackRef,
     onboarding::{
@@ -51,9 +47,6 @@ pub enum Action {
     /// клип-версию, полный трек недоступен») — показываем в статусной строке.
     PlaybackNotice(String),
     OpenPlaylistImport,
-    OpenAccount(AccountAction),
-    ToggleAccountMode,
-    AccountLogout,
     CloseModal,
     ModalSubmit,
     ModalPrevious,
@@ -70,17 +63,6 @@ pub enum Action {
         track: Box<TrackRef>,
         liked: bool,
         result: Result<(), String>,
-    },
-    AccountCaptchaLoaded {
-        action: AccountAction,
-        result: Result<CaptchaChallenge, AccountApiError>,
-    },
-    AccountAuthenticated(Result<AccountSession, AccountApiError>),
-    AccountRestored(Result<Option<AccountSession>, AccountApiError>),
-    BootstrapFinished(Result<BootstrapUpdate, AccountApiError>),
-    AccountLoggedOut {
-        result: Result<(), AccountApiError>,
-        soundcloud_configured: bool,
     },
     SoundCloudChecked(SoundCloudAccess),
     ZapretPlanned(Result<Box<ZapretPlan>, String>),

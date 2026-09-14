@@ -4,12 +4,11 @@ use anyhow::Result;
 use serde::Serialize;
 
 use crate::{
-    account::state::AccountState,
     action::Action,
     config::{AppConfig, HotkeyBindings},
     effect::AppEffect,
     model::{Playlist, RepeatMode, SearchProvider, TrackRef},
-    onboarding::{AccountMode, OnboardingResult},
+    onboarding::OnboardingResult,
     storage::{QueueSnapshot, Storage},
     user::UserProfile,
 };
@@ -53,17 +52,6 @@ impl Default for PlayerState {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub enum BootstrapState {
-    #[default]
-    Unknown,
-    Refreshing,
-    Ready {
-        refresh_at: Option<String>,
-    },
-    Failed(String),
-}
-
 #[derive(Debug)]
 pub struct App {
     pub home_tracks: Vec<TrackRef>,
@@ -73,9 +61,6 @@ pub struct App {
     pub queue_index: Option<usize>,
     pub now_playing: Option<TrackRef>,
     pub player: PlayerState,
-    pub account: AccountState,
-    pub bootstrap: BootstrapState,
-    pub soundcloud_refresh_at_ms: Option<i64>,
     pub soundcloud_enabled: bool,
     pub yandex_enabled: bool,
     pub deezer_enabled: bool,
@@ -119,13 +104,6 @@ impl App {
                 repeat: queue.repeat,
                 ..PlayerState::default()
             },
-            account: AccountState::Guest,
-            bootstrap: config
-                .soundcloud_client_id_refresh_at_ms
-                .filter(|deadline| *deadline > now_ms())
-                .map(|_| BootstrapState::Ready { refresh_at: None })
-                .unwrap_or_default(),
-            soundcloud_refresh_at_ms: config.soundcloud_client_id_refresh_at_ms,
             soundcloud_enabled: config.soundcloud_enabled,
             yandex_enabled: config.yandex_enabled,
             deezer_enabled: config.deezer_enabled,
@@ -278,8 +256,6 @@ impl App {
             Action::OpenPlaylistImport => {
                 self.status_message = "Вставь ссылку на плейлист SoundCloud, Yandex или Deezer".to_string();
             }
-            Action::OpenAccount(_) | Action::ToggleAccountMode => {}
-            Action::AccountLogout => self.logout_account_on_server(),
             Action::CloseModal | Action::ModalSubmit | Action::ModalPrevious
                 | Action::ModalNext | Action::ModalToggle
                 | Action::ModalInput(_) | Action::ModalBackspace => {}
@@ -309,83 +285,8 @@ impl App {
                     self.status_message = "Библиотека не сохранилась".to_string();
                 }
             }
-            Action::AccountCaptchaLoaded { action: _, result } => {
-                if let Err(error) = result {
-                    self.status_message = format!("CAPTCHA не загрузилась: {error}");
-                }
-            }
-            Action::AccountAuthenticated(result) => {
-                match result {
-                    Ok(session) => {
-                        self.account = AccountState::Authenticated {
-                            user: session.user,
-                            expires_at: session.expires_at,
-                        };
-                        self.status_message = "Вход выполнен".to_string();
-                        self.config_dirty = true;
-                    }
-                    Err(error) => {
-                        self.status_message = format!("Не удалось войти: {error}");
-                    }
-                }
-            }
-            Action::AccountRestored(result) => {
-                match result {
-                    Ok(Some(session)) => {
-                        self.account = AccountState::Authenticated {
-                            user: session.user,
-                            expires_at: session.expires_at,
-                        };
-                        self.status_message = "Сессия восстановлена".to_string();
-                        self.config_dirty = true;
-                    }
-                    Ok(None) => {
-                        self.account = AccountState::Guest;
-                        self.bootstrap = BootstrapState::Unknown;
-                        self.status_message = "Гостевой режим".to_string();
-                        self.config_dirty = true;
-                    }
-                    Err(error) => {
-                        self.account = AccountState::Guest;
-                        self.bootstrap = BootstrapState::Unknown;
-                        self.status_message = format!("Сессию не удалось проверить: {error}");
-                    }
-                }
-            }
-            Action::BootstrapFinished(result) => {
-                match result {
-                    Ok(update) => {
-                        self.soundcloud_refresh_at_ms = Some(update.refresh_at_ms);
-                        self.bootstrap = BootstrapState::Ready {
-                            refresh_at: Some(update.refresh_at),
-                        };
-                        self.soundcloud_enabled = true;
-                        self.config_dirty = true;
-                        self.status_message = "SoundCloud client_id получен из аккаунта".to_string();
-                    }
-                    Err(error) => {
-                        let retry_seconds = error.retry_after_seconds.unwrap_or(300).max(60);
-                        self.soundcloud_refresh_at_ms =
-                            Some(now_ms().saturating_add((retry_seconds as i64).saturating_mul(1_000)));
-                        self.bootstrap = BootstrapState::Failed(error.to_string());
-                        self.config_dirty = true;
-                        self.status_message = format!("SoundCloud ключ не получен: {error}");
-                    }
-                }
-            }
-            Action::AccountLoggedOut { result, soundcloud_configured: _ } => {
-                self.account = AccountState::Guest;
-                self.bootstrap = BootstrapState::Unknown;
-                self.soundcloud_refresh_at_ms = None;
-                self.config_dirty = true;
-                self.status_message = match result {
-                    Ok(()) => "Выход выполнен".to_string(),
-                    Err(error) => format!("Локально вышли, сервер не подтвердил: {error}"),
-                };
-            }
             Action::SoundCloudChecked(_) => {
                 self.onboarding_result = Some(OnboardingResult {
-                    account_mode: AccountMode::Guest,
                     soundcloud_enabled: true,
                     yandex_enabled: true,
                     audio_output: None,
@@ -500,12 +401,6 @@ impl App {
         std::mem::take(&mut self.effects)
     }
 
-    pub fn restore_account(&mut self) {
-        self.account = AccountState::Restoring;
-        self.effects.push(AppEffect::RestoreAccount);
-        self.status_message = "Проверяем сессию Noverplay".to_string();
-    }
-
     pub fn set_credentials(&mut self, _credentials: crate::credentials::CredentialState) {
         self.status_message = "Ключи загружены".to_string();
     }
@@ -576,14 +471,6 @@ impl App {
                 self.status_message = format!("Аудио сломалось: {error}");
             }
         }
-    }
-
-    fn logout_account_on_server(&mut self) {
-        self.account = AccountState::Guest;
-        self.bootstrap = BootstrapState::Unknown;
-        self.soundcloud_refresh_at_ms = None;
-        self.config_dirty = true;
-        self.status_message = "Выход выполнен".to_string();
     }
 }
 
@@ -848,14 +735,5 @@ mod tests {
         app.handle(Action::AudioProgress { position_ms: 200_000, buffered_ms: 50_000, duration_ms: 0 });
         assert_eq!(app.player.position_ms, 100_000);
         assert_eq!(app.player.buffered_ms, 50_000);
-    }
-
-    #[test]
-    fn account_restore_flow_works() {
-        let (_temp, mut app) = test_app();
-        app.restore_account();
-        assert!(matches!(app.account, AccountState::Restoring));
-        let effects = app.take_effects();
-        assert!(effects.iter().any(|e| matches!(e, AppEffect::RestoreAccount)));
     }
 }

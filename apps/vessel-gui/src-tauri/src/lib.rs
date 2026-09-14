@@ -1,5 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -28,10 +28,6 @@ pub struct GuiCore {
     pub storage: Storage,
     pub users: UserManager,
     pub needs_user_selection: bool,
-    /// VPN-слой: профили, состояние, процесс amnezia-box.
-    pub vpn: vessel_core::vpn::VpnManager,
-    /// Последний увиденный статус VPN — для перезапуска провайдеров при смене.
-    pub vpn_last_status: Option<vessel_core::vpn::VpnStatus>,
     pub last_state_hash: u64,
     pub last_progress_at: Instant,
 }
@@ -53,7 +49,6 @@ pub struct FullState {
     pub deezer_enabled: bool,
     pub spotify_enabled: bool,
     pub youtube_music_enabled: bool,
-    pub server_url: String,
     pub status_message: String,
     pub user_profile: Option<vessel_core::user::UserProfile>,
     pub needs_user_selection: bool,
@@ -181,7 +176,6 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
         deezer_enabled: core.app.deezer_enabled,
         spotify_enabled: core.app.spotify_enabled,
         youtube_music_enabled: core.app.youtube_music_enabled,
-        server_url: core.config.server_url.clone(),
         status_message: core.app.status_message.clone(),
         user_profile: core.app.user_profile.clone(),
         needs_user_selection: core.needs_user_selection,
@@ -224,20 +218,6 @@ fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
             Err(poisoned) => poisoned.into_inner(),
         };
         drive_runtime(&mut core);
-        // VPN сменил состояние → пересобираем провайдеров, чтобы клиенты
-        // подхватили (или сбросили) локальный прокси ядра.
-        let vpn_status = core.vpn.status_kind();
-        if core.vpn_last_status != Some(vpn_status) {
-            core.vpn_last_status = Some(vpn_status);
-            if matches!(
-                vpn_status,
-                vessel_core::vpn::VpnStatus::Connected
-                    | vessel_core::vpn::VpnStatus::Disconnected
-                    | vessel_core::vpn::VpnStatus::Error
-            ) {
-                core.runtime.reload_providers();
-            }
-        }
         persist(&mut core);
         let now = Instant::now();
         let hash = state_hash(&core.app);
@@ -301,8 +281,6 @@ fn persist(core: &mut GuiCore) {
         config.global_hotkeys_enabled = core.app.global_hotkeys_enabled;
         config.hotkeys = core.app.hotkeys.clone();
         config.keybindings_notice_seen = core.app.keybindings_notice_seen;
-        config.guest_mode = core.app.account.user().is_none();
-        config.soundcloud_client_id_refresh_at_ms = core.app.soundcloud_refresh_at_ms;
         if let Err(error) = config.save(&core.paths) {
             vessel_core::dlog!("[vessel] save config: {error}");
         } else {
@@ -364,11 +342,6 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
     if let Some(notice) = runtime.take_notices().into_iter().last() {
         app.status_message = notice;
     }
-    app.restore_account();
-    let vpn_work_dir = paths.config_dir.join("vpn");
-    let vpn_core_binary = std::env::var("VESSEL_VPN_CORE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| vpn_work_dir.join("amnezia-box.exe"));
     Ok(GuiCore {
         app,
         runtime,
@@ -377,8 +350,6 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         storage,
         users,
         needs_user_selection,
-        vpn: vessel_core::vpn::VpnManager::new(vpn_core_binary, vpn_work_dir),
-        vpn_last_status: None,
         last_state_hash: 0,
         last_progress_at: Instant::now(),
     })
@@ -510,17 +481,6 @@ pub fn run() {
             commands::save_file_as,
             commands::open_path,
             commands::get_users_dir,
-            commands::vpn_status,
-            commands::vpn_set_enabled,
-            commands::vpn_select_profile,
-            commands::vpn_profiles,
-            commands::vpn_add_vless,
-            commands::vpn_add_amnezia,
-            commands::vpn_remove_profile,
-            commands::vpn_connect,
-            commands::vpn_disconnect,
-            commands::vpn_logs,
-            commands::vpn_check,
             commands::vessel_servers,
             commands::vessel_routes,
             commands::vessel_server_probe,
@@ -532,73 +492,6 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let core = app.state::<Arc<Mutex<GuiCore>>>();
             let core = Arc::clone(core.inner());
-            // Ищем ядро VPN во всех типичных местах: ресурсы installer'а,
-            // папка рядом с exe (portable), каталог конфига, переменная окружения.
-            {
-                let mut candidates: Vec<PathBuf> = Vec::new();
-                if let Ok(env_path) = std::env::var("VESSEL_VPN_CORE") {
-                    candidates.push(PathBuf::from(env_path));
-                }
-                if let Ok(resource_dir) = app.path().resource_dir() {
-                    candidates.push(resource_dir.join("vpn").join("amnezia-box.exe"));
-                }
-                if let Ok(exe_dir) = std::env::current_exe().map(|p| p.parent().map(Path::to_path_buf).unwrap_or_default()) {
-                    candidates.push(exe_dir.join("vpn").join("amnezia-box.exe"));
-                    candidates.push(exe_dir.join("amnezia-box.exe"));
-                }
-                let fallback = {
-                    let guard = core.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                    guard.paths.config_dir.join("vpn").join("amnezia-box.exe")
-                };
-                candidates.push(fallback);
-                if let Some(found) = candidates.iter().find(|p| p.is_file()) {
-                    vessel_core::dlog!("[vpn] core binary: {}", found.display());
-                    core.lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .vpn
-                        .set_core_binary(found.clone());
-                }
-            }
-            // Авто-включение VPN: пользователь оставил тумблер включённым —
-            // подключаемся сами при каждом старте (§27 crash recovery).
-            {
-                let mut guard = core.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                if guard.config.vpn_enabled && guard.vpn.core_present() {
-                    let profile = guard
-                        .config
-                        .vpn_profiles
-                        .iter()
-                        .find(|p| Some(&p.id) == guard.config.vpn_active_profile_id.as_ref())
-                        .or_else(|| guard.config.vpn_profiles.first())
-                        .cloned();
-                    if let Some(profile) = profile {
-                        let secret = guard
-                            .runtime
-                            .get_named_secret(&format!("vpn-profile:{}", profile.id))
-                            .ok()
-                            .flatten();
-                        if let Some(secret_json) = secret {
-                            guard.config.vpn_active_profile_id = Some(profile.id.clone());
-                            let request = vessel_core::vpn::VpnConnectRequest {
-                                profile_id: profile.id.clone(),
-                                profile_name: profile.name.clone(),
-                                kind: profile.kind.clone(),
-                                server: profile.server.clone(),
-                                port: profile.port,
-                                secret_json,
-                            };
-                            if let Err(error) = guard.vpn.connect(request) {
-                                vessel_core::dlog!("[vpn] auto-connect failed: {error}");
-                            } else {
-                                vessel_core::dlog!(
-                                    "[vpn] auto-connect started for profile {}",
-                                    profile.id
-                                );
-                            }
-                        }
-                    }
-                }
-            }
             std::thread::spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_multi_thread()
                     .enable_all()

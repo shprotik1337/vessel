@@ -74,9 +74,6 @@ impl ServerConfig {
         if file.server.tokens.iter().all(|t| t.trim().is_empty()) {
             anyhow::bail!("в [server] нет ни одного токена доступа — сервер не запустишь");
         }
-        if app.vpn_enabled {
-            anyhow::bail!("VPN-режим недоступен на сервере");
-        }
         if !app.provider_routing.is_empty() {
             anyhow::bail!("сервер не может маршрутизировать провайдеры на другой сервер");
         }

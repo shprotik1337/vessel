@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::vpn::ApplyVpnProxy;
 
 use aes::{
     Aes128,
@@ -79,9 +78,7 @@ impl DeezerProvider {
                 }
             }
         }
-        let http = Client::builder()
-            .apply_vpn_proxy()
-            .cookie_provider(jar)
+        let http = Client::builder()            .cookie_provider(jar)
             .user_agent(BROWSER_UA)
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(30))
