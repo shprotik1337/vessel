@@ -107,13 +107,18 @@ impl SecretStore {
 
     /// Динамический ключ по имени — для токенов Vessel Server (`vessel-server:<id>`)
     /// и других именованных секретов.
+    ///
+    /// Всегда пишем и в keyring, и в файл: keyring в Windows-сессиях бывает
+    /// капризным (Credential Manager недоступен/не читается), а файл —
+    /// гарантированный запасной путь. Если keyring успешен — файловая копия
+    /// всё равно остаётся, чтобы сервер не «терялся» после перезапуска.
     pub fn set_named(&self, name: &str, value: &str) -> Result<SecretBackend> {
         if self.system_enabled
             && Entry::new(SERVICE_NAME, name)
                 .and_then(|entry| entry.set_password(value))
                 .is_ok()
         {
-            self.remove_named_file_value(name)?;
+            let _ = self.set_named_file_value(name, value);
             return Ok(SecretBackend::System);
         }
         self.set_named_file_value(name, value)?;

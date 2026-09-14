@@ -9,7 +9,7 @@ import type { ProviderStatus, UserProfile } from "../api/types";
 import * as api from "../api/commands";
 import { t } from "../i18n";
 
-type Tab = "services" | "playback" | "storage" | "users" | "recommendations" | "vpn" | "servers";
+type Tab = "services" | "servers" | "language" | "playback" | "storage" | "users" | "recommendations" | "vpn";
 
 type ConfirmTarget = "settings" | "data" | null;
 type DirTarget = "download" | "cache" | null;
@@ -20,7 +20,7 @@ function formatDate(ms: number): string {
 }
 
 const SERVICE_ICON_SIZE: Record<string, number> = {
-  soundcloud: 36, deezer: 38, yandex: 33, spotify: 54, youtube_music: 44,
+  soundcloud: 42, deezer: 44, yandex: 33, spotify: 64, youtube_music: 48,
 };
 
 const REC_ICON_SIZE: Record<string, number> = {
@@ -738,6 +738,147 @@ function PlaybackSourceBlock() {
   );
 }
 
+const SERVICE_SWITCHERS = [
+  { key: "youtube_music", label: "YouTube Music" },
+  { key: "spotify", label: "Spotify" },
+  { key: "soundcloud", label: "SoundCloud" },
+  { key: "deezer", label: "Deezer" },
+  { key: "yandex", label: "Yandex Music" },
+] as const;
+
+const SERVICE_FEATURES = [
+  "Проверка токена",
+  "Поиск треков",
+  "Воспроизведение трека",
+  "Похожие треки",
+  "Информация об исполнителе",
+  "Треки исполнителя",
+  "Поиск плейлистов",
+  "Генерация волны",
+];
+
+function ServiceRoutingPanel() {
+  const { showToast, lang, state } = useApp();
+  const [selected, setSelected] =
+    useState<(typeof SERVICE_SWITCHERS)[number]["key"]>("youtube_music");
+  const [servers, setServers] = useState<api.VesselServerView[]>([]);
+  const [routes, setRoutes] = useState<Record<string, string>>({});
+
+  const selectedStatus = state?.providers.find((p) => p.kind === selected);
+  const segment = api.PROVIDER_SEGMENT[selected] ?? selected;
+  const route = routes[segment] ?? "local";
+
+  useEffect(() => {
+    void Promise.all([api.vesselServers(), api.vesselRoutes()])
+      .then(([serverList, routeMap]) => {
+        setServers(serverList);
+        setRoutes(routeMap);
+      })
+      .catch((error) => showToast(String(error), true));
+  }, []);
+
+  const setMode = async (mode: "local" | "server") => {
+    const target =
+      mode === "local"
+        ? "local"
+        : servers[0]
+          ? `server:${servers[0].id}`
+          : null;
+    if (!target) {
+      showToast(t(lang, "server.noServers"), true);
+      return;
+    }
+    try {
+      await api.vesselRouteSet(segment, target);
+      setRoutes((current) => ({ ...current, [segment]: target }));
+    } catch (error) {
+      showToast(String(error), true);
+    }
+  };
+
+  return (
+    <div className="service-routing">
+      <div className="service-switcher">
+        {SERVICE_SWITCHERS.map((service) => (
+          <button
+            key={service.key}
+            className={`service-switcher-item ${selected === service.key ? "active" : ""}`}
+            onClick={() => setSelected(service.key)}
+          >
+            <PlatformIcon
+              kind={service.key as "soundcloud" | "deezer" | "spotify" | "yandex" | "you_tube_music"}
+              size={service.key === "spotify" ? 44 : service.key === "soundcloud" || service.key === "deezer" || service.key === "yandex" ? 30 : 26}
+            />
+            <span>{service.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="service-routing-columns">
+        <div className="service-routing-panel">
+          <div className="group-hd">
+            <span className="group-title">Авторизация</span>
+          </div>
+          <div className="panel">
+            {selectedStatus && <ServiceRow status={selectedStatus} />}
+          </div>
+          {selected === "spotify" && <PlaybackSourceBlock />}
+        </div>
+
+        <div className="service-routing-panel">
+          <div className="group-hd">
+            <span className="group-title">Режим выполнения</span>
+          </div>
+          <div className="panel service-capabilities">
+            <div className="service-mode-switcher">
+              <button
+                className={`service-mode ${route === "local" ? "active" : ""}`}
+                onClick={() => void setMode("local")}
+              >
+                <LaptopIcon /> Локально
+              </button>
+              <button
+                className={`service-mode ${route !== "local" ? "active" : ""}`}
+                onClick={() => void setMode("server")}
+              >
+                ▤ Сервер
+              </button>
+            </div>
+            {SERVICE_FEATURES.map((label) => (
+              <div className="service-capability" key={label}>
+                <span>{label}</span>
+                <span className="service-executor-icon">
+                  {route === "local" ? <LaptopIcon /> : "▤"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LaptopIcon() {
+  return (
+    <svg
+      className="laptop-icon"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3.5" y="4" width="17" height="12" rx="1.5" />
+      <line x1="2" y1="20" x2="22" y2="20" />
+    </svg>
+  );
+}
+
 const PROVIDER_OPTIONS = [
   { key: "soundcloud", label: "SoundCloud" },
   { key: "deezer", label: "Deezer" },
@@ -1048,6 +1189,18 @@ export function Settings() {
             )}
           </button>
           <button
+            className={`sett-item ${tab === "servers" ? "active" : ""}`}
+            onClick={() => setTab("servers")}
+          >
+            <span>{t(lang, "server.title")}</span>
+          </button>
+          <button
+            className={`sett-item ${tab === "language" ? "active" : ""}`}
+            onClick={() => setTab("language")}
+          >
+            <span>{t(lang, "settings.language")}</span>
+          </button>
+          <button
             className={`sett-item ${tab === "playback" ? "active" : ""}`}
             onClick={() => setTab("playback")}
           >
@@ -1077,12 +1230,6 @@ export function Settings() {
           >
             <span>VPN</span>
           </button>
-          <button
-            className={`sett-item ${tab === "servers" ? "active" : ""}`}
-            onClick={() => setTab("servers")}
-          >
-            <span>{t(lang, "server.title")}</span>
-          </button>
         </div>
 
         <div className="sett-body">
@@ -1092,72 +1239,7 @@ export function Settings() {
                 <div className="sett-title">{t(lang, "settings.services")}</div>
                 <div className="sett-sub">{t(lang, "settings.services.sub")}</div>
               </div>
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.connectedAccounts")}</span>
-                </div>
-                <div className="panel">
-                  {state.providers.map((p) => (
-                    <ServiceRow key={p.kind} status={p} />
-                  ))}
-                </div>
-              </div>
-              <PlaybackSourceBlock />
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.proxy")}</span>
-                </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.proxy")}</div>
-                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
-                        {spotifyProxy || t(lang, "settings.proxy.none")}
-                      </div>
-                    </div>
-                    <div className="btns">
-                      <button className="btn btn-ghost btn-sm" onClick={() => setProxyOpen(true)}>
-                        {t(lang, "settings.proxy.change")}
-                      </button>
-                      {spotifyProxyChanged && (
-                        <button className="btn btn-outline btn-sm" onClick={resetSpotifyProxy}>
-                          {t(lang, "settings.proxy.reset")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.language")}</span>
-                </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.language")}</div>
-                      <div className="set-desc">{t(lang, "settings.language.desc")}</div>
-                    </div>
-                    <div className="select">
-                      <select
-                        value={lang}
-                        onChange={async (e) => {
-                          try {
-                            await api.setLanguage(e.target.value);
-                            await refresh();
-                          } catch (error) {
-                            showToast(String(error), true);
-                          }
-                        }}
-                      >
-                        <option value="ru">Русский</option>
-                        <option value="en">English</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
+              <ServiceRoutingPanel /></>
           )}
 
           {tab === "playback" && (
@@ -1192,6 +1274,38 @@ export function Settings() {
                         <option value="off">{t(lang, "settings.repeat.off")}</option>
                         <option value="all">{t(lang, "settings.repeat.all")}</option>
                         <option value="one">{t(lang, "settings.repeat.one")}</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {tab === "language" && (
+            <>
+              <div className="sett-hd">
+                <div className="sett-title">{t(lang, "settings.language")}</div>
+                <div className="sett-sub">{t(lang, "settings.language.desc")}</div>
+              </div>
+              <div className="group">
+                <div className="panel">
+                  <div className="set-row">
+                    <div className="set-cell">
+                      <div className="set-title">{t(lang, "settings.language")}</div>
+                      <div className="set-desc">{t(lang, "settings.language.desc")}</div>
+                    </div>
+                    <div className="select">
+                      <select value={lang} onChange={async (e) => {
+                        try {
+                          await api.setLanguage(e.target.value);
+                          await refresh();
+                        } catch (error) {
+                          showToast(String(error), true);
+                        }
+                      }}>
+                        <option value="ru">Русский</option>
+                        <option value="en">English</option>
                       </select>
                     </div>
                   </div>
@@ -1302,7 +1416,36 @@ export function Settings() {
           )}
 
           {tab === "users" && <UsersTab />}
-          {tab === "vpn" && <VpnTab />}
+          {tab === "vpn" && (
+            <>
+              <div className="group">
+                <div className="group-hd">
+                  <span className="group-title">{t(lang, "settings.proxy")}</span>
+                </div>
+                <div className="panel">
+                  <div className="set-row">
+                    <div className="set-cell">
+                      <div className="set-title">{t(lang, "settings.proxy")}</div>
+                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
+                        {spotifyProxy || t(lang, "settings.proxy.none")}
+                      </div>
+                    </div>
+                    <div className="btns">
+                      <button className="btn btn-ghost btn-sm" onClick={() => setProxyOpen(true)}>
+                        {t(lang, "settings.proxy.change")}
+                      </button>
+                      {spotifyProxyChanged && (
+                        <button className="btn btn-outline btn-sm" onClick={resetSpotifyProxy}>
+                          {t(lang, "settings.proxy.reset")}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <VpnTab />
+            </>
+          )}
           {tab === "servers" && <ServersTab />}
           {tab === "recommendations" && <RecommendationsTab />}
         </div>

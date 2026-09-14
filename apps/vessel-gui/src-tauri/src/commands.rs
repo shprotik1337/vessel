@@ -2050,22 +2050,31 @@ pub async fn vessel_server_add(
     if name.trim().is_empty() {
         return Err("нужно название сервера".to_string());
     }
-    let client = vessel_core::provider::remote::ServerClient::new(url.trim(), token.trim())
+    let url = url.trim().trim_end_matches('/').to_string();
+    let client = vessel_core::provider::remote::ServerClient::new(&url, token.trim())
         .map_err(|e| format!("{e:#}"))?;
     client.info().await.map_err(|error| {
         format!("Vessel Server не ответил: {error:#} — проверь адрес, токен и что сервер запущен")
     })?;
     let arc = core.inner().clone();
     let mut core = arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let id = uuid::Uuid::new_v4().simple().to_string();
+    // Стабильный id из URL: повторное добавление того же сервера даёт тот же id,
+    // токен не теряется в keyring/файле и маршруты не «протухают».
+    let id = stable_server_id(&url);
     core.runtime
         .save_named_secret(&vessel_secret_name(&id), token.trim())
         .map_err(|e| e.to_string())?;
-    core.config.vessel_servers.push(vessel_core::config::VesselServerConfig {
-        id: id.clone(),
-        name: name.trim().to_string(),
-        url: url.trim().trim_end_matches('/').to_string(),
-    });
+    if let Some(existing) = core.config.vessel_servers.iter_mut().find(|s| s.id == id) {
+        existing.name = name.trim().to_string();
+        existing.url = url.clone();
+    } else {
+        core.config.vessel_servers.push(vessel_core::config::VesselServerConfig {
+            id: id.clone(),
+            name: name.trim().to_string(),
+            url,
+        });
+    }
+    core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
     let view = core
         .config
@@ -2080,6 +2089,14 @@ pub async fn vessel_server_add(
     Ok(view)
 }
 
+/// Детерминированный id экземпляра Vessel Server из его URL (sha256, первые 16 hex).
+fn stable_server_id(url: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(url.as_bytes());
+    hex::encode(hasher.finalize())[..16].to_string()
+}
+
 #[tauri::command]
 pub fn vessel_server_remove(core: CoreState<'_>, id: String) -> Result<(), String> {
     let mut core = lock(&core);
@@ -2087,6 +2104,7 @@ pub fn vessel_server_remove(core: CoreState<'_>, id: String) -> Result<(), Strin
     let prefix = format!("server:{id}");
     core.config.provider_routing.retain(|_, target| target != &prefix);
     let _ = core.runtime.remove_named_secret(&vessel_secret_name(&id));
+    core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
     core.runtime.reload_providers();
     Ok(())
@@ -2114,6 +2132,7 @@ pub fn vessel_route_set(
         }
         core.config.provider_routing.insert(provider.clone(), target.clone());
     }
+    core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
     core.runtime.reload_providers();
     Ok(())

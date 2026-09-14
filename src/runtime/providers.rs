@@ -121,6 +121,12 @@ fn apply_provider_routing(
             .ok()
             .flatten()
             .unwrap_or_default();
+        if token.trim().is_empty() {
+            notices.push(format!(
+                "Vessel Server «{server_id}»: токен доступа не найден — добавь сервер заново или впиши токен (Настройки → Сервер)"
+            ));
+            continue;
+        }
         match ServerClient::new(&server.url, &token) {
             Ok(client) => registry.register(ServerProvider::new(kind, client)),
             Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),
