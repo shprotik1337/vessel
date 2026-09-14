@@ -211,6 +211,25 @@ button{font-family:inherit}
 .sett-hd{margin-bottom:20px}
 .sett-title{font-size:21px;font-weight:600;letter-spacing:-.01em}
 .sett-sub{font-size:13px;color:var(--text2);margin-top:4px}
+  .service-routing{display:flex;flex-direction:column;gap:16px}
+  .service-switcher{display:flex;gap:8px;padding:8px;background:var(--panel2);border:1px solid var(--border);border-radius:6px}
+  .service-switcher-item{display:flex;align-items:center;justify-content:center;gap:8px;flex:1;height:38px;padding:0 14px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);cursor:pointer}
+  .service-switcher-item:hover,.service-switcher-item.active{background:var(--elev);border-color:var(--border3);color:var(--text)}
+  .service-routing-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+  .service-routing-panel{display:flex;flex-direction:column;gap:10px;min-height:520px}
+  .service-auth-panel{justify-content:flex-start}
+  .service-auth-panel>.panel{min-height:330px;display:flex;align-items:center;justify-content:center}
+  .service-auth-panel>.panel>.svc-row{width:100%}
+  .service-mode-switcher{display:flex;gap:4px;padding:6px;border-bottom:1px solid var(--border)}
+  .service-mode{flex:1;height:30px;border:0;border-radius:15px;background:transparent;color:var(--text2);cursor:pointer}
+  .service-mode.active{background:var(--text);color:var(--bg)}
+  .service-capability{display:flex;align-items:center;min-height:48px;padding:0 16px;border-bottom:1px solid var(--border);color:var(--text2)}
+  .service-capability:last-child{border-bottom:0}
+  .service-executor-icon{margin-left:auto;color:#4dbbff;font-size:18px}
+  .laptop-icon{display:inline-block;vertical-align:-3px}
+  .service-mode .laptop-icon,.service-executor-icon .laptop-icon{vertical-align:-2px}
+  .service-capabilities{overflow:hidden}
+  @media(max-width:800px){.service-routing-columns{grid-template-columns:1fr}.service-switcher{flex-wrap:wrap}.service-switcher-item{flex:1 1 45%}}
 .group{display:flex;flex-direction:column;gap:10px;margin-bottom:26px}
 .group-hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .group-title{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)}
