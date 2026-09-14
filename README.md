@@ -58,7 +58,7 @@ Vessel подключает только включённые и настрое�
 
 ## Установка
 
-Скачай установщик `Vessel_1.0.0_x64-setup.exe` из [Releases](https://github.com/shprotik1337/vessel/releases/latest) и запусти — NSIS-инсталлятор (~14 МБ) сделает всё сам. Инсталлятор включает всё нужное: поиск, плеер, импорт плейлистов и лайков.
+Скачай установщик `Vessel_1.1.0_x64-setup.exe` из [Releases](https://github.com/shprotik1337/vessel/releases/latest) и запусти — NSIS-инсталлятор (~14 МБ) сделает всё сам. Инсталлятор включает всё нужное: поиск, плеер, импорт плейлистов и лайков.
 
 ## Системные требования
 
@@ -74,7 +74,7 @@ npm install
 npm run tauri build
 ```
 
-Готовый installer появится в `target/release/bundle/nsis/Vessel_1.0.0_x64-setup.exe`.
+Готовый installer появится в `target/release/bundle/nsis/Vessel_1.1.0_x64-setup.exe`.
 
 Режим разработки с горячей перезагрузкой:
 
