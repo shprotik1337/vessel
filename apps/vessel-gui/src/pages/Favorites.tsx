@@ -11,7 +11,7 @@ type SortMode = "custom" | "title" | "artist" | "added";
 type SortDir = "asc" | "desc";
 
 export function Favorites() {
-  const { state, playTracks, showToast, navigateTo, refresh, lang } = useApp();
+  const { state, playTracks, showToast, navigateTo, refresh, goBack, lang } = useApp();
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [sort, setSort] = useState<SortMode>("custom");
@@ -148,6 +148,12 @@ export function Favorites() {
 
   return (
     <div className="view">
+      <div style={{ marginBottom: 18 }}>
+        <button className="btn btn-outline btn-sm" onClick={goBack} title={t(lang, "common.back")}>
+          {t(lang, "common.back")}
+        </button>
+      </div>
+
       <div className="panel">
         <div className="playlist-hd">
           <div className="fav-cover" title={t(lang, "favorites.title")}>
