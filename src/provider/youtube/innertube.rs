@@ -117,6 +117,7 @@ pub async fn player(
         "racyCheckOk": true,
     });
     if let Some(pot) = extras.content_pot {
+        body["context"]["serviceIntegrityDimensions"] = json!({ "poToken": pot });
         body["serviceIntegrityDimensions"] = json!({ "poToken": pot });
     }
     if let Some(sts) = extras.signature_timestamp {

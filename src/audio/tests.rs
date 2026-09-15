@@ -27,3 +27,4 @@ fn content_range_yields_total_length() {
     headers.insert(CONTENT_RANGE, HeaderValue::from_static("bytes 0-255/12345"));
     assert_eq!(dlina_iz_range(&headers), Some(12_345));
 }
+

@@ -13,12 +13,11 @@ use reqwest::{
 };
 use symphonia::core::io::MediaSource;
 
-const HTTP_CHUNK_BYTES: usize = 1024 * 1024; // 1MB — YouTube CDN лимит на один range запрос
-// UA того же семейства, что и при резолве стрима (Firefox) — YouTube CDN
-// привязывает некоторые ссылки к семейству клиента.
+const HTTP_CHUNK_BYTES: usize = 512 * 1024; // 512KB — безопасный размер range-чанка (модель Kopuz)
+// UA по умолчанию, если источник не задал свой собственный
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
-pub(super) struct HttpRangeSource {
+pub(crate) struct HttpRangeSource {
     client: Client,
     url: String,
     headers: HeaderMap,
@@ -30,14 +29,21 @@ pub(super) struct HttpRangeSource {
 }
 
 impl HttpRangeSource {
-    pub(super) fn open(
+    pub(crate) fn open(
         url: &str,
         headers: &BTreeMap<String, String>,
         prefer_range: bool,
     ) -> Result<Self> {
-        let client = Client::builder()            .connect_timeout(Duration::from_secs(10))
+        let ua = headers
+            .get("User-Agent")
+            .or_else(|| headers.get("user-agent"))
+            .map(|s| s.as_str())
+            .unwrap_or(BROWSER_UA);
+
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
-            .user_agent(BROWSER_UA)
+            .user_agent(ua)
             .build()?;
         let headers = normalize_headers(headers)?;
         let mut source = Self {
@@ -149,6 +155,12 @@ impl HttpRangeSource {
         } else {
             Vec::new()
         };
+        if chunk.is_empty() && self.length.is_none_or(|len| start < len) {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("стрим обрезан сервером на позиции {start}"),
+            ));
+        }
         self.range_supported = false;
         self.chunk_start = start;
         self.chunk = chunk;

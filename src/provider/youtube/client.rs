@@ -103,6 +103,12 @@ impl YoutubeClient {
             .filter(|value| !value.is_empty());
     }
 
+    /// Получает актуальный visitorData.
+    pub async fn get_visitor_data(&self) -> String {
+        self.ensure_visitor_data().await;
+        self.visitor_data.lock().unwrap().clone()
+    }
+
     /// OAuth: начало device code flow. Возвращает user_code и открывает браузер.
     /// После вызова жди oauth_complete().
     pub async fn oauth_begin(&self) -> Result<(String, String)> {
@@ -261,8 +267,24 @@ impl YoutubeClient {
         }
     }
 
-    /// Достаёт visitorData и API-ключ из ytcfg на главной странице.
+    /// Достаёт visitorData: сначала через лёгкий /visitor_id, затем ytcfg на главной.
     async fn fetch_visitor_data(&self) -> Result<String> {
+        static GLOBAL_VISITOR_DATA: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+        if let Some(cached) = GLOBAL_VISITOR_DATA.get() {
+            if !cached.is_empty() {
+                return Ok(cached.clone());
+            }
+        }
+
+        let cookie_raw = self.cookie_value();
+        let cookie = if cookie_raw.is_empty() { None } else { Some(cookie_raw.as_str()) };
+        if let Ok(vid) = super::innertube::visitor_id_maybe_auth(cookie).await {
+            if !vid.is_empty() {
+                let _ = GLOBAL_VISITOR_DATA.set(vid.clone());
+                return Ok(vid);
+            }
+        }
+
         let response = self
             .http
             .get(MUSIC_HOMEPAGE)
@@ -279,9 +301,11 @@ impl YoutubeClient {
         if let Some(key) = api_key {
             *self.api_key.lock().unwrap() = key;
         }
-        extract_config(&text, "INNERTUBE_CONTEXT_CLIENT_VISITOR_DATA")
+        let vid = extract_config(&text, "INNERTUBE_CONTEXT_CLIENT_VISITOR_DATA")
             .or_else(|| extract_config(&text, "VISITOR_DATA"))
-            .context("YouTube Music не отдал visitorData")
+            .context("YouTube Music не отдал visitorData")?;
+        let _ = GLOBAL_VISITOR_DATA.set(vid.clone());
+        Ok(vid)
     }
 
     /// Контекст клиента для music.youtube.com (WEB_REMIX).

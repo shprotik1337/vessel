@@ -1,4 +1,4 @@
-﻿use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
@@ -167,6 +167,7 @@ pub(super) fn decode_source(
         if chunk_count == 0 {
             crate::dlog!("[decode][gen{generation}] FIRST CHUNK SENT");
         }
+        chunk_count += 1;
     }
     Ok(())
 }

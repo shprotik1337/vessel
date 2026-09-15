@@ -3,7 +3,7 @@ mod manifest;
 mod sniff;
 mod source;
 
-pub(super) use source::HlsSource;
+pub(crate) use source::HlsSource;
 
 #[cfg(test)]
 mod tests;

@@ -38,8 +38,12 @@ pub(super) async fn poluchit_istochnik(
         .context("SoundCloud не отдал данные для воспроизведения")?;
     let transcoding = select_transcoding(&details.media.transcodings, &track.capability)
         .context("SoundCloud не предложил открытый поток для этого трека")?;
+    let mut query = Vec::new();
+    if let Some(auth) = details.track_authorization.as_deref() {
+        query.push(("track_authorization", auth.to_string()));
+    }
     let resolved: ScResolvedStream = client
-        .get_json(Url::parse(&transcoding.url)?, &[])
+        .get_json(Url::parse(&transcoding.url)?, &query)
         .await
         .context("SoundCloud не разрешил адрес потока")?;
     let url = Url::parse(resolved.url.trim()).context("SoundCloud вернул неверный адрес потока")?;
@@ -93,12 +97,12 @@ fn transcoding_weight(item: &ScTranscoding) -> u8 {
     let aac = mime.contains("audio/mp4") || preset.contains("aac");
     let mp3 = mime.contains("audio/mpeg") || preset.contains("mp3");
     let opus = mime.contains("ogg") || preset.contains("opus");
-    match (protocol.as_str(), aac, mp3, opus) {
-        ("hls", true, _, _) => 0,
-        ("hls", _, true, _) => 1,
-        ("progressive", _, true, _) => 2,
-        ("hls", _, _, true) => 3,
-        ("progressive", _, _, false) => 4,
+    match (protocol.as_str(), mp3, aac, opus) {
+        ("progressive", true, _, _) => 0,
+        ("progressive", _, _, _) => 1,
+        ("hls", _, true, _) => 2,
+        ("hls", true, _, _) => 3,
+        ("hls", _, _, true) => 4,
         _ => 5,
     }
 }
@@ -159,8 +163,12 @@ pub(super) async fn zagruzit_progressivnyi(
         }
     });
     let transcoding = candidates[0];
+    let mut query = Vec::new();
+    if let Some(auth) = details.track_authorization.as_deref() {
+        query.push(("track_authorization", auth.to_string()));
+    }
     let resolved: ScResolvedStream = client
-        .get_json(Url::parse(&transcoding.url)?, &[])
+        .get_json(Url::parse(&transcoding.url)?, &query)
         .await
         .context("SoundCloud не разрешил адрес для скачивания")?;
     let url = Url::parse(resolved.url.trim())

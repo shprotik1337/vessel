@@ -61,6 +61,8 @@ pub struct ScTrack {
     pub media: ScMedia,
     #[serde(default)]
     pub user: ScUser,
+    #[serde(default)]
+    pub track_authorization: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

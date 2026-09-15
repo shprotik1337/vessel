@@ -349,6 +349,6 @@ impl MusicProvider for ServerProvider {
         if let Some(cached) = crate::provider::cache::cached_source(track) {
             return Ok(cached);
         }
-        self.client.playback_source(track, false).await
+        self.client.playback_source(track, true).await
     }
 }

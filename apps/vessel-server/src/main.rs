@@ -225,7 +225,7 @@ async fn main() -> anyhow::Result<()> {
         limiter: RelayLimiter::new(cfg.server.max_streams.max(1)),
         relay_policy,
         http: reqwest::Client::builder()
-            .user_agent(concat!("vessel-server/", env!("CARGO_PKG_VERSION")))
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
             .timeout(std::time::Duration::from_secs(60))
             .build()?,
         soundcloud_id: Arc::new(Mutex::new(None)),
@@ -525,7 +525,7 @@ async fn stream(
 
     match target {
         RelayTarget::Http { url, headers: upstream_headers } => {
-            let mut builder = state.http.get(url);
+            let mut builder = state.http.get(url.clone());
             for (name, value) in &upstream_headers {
                 if let (Ok(name), Ok(value)) = (
                     HeaderName::from_bytes(name.as_bytes()),
@@ -542,6 +542,11 @@ async fn stream(
             match builder.send().await {
                 Ok(upstream) => {
                     let status = upstream.status();
+                    if !status.is_success() {
+                        let err_text = upstream.text().await.unwrap_or_default();
+                        println!("[relay upstream error] status={} url={} err={}", status, url, err_text);
+                        return (status, err_text).into_response();
+                    }
                     let mut keep: Vec<(HeaderName, HeaderValue)> = upstream
                         .headers()
                         .iter()

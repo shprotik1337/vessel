@@ -32,7 +32,7 @@ pub struct GuiCore {
     pub last_progress_at: Instant,
 }
 
-/// РџРѕР»РЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РїСЂРёР»РѕР¶РµРЅРёСЏ, РєРѕС‚РѕСЂРѕРµ С„СЂРѕРЅС‚РµРЅРґ С‡РёС‚Р°РµС‚ РЅР°РїСЂСЏРјСѓСЋ РїРѕ Р·Р°РїСЂРѕСЃСѓ.
+/// Р СџР С•Р В»Р Р…Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ, Р С”Р С•РЎвЂљР С•РЎР‚Р С•Р Вµ РЎвЂћРЎР‚Р С•Р Р…РЎвЂљР ВµР Р…Р Т‘ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ Р Р…Р В°Р С—РЎР‚РЎРЏР СРЎС“РЎР‹ Р С—Р С• Р В·Р В°Р С—РЎР‚Р С•РЎРѓРЎС“.
 #[derive(Serialize, Clone)]
 pub struct FullState {
     pub player: PlayerState,
@@ -63,7 +63,7 @@ pub struct ProviderStatus {
     pub connected: bool,
     pub has_credentials: bool,
     pub enabled: bool,
-    /// "local" или "server:<название>" — где реально исполняется провайдер.
+    /// "local" РёР»Рё "server:<РЅР°Р·РІР°РЅРёРµ>" вЂ” РіРґРµ СЂРµР°Р»СЊРЅРѕ РёСЃРїРѕР»РЅСЏРµС‚СЃСЏ РїСЂРѕРІР°Р№РґРµСЂ.
     pub origin: String,
 }
 
@@ -131,7 +131,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::YandexMusic => credentials.yandex,
             vessel_core::model::ProviderKind::Deezer => credentials.deezer,
             vessel_core::model::ProviderKind::Spotify => credentials.spotify,
-            // YouTube Music СЂР°Р±РѕС‚Р°РµС‚ РІСЃРµРіРґР° Рё Р°РЅРѕРЅРёРјРЅРѕ
+            // YouTube Music РЎР‚Р В°Р В±Р С•РЎвЂљР В°Р ВµРЎвЂљ Р Р†РЎРѓР ВµР С–Р Т‘Р В° Р С‘ Р В°Р Р…Р С•Р Р…Р С‘Р СР Р…Р С•
             vessel_core::model::ProviderKind::YouTubeMusic => true,
         };
         let connected = registry.get(kind).is_some() && enabled;
@@ -210,7 +210,7 @@ pub struct ProgressPayload {
     pub duration_ms: u64,
 }
 
-/// РћСЃРЅРѕРІРЅРѕР№ С†РёРєР»: РіРѕРЅСЏРµС‚ runtime, РїРµСЂСЃРёСЃС‚РёС‚ СЃРѕСЃС‚РѕСЏРЅРёРµ, С€Р»С‘С‚ СЃРѕР±С‹С‚РёСЏ.
+/// Р С›РЎРѓР Р…Р С•Р Р†Р Р…Р С•Р в„– РЎвЂ Р С‘Р С”Р В»: Р С–Р С•Р Р…РЎРЏР ВµРЎвЂљ runtime, Р С—Р ВµРЎР‚РЎРѓР С‘РЎРѓРЎвЂљР С‘РЎвЂљ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ, РЎв‚¬Р В»РЎвЂРЎвЂљ РЎРѓР С•Р В±РЎвЂ№РЎвЂљР С‘РЎРЏ.
 fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
     loop {
         let mut core = match core.lock() {
@@ -275,8 +275,8 @@ fn persist(core: &mut GuiCore) {
         config.deezer_enabled = core.app.deezer_enabled;
         config.spotify_enabled = core.app.spotify_enabled;
         config.youtube_music_enabled = core.app.youtube_music_enabled;
-        // РСЃС‚РѕС‡РЅРёРє Р°СѓРґРёРѕ Spotify (РјРµРЅСЏРµС‚СЃСЏ С‡РµСЂРµР· set_spotify_playback_source,
-        // РєРѕС‚РѕСЂС‹Р№ РїРёС€РµС‚ РµРіРѕ РІ core.config С‡РµСЂРµР· Runtime)
+        // Р ВРЎРѓРЎвЂљР С•РЎвЂЎР Р…Р С‘Р С” Р В°РЎС“Р Т‘Р С‘Р С• Spotify (Р СР ВµР Р…РЎРЏР ВµРЎвЂљРЎРѓРЎРЏ РЎвЂЎР ВµРЎР‚Р ВµР В· set_spotify_playback_source,
+        // Р С”Р С•РЎвЂљР С•РЎР‚РЎвЂ№Р в„– Р С—Р С‘РЎв‚¬Р ВµРЎвЂљ Р ВµР С–Р С• Р Р† core.config РЎвЂЎР ВµРЎР‚Р ВµР В· Runtime)
         config.spotify_playback_source = core.config.spotify_playback_source.clone();
         config.global_hotkeys_enabled = core.app.global_hotkeys_enabled;
         config.hotkeys = core.app.hotkeys.clone();
@@ -324,7 +324,7 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         .map(PathBuf::from)
         .unwrap_or_else(|| paths.users_dir());
     let mut users = UserManager::open(users_dir, config.history_limit, Some(paths.database_file.clone()))?;
-    // РђРІС‚Рѕ-РІС…РѕРґ РёР»Рё РІС‹Р±РѕСЂ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїСЂРё СЃС‚Р°СЂС‚Рµ
+    // Р С’Р Р†РЎвЂљР С•-Р Р†РЎвЂ¦Р С•Р Т‘ Р С‘Р В»Р С‘ Р Р†РЎвЂ№Р В±Р С•РЎР‚ Р С—Р С•Р В»РЎРЉР В·Р С•Р Р†Р В°РЎвЂљР ВµР В»РЎРЏ Р С—РЎР‚Р С‘ РЎРѓРЎвЂљР В°РЎР‚РЎвЂљР Вµ
     if let Some(auto) = config.auto_login_user.clone() {
         if users.user_exists(&auto) {
             users.switch_user(&auto)?;
@@ -337,7 +337,7 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
     let mut runtime = Runtime::new(&config, &secrets, storage.clone());
     match runtime.credential_state() {
         Ok(credentials) => app.set_credentials(credentials),
-        Err(error) => app.status_message = format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РєР»СЋС‡Рё: {error}"),
+        Err(error) => app.status_message = format!("Р СњР Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р С—РЎР‚Р С•Р Р†Р ВµРЎР‚Р С‘РЎвЂљРЎРЉ Р С”Р В»РЎР‹РЎвЂЎР С‘: {error}"),
     }
     if let Some(notice) = runtime.take_notices().into_iter().last() {
         app.status_message = notice;
@@ -362,23 +362,22 @@ async fn get_state(state: State<'_, Arc<Mutex<GuiCore>>>) -> Result<FullState, S
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     Ok(build_full_state(&core))
 }
-
-pub fn run() {
-    let paths = AppPaths::discover().expect("РЅРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РїСѓС‚Рё РїСЂРёР»РѕР¶РµРЅРёСЏ");
+pub fn run() -> anyhow::Result<()> {
+    let paths = AppPaths::discover().expect("Р Р…Р Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р Р…Р В°Р в„–РЎвЂљР С‘ Р С—РЎС“РЎвЂљР С‘ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ");
     paths
         .ensure()
-        .expect("РЅРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РєР°С‚Р°Р»РѕРіРё РїСЂРёР»РѕР¶РµРЅРёСЏ");
+        .expect("Р Р…Р Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ РЎРѓР С•Р В·Р Т‘Р В°РЎвЂљРЎРЉ Р С”Р В°РЎвЂљР В°Р В»Р С•Р С–Р С‘ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ");
 
-    // РЎС‚Р°СЂС‚РѕРІР°СЏ РѕС‡РёСЃС‚РєР° РєСЌС€РµР№: РІСЂРµРјРµРЅРЅС‹Р№ playback-РєСЌС€ (Deezer/Spotify)
-    // СѓРґР°Р»СЏРµС‚СЃСЏ С†РµР»РёРєРѕРј (legacy-С„Р°Р№Р»С‹, РѕСЂС„Р°РЅС‹, .part), РІ offline-РєСЌС€Рµ
-    // РІС‹С‡РёС‰Р°СЋС‚СЃСЏ С‚РѕР»СЊРєРѕ .part Рё РЅСѓР»РµРІС‹Рµ С„Р°Р№Р»С‹. Р’Р°Р»РёРґРЅС‹Рµ offline-Р·Р°РіСЂСѓР·РєРё
-    // (В«РЎРєР°С‡Р°С‚СЊ РІ РєРµС€В») РЅРµ С‚СЂРѕРіР°СЋС‚СЃСЏ.
+    // Р РЋРЎвЂљР В°РЎР‚РЎвЂљР С•Р Р†Р В°РЎРЏ Р С•РЎвЂЎР С‘РЎРѓРЎвЂљР С”Р В° Р С”РЎРЊРЎв‚¬Р ВµР в„–: Р Р†РЎР‚Р ВµР СР ВµР Р…Р Р…РЎвЂ№Р в„– playback-Р С”РЎРЊРЎв‚¬ (Deezer/Spotify)
+    // РЎС“Р Т‘Р В°Р В»РЎРЏР ВµРЎвЂљРЎРѓРЎРЏ РЎвЂ Р ВµР В»Р С‘Р С”Р С•Р С (legacy-РЎвЂћР В°Р в„–Р В»РЎвЂ№, Р С•РЎР‚РЎвЂћР В°Р Р…РЎвЂ№, .part), Р Р† offline-Р С”РЎРЊРЎв‚¬Р Вµ
+    // Р Р†РЎвЂ№РЎвЂЎР С‘РЎвЂ°Р В°РЎР‹РЎвЂљРЎРѓРЎРЏ РЎвЂљР С•Р В»РЎРЉР С”Р С• .part Р С‘ Р Р…РЎС“Р В»Р ВµР Р†РЎвЂ№Р Вµ РЎвЂћР В°Р в„–Р В»РЎвЂ№. Р вЂ™Р В°Р В»Р С‘Р Т‘Р Р…РЎвЂ№Р Вµ offline-Р В·Р В°Р С–РЎР‚РЎС“Р В·Р С”Р С‘
+    // (Р’В«Р РЋР С”Р В°РЎвЂЎР В°РЎвЂљРЎРЉ Р Р† Р С”Р ВµРЎв‚¬Р’В») Р Р…Р Вµ РЎвЂљРЎР‚Р С•Р С–Р В°РЎР‹РЎвЂљРЎРѓРЎРЏ.
     let (removed, errors) = vessel_core::provider::cache::cleanup_playback_caches();
     if removed > 0 || errors > 0 {
         vessel_core::dlog!("[cache] startup cleanup: removed={removed} errors={errors}");
     }
 
-    let core = load_core(&paths).expect("РЅРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЏРґСЂРѕ");
+    let core = load_core(&paths).expect("Р Р…Р Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р В·Р В°Р С–РЎР‚РЎС“Р В·Р С‘РЎвЂљРЎРЉ РЎРЏР Т‘РЎР‚Р С•");
     let core = Arc::new(Mutex::new(core));
 
     tauri::Builder::default()
@@ -490,8 +489,8 @@ pub fn run() {
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
-            let core = app.state::<Arc<Mutex<GuiCore>>>();
-            let core = Arc::clone(core.inner());
+            let core_state = app.state::<Arc<Mutex<GuiCore>>>().inner();
+            let core = Arc::clone(core_state);
             std::thread::spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
@@ -506,8 +505,10 @@ pub fn run() {
                 let _guard = runtime.enter();
                 driver_loop(core, app_handle);
             });
+
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    .run(tauri::generate_context!())?;
+
+    Ok(())
 }

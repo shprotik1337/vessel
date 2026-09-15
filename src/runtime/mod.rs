@@ -440,9 +440,7 @@ impl Runtime {
                 self.config.youtube_music_enabled = true;
             }
         }
-        let setup = build_registry(&self.config, &self.secrets, true);
-        self.providers = Arc::new(setup.registry);
-        self.notices.extend(setup.notices);
+        self.reload_providers();
         Ok(())
     }
 
@@ -561,10 +559,22 @@ impl Runtime {
         // предыдущий не смог).
         if track.provider == crate::model::ProviderKind::Spotify {
             let requested_source = self.playback_resolver.source();
+            let has_deezer_arl = self
+                .secrets
+                .get(crate::secrets::SecretKey::DeezerArl)
+                .ok()
+                .flatten()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
             let chain: Vec<_> = requested_source
                 .chain()
                 .into_iter()
-                .filter(|source| self.playback_resolver.source_available(*source))
+                .filter(|source| {
+                    if *source == playback_resolver::PlaybackSourceKind::Deezer && !has_deezer_arl {
+                        return false;
+                    }
+                    self.playback_resolver.source_available(*source)
+                })
                 .collect();
             if chain.is_empty() {
                 // Аудио Spotify нативным путём не играется НИКОГДА: только
@@ -706,6 +716,7 @@ impl Runtime {
                             source.as_str(),
                             foreign_track.title
                         );
+
                         match foreign.playback_source(foreign_track).await {
                             Ok(source_stream) => {
                                 // Играем через чужого провайдера, но
@@ -715,6 +726,7 @@ impl Runtime {
                                     source.label(),
                                     candidates.len()
                                 );
+
                                 let _ = sender.send(RuntimeMessage::PlaybackReady {
                                     generation,
                                     source: source_stream,
@@ -931,6 +943,11 @@ impl Runtime {
     pub fn reload_providers(&mut self) {
         let setup = build_registry(&self.config, &self.secrets, true);
         self.providers = Arc::new(setup.registry);
+        let playback_source = self.playback_resolver.source();
+        self.playback_resolver = Arc::new(playback_resolver::PlaybackResolver::new(
+            Arc::clone(&self.providers),
+            playback_source,
+        ));
         self.notices.extend(setup.notices);
     }
 

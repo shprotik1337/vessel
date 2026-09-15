@@ -1,4 +1,4 @@
-﻿//! Нативный YouTube signature / `n` decipher (метод Kopuz, EUPL-1.2).
+//! Нативный YouTube signature / `n` decipher (метод Kopuz, EUPL-1.2).
 //!
 //! WEB_REMIX (единственный клиент, отдающий Premium 256к аудио залогиненному
 //! аккаунту) возвращает форматы в `signatureCipher`: у `url` нет параметра
@@ -139,16 +139,18 @@ pub async fn deciphered_url(http: &reqwest::Client, base_js: &str, format: &Valu
     // Отладка: видно, решился ли n-челлендж (должен отличаться от входа).
     if let Some(n) = &n {
         let solved = lookup(&responses, n);
-        crate::dlog!(
+        println!(
             "[decipher] n: in={} out={:?}",
             &n[..n.len().min(24)],
             solved.as_ref().map(|s| &s[..s.len().min(24)])
         );
+        if let Some(new) = solved {
+            url = replace_query_value(&url, "n", n, &new);
+        } else {
+            println!("[decipher] WARNING: n-challenge solve failed! n was NOT transformed!");
+        }
     }
 
-    if let (Some(old), Some(new)) = (&n, n.as_ref().and_then(|n| lookup(&responses, n))) {
-        url = replace_query_value(&url, "n", old, &new);
-    }
     if let Some(s) = &sig {
         let solved = lookup(&responses, s).context("signature solve produced no result")?;
         url.push_str(&format!("&{sp}={}", pct_encode(&solved)));

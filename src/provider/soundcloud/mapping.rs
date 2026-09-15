@@ -14,6 +14,7 @@ pub fn normalizovat_track(track: ScTrack) -> Option<TrackRef> {
             reason: "SoundCloud запретил внешнее воспроизведение".to_string(),
         },
         Some("preview") => PlaybackCapability::Preview { seconds: 30 },
+        _ if track.policy.as_deref() == Some("SNIP") => PlaybackCapability::Preview { seconds: 30 },
         _ if track.streamable == Some(false)
             || track
                 .policy
