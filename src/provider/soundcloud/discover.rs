@@ -1,66 +1,80 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use reqwest::Client;
 use url::Url;
 
 use super::client::build_http;
 
 /// Автопоиск публичного client_id SoundCloud: тянет главную страницу,
-/// собирает ссылки на JS-ассеты веб-плеера и сканирует их код. Ничего
-/// не требует — ключ зашит в клиентский бандл, работает анонимно.
+/// собирает ссылки на JS-ассеты веб-плеера и сканирует их код с конца.
+/// Использует браузерный User-Agent для обхода Cloudflare.
 pub async fn discover_client_id() -> Result<String> {
-    let http = build_http(Client::builder())?;
+    let http = build_http(Client::builder().timeout(std::time::Duration::from_secs(15)))?;
 
     let html = http
-        .get("https://soundcloud.com/")
+        .get("https://soundcloud.com")
         .send()
-        .await?
-        .error_for_status()?
+        .await
+        .context("SoundCloud homepage request failed")?
+        .error_for_status()
+        .context("SoundCloud homepage returned error status")?
         .text()
-        .await?;
+        .await
+        .context("SoundCloud homepage body read failed")?;
 
-    // 1) Иногда ключ виден прямо в HTML
-    if let Some(id) = find_client_id(&html) {
-        if client_id_works(&http, &id).await {
-            return Ok(id);
+    let mut scripts = Vec::new();
+    for chunk in html.split("<script") {
+        if let Some(src) = extract_attr(chunk, "src") {
+            if src.contains("sndcdn.com/assets/") && src.ends_with(".js") {
+                scripts.push(src.to_string());
+            }
         }
     }
 
-    // 2) Сканируем ассеты веб-плеера
-    let mut assets: Vec<String> = Vec::new();
-    let mut rest = html.as_str();
-    while let Some(pos) = rest.find("https://a-v2.sndcdn.com/assets/") {
-        rest = &rest[pos..];
-        let end = rest.find(['"', '\'']).unwrap_or(rest.len().min(160));
-        let url = rest[..end].to_string();
-        rest = &rest[end.min(1)..];
-        if url.ends_with(".js") && !assets.contains(&url) {
-            assets.push(url);
-        }
-        if assets.len() >= 12 {
-            break;
-        }
-    }
-    for asset in &assets {
-        let body = match http.get(asset.as_str()).send().await {
-            Ok(resp) => resp,
+    // Сканируем с конца (новые бандлы первыми)
+    for src in scripts.iter().rev() {
+        let resp = match http.get(src).send().await {
+            Ok(r) => r,
             Err(_) => continue,
         };
-        let body = match body.error_for_status() {
-            Ok(resp) => resp,
+        let js = match resp.text().await {
+            Ok(t) => t,
             Err(_) => continue,
         };
-        let text = match body.text().await {
-            Ok(text) => text,
-            Err(_) => continue,
-        };
-        if let Some(id) = find_client_id(&text) {
+        for id in find_all_client_ids(&js) {
             if client_id_works(&http, &id).await {
+                crate::dlog!("[SoundCloud] найден рабочий client_id: {id}");
                 return Ok(id);
             }
         }
     }
 
-    bail!("не удалось автоматически найти client_id SoundCloud — вставь его вручную")
+    bail!("не удалось автоматически найти client_id SoundCloud — укажи его вручную в Настройках")
+}
+
+fn extract_attr<'a>(chunk: &'a str, attr: &str) -> Option<&'a str> {
+    let key = format!("{attr}=\"");
+    let start = chunk.find(&key)? + key.len();
+    let rest = &chunk[start..];
+    let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
+fn find_all_client_ids(js: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    for marker in ["client_id:\"", "\"client_id\":\"", "client_id=\""] {
+        let mut rest = js;
+        while let Some(pos) = rest.find(marker) {
+            rest = &rest[pos + marker.len()..];
+            let id: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if id.len() >= 16 && !results.contains(&id) {
+                results.push(id);
+            }
+        }
+    }
+    results
 }
 
 /// Проверяем, что ключ живой: с неверным client_id api-v2 отвечает 401/403.
@@ -71,27 +85,6 @@ async fn client_id_works(http: &Client, id: &str) -> bool {
         return false;
     };
     matches!(http.get(url).send().await, Ok(resp) if resp.status().is_success())
-}
-
-/// Первый ключ (32 буквенно-цифровых символа) рядом с упоминанием client_id.
-fn find_client_id(text: &str) -> Option<String> {
-    let mut rest = text;
-    while let Some(pos) = rest.find("client_id") {
-        rest = &rest[pos + "client_id".len()..];
-        let candidate: String = rest
-            .chars()
-            .skip_while(|c| !c.is_ascii_alphanumeric())
-            .take(32)
-            .collect();
-        if candidate.len() == 32
-            && candidate
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
-            return Some(candidate);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

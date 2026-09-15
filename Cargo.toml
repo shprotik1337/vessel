@@ -60,7 +60,7 @@ log = "0.4"
 lto = "thin"
 codegen-units = 1
 strip = true
-panic = "abort"
+panic = "unwind"
 opt-level = "z"
 overflow-checks = false
 # Инкрементальная компиляция в release раздувает target на гигабайты —

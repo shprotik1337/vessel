@@ -53,6 +53,22 @@ pub const WEB_REMIX: YouTubeClient = YouTubeClient {
     use_signature_timestamp: true,
 };
 
+pub const ANDROID_VR_1_43_32: YouTubeClient = YouTubeClient {
+    client_name: "ANDROID_VR",
+    client_version: "1.43.32",
+    client_id: "28",
+    user_agent: "com.google.android.apps.youtube.vr.oculus/1.43.32 \
+                 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; \
+                 Cronet/107.0.5284.2)",
+    os_name: "Android",
+    os_version: "12",
+    device_make: "Oculus",
+    device_model: "Quest 3",
+    android_sdk_version: Some(32),
+    login_supported: false,
+    use_signature_timestamp: false,
+};
+
 /// Запасной клиент для стрима: анонимный, отдаёт plain URL (с POT).
 pub const ANDROID_VR_1_61_48: YouTubeClient = YouTubeClient {
     client_name: "ANDROID_VR",
@@ -69,6 +85,8 @@ pub const ANDROID_VR_1_61_48: YouTubeClient = YouTubeClient {
     login_supported: false,
     use_signature_timestamp: false,
 };
+
+pub const STREAM_FALLBACK_CLIENTS: &[YouTubeClient] = &[ANDROID_VR_1_43_32, ANDROID_VR_1_61_48];
 
 /// Premium itag'и (256–270 kbps аудио). Free-аккаунт их не видит (Kopuz).
 pub fn is_premium_itag(itag: u32) -> bool {

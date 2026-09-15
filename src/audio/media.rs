@@ -53,7 +53,7 @@ pub(super) fn open_media(source: &PlaybackSource, position_ms: u64) -> Result<Op
     })
 }
 
-fn is_hls(source: &PlaybackSource) -> bool {
+pub(crate) fn is_hls(source: &PlaybackSource) -> bool {
     let mime_is_hls = source.mime_type.as_deref().is_some_and(|mime| {
         let mime = mime.to_ascii_lowercase();
         mime.contains("mpegurl") || mime.contains("x-mpegurl")

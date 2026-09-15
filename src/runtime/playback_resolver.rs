@@ -294,7 +294,23 @@ impl PlaybackResolver {
         };
 
         // 4. Матчинг кандидатов
-        let candidates = best_candidates(track, &page.tracks, foreign_kind);
+        let mut candidates = best_candidates(track, &page.tracks, foreign_kind);
+        if candidates.is_empty() {
+            // Фолбэк: пробуем очищенный запрос без feat/скобок (актуально для Deezer)
+            let clean_q = clean_search_query(track);
+            if clean_q != query {
+                if let Ok(Ok(clean_page)) = tokio::time::timeout(
+                    SEARCH_TIMEOUT,
+                    foreign_provider.search(&clean_q, None),
+                ).await {
+                    let clean_candidates = best_candidates(track, &clean_page.tracks, foreign_kind);
+                    if !clean_candidates.is_empty() {
+                        candidates = clean_candidates;
+                    }
+                }
+            }
+        }
+
         if candidates.is_empty() {
             let had_any = !page.tracks.is_empty();
             let stage = if had_any {
@@ -481,6 +497,27 @@ fn search_query(track: &TrackRef) -> String {
         track.title.clone()
     } else {
         format!("{} - {}", track.artists.join(", "), track.title)
+    }
+}
+
+/// Очищенный запрос: артист + название без (feat. ...), [remaster], и т.д.
+/// Используется как фолбэк при пустой выдаче чужого каталога (например, Deezer).
+fn clean_search_query(track: &TrackRef) -> String {
+    let mut title = track.title.clone();
+    for marker in ["feat", "ft", "featuring", "with", "remix", "remaster"] {
+        strip_parenthesized(&mut title, marker);
+    }
+    title = strip_feat_suffix(&title);
+    let title = title.trim();
+    if track.artists.is_empty() {
+        title.to_string()
+    } else {
+        let first_artist = track.artists.first().map(|s| s.as_str()).unwrap_or("");
+        if title.is_empty() {
+            first_artist.to_string()
+        } else {
+            format!("{} - {}", first_artist, title)
+        }
     }
 }
 
@@ -1115,5 +1152,26 @@ mod tests {
         // А кавер с другой длительностью отбраковывается полностью
         let long_cover = track(ProviderKind::YouTubeMusic, "yt5b", "Кино", "Другая Группа", 260_000);
         assert!(best_match(&spotify, &[long_cover], ProviderKind::YouTubeMusic).is_none());
+    }
+
+    #[test]
+    fn clean_search_query_strips_feat_and_remix() {
+        let track1 = track(
+            ProviderKind::Spotify,
+            "sp_feat",
+            "Twin Team (feat. Lil Uzi Vert)",
+            "Playboi Carti",
+            150_000,
+        );
+        assert_eq!(clean_search_query(&track1), "Playboi Carti - Twin Team");
+
+        let track2 = track(
+            ProviderKind::Spotify,
+            "sp_remix",
+            "Song Name [Remix]",
+            "Artist",
+            200_000,
+        );
+        assert_eq!(clean_search_query(&track2), "Artist - Song Name");
     }
 }

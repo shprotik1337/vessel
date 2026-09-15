@@ -104,12 +104,11 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: b
             .soundcloud_client_id_override
             .clone()
             .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientIdOverride, &mut notices))
-            .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientId, &mut notices));
-        if let Some(client_id) = soundcloud_key.filter(|value| !value.trim().is_empty()) {
-            match SoundCloudProvider::new(client_id) {
-                Ok(provider) => registry.register(provider),
-                Err(error) => notices.push(format!("SoundCloud не настроен: {error}")),
-            }
+            .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientId, &mut notices))
+            .unwrap_or_default();
+        match SoundCloudProvider::new(soundcloud_key) {
+            Ok(provider) => registry.register(provider),
+            Err(error) => notices.push(format!("SoundCloud не настроен: {error}")),
         }
     }
 

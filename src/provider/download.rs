@@ -14,6 +14,9 @@ pub fn downloads_dir() -> Result<PathBuf> {
 
 /// Расширение файла из mime-типа потока.
 pub fn track_file_extension(source: &PlaybackSource) -> String {
+    if crate::audio::is_hls(source) {
+        return "m4a".to_string();
+    }
     let from_mime = match source.mime_type.as_deref() {
         Some("audio/mpeg") => "mp3",
         Some("audio/flac") => "flac",
@@ -78,28 +81,83 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
             Ok(())
         }
         "http" | "https" => {
-            let client = reqwest::Client::new();
+            let temporary = dest.with_extension("part");
+
+            if crate::audio::is_hls(source) {
+                let url = source.url.clone();
+                let headers = source.headers.clone();
+                let temporary_clone = temporary.clone();
+                tokio::task::spawn_blocking(move || -> Result<()> {
+                    use std::io::{Read, Write};
+                    let mut hls = crate::audio::HlsSource::open(&url, &headers, 0)?;
+                    let mut file = std::fs::File::create(&temporary_clone)
+                        .with_context(|| format!("не удалось создать {}", temporary_clone.display()))?;
+                    let mut buffer = [0u8; 64 * 1024];
+                    let mut total_bytes = 0usize;
+                    loop {
+                        let read = hls.read(&mut buffer)?;
+                        if read == 0 {
+                            break;
+                        }
+                        file.write_all(&buffer[..read])?;
+                        total_bytes += read;
+                    }
+                    file.flush()?;
+                    if total_bytes == 0 {
+                        anyhow::bail!("HLS-источник отдал пустой файл");
+                    }
+                    Ok(())
+                })
+                .await
+                .context("сбой фоновой задачи скачивания HLS")??;
+
+                tokio::fs::rename(&temporary, dest)
+                    .await
+                    .with_context(|| format!("не удалось завершить скачивание HLS"))?;
+                return Ok(());
+            }
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(90))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
             let mut request = client.get(source.url.clone());
             for (key, value) in &source.headers {
                 request = request.header(key, value);
             }
-            let response = request
+            let mut response = request
                 .send()
                 .await
                 .context("сервер не ответил на запрос скачивания")?
                 .error_for_status()
                 .context("сервер отказал в скачивании трека")?;
-            let bytes = response
-                .bytes()
-                .await
-                .context("не удалось скачать трек целиком")?;
-            if bytes.is_empty() {
-                bail!("сервер отдал пустой файл");
+            let write_result: Result<()> = async {
+                use tokio::io::AsyncWriteExt;
+                let mut file = tokio::fs::File::create(&temporary)
+                    .await
+                    .with_context(|| format!("не удалось создать {}", temporary.display()))?;
+                let mut total_bytes = 0usize;
+                while let Some(chunk) = response.chunk().await.context("сбой при загрузке аудиоданных")? {
+                    total_bytes += chunk.len();
+                    file.write_all(&chunk)
+                        .await
+                        .with_context(|| format!("ошибка записи в {}", temporary.display()))?;
+                }
+                file.flush().await.context("не удалось сбросить буфер записи")?;
+                if total_bytes == 0 {
+                    bail!("сервер отдал пустой файл");
+                }
+                Ok(())
             }
-            let temporary = dest.with_extension("part");
-            std::fs::write(&temporary, &bytes)
-                .with_context(|| format!("не удалось записать {}", dest.display()))?;
-            std::fs::rename(&temporary, dest)
+            .await;
+
+            if let Err(err) = write_result {
+                let _ = tokio::fs::remove_file(&temporary).await;
+                return Err(err);
+            }
+
+            tokio::fs::rename(&temporary, dest)
+                .await
                 .with_context(|| format!("не удалось завершить скачивание"))?;
             Ok(())
         }

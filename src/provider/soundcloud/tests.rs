@@ -70,3 +70,21 @@ fn fake_soundcloud_host_goes_away() {
         proverit_soundcloud_url(&Url::parse("https://soundcloud.com/user/set").unwrap()).is_ok()
     );
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_live_soundcloud_search_and_playback() {
+    use crate::provider::MusicProvider;
+    let client_id = super::discover::discover_client_id().await.unwrap();
+    let provider = super::SoundCloudProvider::new(client_id).unwrap();
+    let page = provider.search("nirvana", None).await.unwrap();
+    assert!(!page.tracks.is_empty(), "должны найтись треки SoundCloud");
+
+    println!("Найдено {} треков SoundCloud", page.tracks.len());
+    for track in &page.tracks[..3] {
+        println!("Пробуем resolve для '{}' ({:?})...", track.title, track.capability);
+        let source = provider.playback_source(track).await.unwrap();
+        println!("Успешно: {} (mime: {:?})", source.url, source.mime_type);
+        assert!(!source.url.as_str().is_empty());
+    }
+}
