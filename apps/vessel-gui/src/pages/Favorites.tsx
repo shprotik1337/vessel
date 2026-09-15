@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
-import { trackKey, artistLabel } from "../lib/utils";
+import { trackKey, artistLabel, formatDuration } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
@@ -144,40 +144,52 @@ export function Favorites() {
     }
   };
 
+  const totalMs = favTracks.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0);
+
   return (
     <div className="view">
-      <div className="view-hd">
-        <div>
-          <div className="view-title">{t(lang, "favorites.title")}</div>
-          <div className="view-sub">{favTracks.length} {t(lang, "common.tracks")}</div>
+      <div className="panel">
+        <div className="playlist-hd">
+          <div className="fav-cover" title={t(lang, "favorites.title")}>
+            <svg width="60" height="60" viewBox="0 0 24 24" fill="#ffffff">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 8, minWidth: 0 }}>
+            <span className="kicker">{t(lang, "nav.favorites")}</span>
+            <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
+              {t(lang, "favorites.title")}
+            </div>
+            <div className="meta-line">
+              <span>{favTracks.length} {t(lang, "common.tracks")}</span>
+              {totalMs > 0 && (
+                <>
+                  <span className="meta-sep">·</span>
+                  <span>{formatDuration(totalMs)}</span>
+                </>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={playAll}>
+                ▶ {t(lang, "playlist.play")}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={shufflePlay}>
+                {t(lang, "favorites.shuffle")}
+              </button>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={downloadAll}
+                disabled={downloading}
+                title={t(lang, "favorites.cacheTitle")}
+              >
+                {downloading ? "..." : t(lang, "favorites.cache")}
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="btns">
-          <button className="btn btn-primary" onClick={playAll}>
-            ▶ {t(lang, "favorites.playAll")}
-          </button>
-          <button className="btn btn-ghost" onClick={shufflePlay}>
-            {t(lang, "favorites.shuffle")}
-          </button>
-          <button
-            className="btn btn-outline"
-            onClick={downloadAll}
-            disabled={downloading}
-            title={t(lang, "favorites.cacheTitle")}
-          >
-            {downloading ? "..." : `⤓ ${t(lang, "favorites.cache")}`}
-          </button>
-        </div>
-      </div>
 
-      {favTracks.length === 0 ? (
-        <div className="empty">
-          <div className="ico">♡</div>
-          <div className="t1">{t(lang, "favorites.empty1")}</div>
-          <div className="t2">{t(lang, "favorites.empty2")}</div>
-        </div>
-      ) : (
-        <>
-          <div className="chips" style={{ marginBottom: 14 }}>
+        <div className="playlist-bar" style={{ padding: "12px 24px", gap: 12 }}>
+          <div className="chips">
             {sortOptions.map((opt) => (
               <button
                 key={opt.mode}
@@ -188,38 +200,53 @@ export function Favorites() {
                     : undefined
                 }
                 onClick={() => toggleSort(opt.mode)}
+                title={sort === opt.mode && opt.mode !== "custom" ? (dir === "asc" ? t(lang, "playlist.ascending") : t(lang, "playlist.descending")) : undefined}
               >
                 {opt.label}
                 {sort === opt.mode && opt.mode !== "custom" && (dir === "asc" ? " ↑" : " ↓")}
               </button>
             ))}
           </div>
-          <div className="tracklist" onMouseUp={onRowMouseUp} onMouseLeave={() => setDragOver(null)}>
-            {visible.map((track, i) => (
-              <div
-                key={trackKey(track) + i}
-                onMouseDown={(e) => onRowMouseDown(e, i)}
-                onMouseEnter={() => onRowMouseEnter(i)}
-                style={{
-                  cursor: "grab",
-                  userSelect: "none",
-                  ...(dragOver === i && dragRef.current
-                    ? { boxShadow: "inset 0 2px 0 0 var(--text)" }
-                    : {}),
-                }}
-              >
-                <TrackRow
-                  track={track}
-                  index={i}
-                  nowKey={nowKey}
-                  onPlay={playOne}
-                  onArtistClick={(name, provider) => navigateTo("artist", { artist: name, provider })}
-                />
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+          <span style={{ color: "var(--text3)", fontSize: 12 }}>
+            {t(lang, "playlist.reorderHint")}
+          </span>
+        </div>
+
+        <div style={{ padding: "12px 8px" }}>
+          {favTracks.length === 0 ? (
+            <div className="empty">
+              <div className="ico">♡</div>
+              <div className="t1">{t(lang, "favorites.empty1")}</div>
+              <div className="t2">{t(lang, "favorites.empty2")}</div>
+            </div>
+          ) : (
+            <div className="tracklist" onMouseUp={onRowMouseUp} onMouseLeave={() => setDragOver(null)}>
+              {visible.map((track, i) => (
+                <div
+                  key={trackKey(track) + i}
+                  onMouseDown={(e) => onRowMouseDown(e, i)}
+                  onMouseEnter={() => onRowMouseEnter(i)}
+                  style={{
+                    cursor: "grab",
+                    userSelect: "none",
+                    ...(dragOver === i && dragRef.current
+                      ? { boxShadow: "inset 0 2px 0 0 var(--text)" }
+                      : {}),
+                  }}
+                >
+                  <TrackRow
+                    track={track}
+                    index={i}
+                    nowKey={nowKey}
+                    onPlay={playOne}
+                    onArtistClick={(name, provider) => navigateTo("artist", { artist: name, provider })}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
