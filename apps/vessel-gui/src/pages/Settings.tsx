@@ -663,7 +663,7 @@ function PlaybackSourceBlock() {
     {
       key: "auto",
       label: t(lang, "settings.playbackSource.auto"),
-      badge: "Deezer → YouTube Music",
+      badge: "YouTube Music → Deezer",
       available: autoAvailable,
     },
     {
