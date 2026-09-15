@@ -229,25 +229,9 @@ export function BottomPlayer() {
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
         <div className="pl-meta">
-          <div className="pl-title-row">
-            <span className="ttl" title={track?.title ?? ""}>
-              {track?.title ?? t(lang, "bottom.noTrack")}
-            </span>
-            {track && (
-              <span className="pl-src-badge">
-                {providerLabel(track.provider)}
-              </span>
-            )}
-            <button
-              className={`heart ${fav ? "active" : ""}`}
-              onClick={handleFav}
-              title={t(lang, "bottom.favorite")}
-              aria-label="Like"
-              disabled={!track}
-            >
-              {HEART_SVG}
-            </button>
-          </div>
+          <span className="ttl" title={track?.title ?? ""}>
+            {track?.title ?? t(lang, "bottom.noTrack")}
+          </span>
           <div className="pl-sub" title={track?.artists.join(", ") ?? ""}>
             {track && track.artists.length > 0 ? (
               track.artists.map((artist, i) => (
@@ -267,6 +251,20 @@ export function BottomPlayer() {
             ) : null}
           </div>
         </div>
+        <button
+          className={`heart ${fav ? "active" : ""}`}
+          onClick={handleFav}
+          title={t(lang, "bottom.favorite")}
+          aria-label="Like"
+          disabled={!track}
+        >
+          {HEART_SVG}
+        </button>
+        {track && (
+          <span className="pl-src-badge" title={track.provider}>
+            {providerLabel(track.provider)}
+          </span>
+        )}
       </div>
       <div className="pl-center">
         <div className="pl-controls">
