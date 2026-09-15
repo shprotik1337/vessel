@@ -940,6 +940,14 @@ impl Runtime {
         self.secrets.remove_named(name).map(|_| ())
     }
 
+    /// Синхронизирует конфиг приложения (маршрутизацию провайдеров, список серверов и настройки)
+    /// и пересобирает реестр провайдеров на лету.
+    pub fn sync_config(&mut self, config: &AppConfig) {
+        self.config = config.clone();
+        self.search_delay = Duration::from_millis(config.search_debounce_ms);
+        self.reload_providers();
+    }
+
     pub fn reload_providers(&mut self) {
         let setup = build_registry(&self.config, &self.secrets, true);
         self.providers = Arc::new(setup.registry);
