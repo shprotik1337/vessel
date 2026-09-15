@@ -259,6 +259,8 @@ pub async fn set_spotify_proxy(core: CoreState<'_>, path: Option<String>) -> Res
     let mut core = lock(&core);
     core.config.spotify_proxy = path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
     core.app.config_dirty = true;
+    let config_clone = core.config.clone();
+    core.runtime.sync_config(&config_clone);
     Ok(())
 }
 
@@ -2083,9 +2085,9 @@ pub async fn vessel_server_add(
         .find(|s| s.id == id)
         .map(|s| server_view(&core, s))
         .ok_or_else(|| "не удалось сохранить сервер".to_string())?;
-    drop(core);
-    let mut core = arc.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    core.runtime.reload_providers();
+    let config_clone = core.config.clone();
+    core.runtime.sync_config(&config_clone);
+    core.last_state_hash = 0;
     Ok(view)
 }
 
@@ -2106,7 +2108,9 @@ pub fn vessel_server_remove(core: CoreState<'_>, id: String) -> Result<(), Strin
     let _ = core.runtime.remove_named_secret(&vessel_secret_name(&id));
     core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
-    core.runtime.reload_providers();
+    let config_clone = core.config.clone();
+    core.runtime.sync_config(&config_clone);
+    core.last_state_hash = 0;
     Ok(())
 }
 
@@ -2134,6 +2138,8 @@ pub fn vessel_route_set(
     }
     core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
-    core.runtime.reload_providers();
+    let config_clone = core.config.clone();
+    core.runtime.sync_config(&config_clone);
+    core.last_state_hash = 0;
     Ok(())
 }

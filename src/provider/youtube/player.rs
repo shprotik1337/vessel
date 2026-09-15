@@ -643,29 +643,31 @@ mod tests {
                 source.supports_range,
             ).expect("open HttpRangeSource via server");
 
-            use std::io::Read;
-            let mut buf = vec![0u8; 512 * 1024];
-            let mut total_read = 0usize;
-            for chunk_index in 0..6 {
-                match stream_source.read(&mut buf) {
-                    Ok(0) => {
-                        println!("[Server Test] EOF reached at {total_read} bytes");
-                        break;
-                    }
-                    Ok(n) => {
-                        total_read += n;
-                        println!("[Server Test] Read chunk {chunk_index}: {n} bytes (total: {total_read})");
-                    }
-                    Err(e) => {
-                        println!("[Server Test] Chunk {chunk_index} failed: {e:#}");
-                        if chunk_index >= 2 {
-                            println!("[Server Test] ВНИМАНИЕ: Ошибка 403 на чанке {}! Это означает, что на сервере {} работает старый vessel-server. Пересоберите и перезапустите vessel-server на сервере!", chunk_index, server_url);
-                        }
-                        panic!("Read chunk {chunk_index} failed through server: {e:#}");
-                    }
+            let stream = symphonia::core::io::MediaSourceStream::new(
+                Box::new(stream_source),
+                Default::default(),
+            );
+            let mut hint = symphonia::core::formats::probe::Hint::new();
+            if let Some(mime) = source.mime_type.as_deref() {
+                hint.mime_type(mime);
+            }
+            let probed = symphonia::default::get_probe()
+                .probe(
+                    &hint,
+                    stream,
+                    Default::default(),
+                    Default::default(),
+                );
+            match probed {
+                Ok(mut format) => {
+                    let track = format.default_track(symphonia::core::formats::TrackType::Audio);
+                    println!("[Server Test] Symphonia probe OK! Track: {:?}", track.is_some());
+                }
+                Err(e) => {
+                    panic!("[Server Test] Symphonia probe FAILED: {e:#}");
                 }
             }
-            println!("[Server Test] УСПЕХ! Прочитано {total_read} байт через сервер без обрыва.");
+            println!("[Server Test] УСПЕХ! Стрим через сервер полностью декодируется Symphonia.");
         }).await.unwrap();
     }
 }

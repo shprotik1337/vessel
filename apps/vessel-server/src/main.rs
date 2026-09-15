@@ -444,8 +444,10 @@ async fn resolve(
     let source: PlaybackSource = provider.playback_source(&body.track).await?;
 
     let is_file = source.url.scheme() == "file";
+    let is_hls = source.mime_type.as_deref() == Some("application/vnd.apple.mpegurl")
+        || source.url.path().ends_with(".m3u8");
     let host = source.url.host_str().unwrap_or_default().to_ascii_lowercase();
-    let ip_bound = host.contains("googlevideo") || host.ends_with("youtube.com");
+    let ip_bound = host.contains("googlevideo") || host.ends_with("youtube.com") || is_hls;
     let use_relay = match state.relay_policy {
         RelayPolicy::Off => false,
         RelayPolicy::Always => true,
@@ -461,22 +463,60 @@ async fn resolve(
         println!("[api] resolve direct: {}", body.track.title);
         return Ok(Json(ResolveSourceResponse { source, relay_path: None }));
     }
-    println!("[api] resolve relay: {} ({})", body.track.title, if is_file { "file" } else { &host });
+    println!(
+        "[api] resolve relay: {} ({})",
+        body.track.title,
+        if is_file {
+            "file"
+        } else if is_hls {
+            "hls"
+        } else {
+            &host
+        }
+    );
 
-    let target = if is_file {
+    let (target, mime_type) = if is_file {
         let path = source
             .url
             .to_file_path()
             .map_err(|_| ApiError::new("некорректный путь временного файла сервера"))?;
-        RelayTarget::File(path)
+        (RelayTarget::File(path), source.mime_type.clone())
+    } else if is_hls {
+        let hls_url = source.url.clone();
+        let hls_headers = source.headers.clone();
+        let (path, ext) = tokio::task::spawn_blocking(move || -> anyhow::Result<(std::path::PathBuf, &'static str)> {
+            let mut hls = vessel_core::audio::HlsSource::open(&hls_url, &hls_headers, 0)?;
+            let ext = hls.extension();
+            let temp_dir = std::env::temp_dir().join("vessel-hls");
+            std::fs::create_dir_all(&temp_dir)?;
+            let file_path = temp_dir.join(format!("{}.{}", uuid::Uuid::new_v4().simple(), ext));
+            let mut out = std::fs::File::create(&file_path)?;
+            std::io::copy(&mut hls, &mut out)?;
+            Ok((file_path, ext))
+        })
+        .await
+        .map_err(|e| ApiError::new(format!("ошибка фоновой задачи скачивания HLS: {e}")))?
+        .map_err(|e| ApiError::new(format!("не удалось собрать HLS на сервере: {e:#}")))?;
+
+        let mime = match ext {
+            "mp3" => "audio/mpeg",
+            "aac" | "m4a" => "audio/mp4",
+            "ogg" | "opus" => "audio/ogg",
+            _ => "audio/mpeg",
+        };
+        (RelayTarget::File(path), Some(mime.to_string()))
     } else {
-        RelayTarget::Http {
-            url: source.url.clone(),
-            headers: relay_headers(&source.headers),
-        }
+        (
+            RelayTarget::Http {
+                url: source.url.clone(),
+                headers: relay_headers(&source.headers),
+            },
+            source.mime_type.clone(),
+        )
     };
-    let token = state.relay.mint(target, source.mime_type.clone());
+    let token = state.relay.mint(target, mime_type.clone());
     let mut source = source;
+    source.mime_type = mime_type;
     source.supports_range = true;
     Ok(Json(ResolveSourceResponse {
         source,

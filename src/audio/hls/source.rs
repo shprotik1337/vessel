@@ -15,7 +15,7 @@ use super::{
 
 const MAX_PLAYLIST_DEPTH: usize = 3;
 
-pub(crate) struct HlsSource {
+pub struct HlsSource {
     client: HlsClient,
     playlist: HlsMediaPlaylist,
     next_segment: usize,
@@ -29,7 +29,7 @@ pub(crate) struct HlsSource {
 }
 
 impl HlsSource {
-    pub(crate) fn open(
+    pub fn open(
         url: &Url,
         headers: &BTreeMap<String, String>,
         position_ms: u64,
@@ -57,7 +57,7 @@ impl HlsSource {
         Ok(source)
     }
 
-    pub(in crate::audio) const fn extension(&self) -> &'static str {
+    pub const fn extension(&self) -> &'static str {
         self.extension
     }
 

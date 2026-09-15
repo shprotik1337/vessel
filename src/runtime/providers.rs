@@ -204,7 +204,10 @@ fn apply_provider_routing(
             continue;
         }
         match ServerClient::with_secrets(&server.url, &token, Some(secrets.clone())) {
-            Ok(client) => registry.register(ServerProvider::new(kind, client)),
+            Ok(client) => {
+                crate::dlog!("[routing] {} -> ServerProvider ({} @ {})", kind.label(), server_id, server.url);
+                registry.register(ServerProvider::new(kind, client));
+            }
             Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),
         }
     }
@@ -314,7 +317,7 @@ mod tests {
 
         // allow_remote=false (режим самого Vessel Server) — remote не подключается
         let setup = build_registry(&config, &secrets, false);
-        assert!(setup.registry.get(crate::model::ProviderKind::SoundCloud).is_none());
+        assert!(!setup.registry.get(crate::model::ProviderKind::SoundCloud).unwrap().is_remote());
     }
 
     #[test]
@@ -335,6 +338,51 @@ mod tests {
             "ожидали предупреждение: {:?}",
             setup.notices
         );
+    }
+
+    #[test]
+    fn runtime_sync_config_switches_providers_live() {
+        let temp = tempfile::tempdir().unwrap();
+        let secrets = SecretStore::file_only(temp.path().join("secrets.json"));
+        secrets
+            .set_named("vessel-server:s1", "super-secret-token")
+            .unwrap();
+        let storage = crate::storage::Storage::new(temp.path().join("storage.sqlite3"));
+        storage.initialize().unwrap();
+
+        let initial_config = AppConfig::default();
+        let mut runtime = crate::runtime::Runtime::new(&initial_config, &secrets, storage);
+
+        // По умолчанию YouTube Music локальный
+        let initial_yt = runtime
+            .provider_registry()
+            .get(crate::model::ProviderKind::YouTubeMusic)
+            .expect("YouTube Music должен быть зарегистрирован");
+        assert!(!initial_yt.is_remote(), "Изначально провайдер должен быть локальным");
+
+        // Переключаем YouTube Music на сервер
+        let mut server_config = routing_config();
+        server_config.provider_routing.insert(
+            "youtube_music".to_string(),
+            "server:s1".to_string(),
+        );
+        runtime.sync_config(&server_config);
+
+        let remote_yt = runtime
+            .provider_registry()
+            .get(crate::model::ProviderKind::YouTubeMusic)
+            .expect("YouTube Music должен быть зарегистрирован после sync");
+        assert!(remote_yt.is_remote(), "После sync_config провайдер обязан стать удалённым (ServerProvider)");
+
+        // Переключаем обратно на local
+        let local_config = AppConfig::default();
+        runtime.sync_config(&local_config);
+
+        let back_yt = runtime
+            .provider_registry()
+            .get(crate::model::ProviderKind::YouTubeMusic)
+            .expect("YouTube Music должен быть зарегистрирован после возврата");
+        assert!(!back_yt.is_remote(), "После sync_config с local провайдер обязан снова стать локальным");
     }
 }
 
