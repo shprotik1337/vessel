@@ -139,13 +139,16 @@ button{font-family:inherit}
 .c-album{font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c-src{width:110px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);white-space:nowrap;position:relative}
 .row-actions{display:none;gap:11px;font-size:14px;color:var(--text2);align-items:center}
+.row-actions button{background:none;border:none;outline:none;cursor:pointer;padding:0;margin:0;display:flex;align-items:center;justify-content:center}
 .row-actions i{cursor:pointer;font-style:normal;transition:color .1s,transform .15s ease}
 .row-actions i:hover{color:var(--text);transform:scale(1.12)}
 .row-actions i.fav{color:var(--text)}
-.row-actions .heart{padding:2px;opacity:.9;color:var(--text2)}
-.row-actions .heart:hover{color:var(--text);opacity:1}
-.row-actions .heart.active{color:var(--text)}
+.row-actions .heart{background:none;border:none;outline:none;padding:2px;opacity:.8;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .1s,transform .15s ease,opacity .15s ease}
+.row-actions .heart:hover{background:none;color:var(--text);opacity:1;transform:scale(1.12)}
+.row-actions .heart.active{color:var(--text);opacity:1}
 .row-actions .heart.active svg{fill:var(--text);stroke:var(--text)}
+.row-actions .plus-btn{background:none;border:none;outline:none;padding:2px;opacity:.8;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .1s,transform .15s ease,opacity .15s ease}
+.row-actions .plus-btn:hover{background:none;color:var(--text);opacity:1;transform:scale(1.12)}
 .trow:hover .c-src>span.src{display:none}
 .trow:hover .row-actions{display:flex}
 .c-added{font-size:13px;color:var(--text3);white-space:nowrap}
