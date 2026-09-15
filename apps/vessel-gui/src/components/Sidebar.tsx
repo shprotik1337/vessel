@@ -238,7 +238,6 @@ export function Sidebar() {
           <div className="ssearch" onClick={() => navigateTo("search")} title={t(lang, "nav.searchEverything")}>
             <IconSearch />
             <span className="ssearch-text">{t(lang, "nav.searchEverything")}</span>
-            <span className="kbd">⌘K</span>
           </div>
           <button
             className="sidebar-toggle-btn"
