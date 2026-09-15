@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
@@ -383,7 +383,6 @@ export function Search() {
           autoComplete="off"
           spellCheck={false}
         />
-        <span className="kbd">⌘K</span>
       </div>
 
       <div className="tabs">
