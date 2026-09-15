@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { formatTime, providerLabel, isFavorite
@@ -229,12 +229,12 @@ export function BottomPlayer() {
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
         <div className="pl-meta">
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0, position: "relative", top: 1.5 }}>
-            <span className="ttl" style={{ minWidth: 0 }}>
+          <div className="pl-title-row">
+            <span className="ttl" title={track?.title ?? ""}>
               {track?.title ?? t(lang, "bottom.noTrack")}
             </span>
             {track && (
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".5px", color: "var(--text2)", background: "rgba(255,255,255,.08)", borderRadius: 4, padding: "2px 6px", textTransform: "uppercase", flexShrink: 0, marginTop: 1, marginLeft: 4 }}>
+              <span className="pl-src-badge">
                 {providerLabel(track.provider)}
               </span>
             )}
@@ -244,32 +244,27 @@ export function BottomPlayer() {
               title={t(lang, "bottom.favorite")}
               aria-label="Like"
               disabled={!track}
-              style={{ marginTop: -6, marginBottom: -7 }}
             >
               {HEART_SVG}
             </button>
           </div>
-          <div className="pl-sub">
+          <div className="pl-sub" title={track?.artists.join(", ") ?? ""}>
             {track && track.artists.length > 0 ? (
-              <span>
-                {track.artists.map((artist, i) => (
-                  <span key={`${artist}-${i}`}>
-                    <span
-                      style={{ cursor: "pointer" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigateTo("artist", { artist, provider: track.provider });
-                      }}
-                    >
-                      {artist}
-                    </span>
-                    {i < track.artists.length - 1 ? "," : ""}
+              track.artists.map((artist, i) => (
+                <span key={`${artist}-${i}`}>
+                  <span
+                    className="pl-artist-link"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigateTo("artist", { artist, provider: track.provider });
+                    }}
+                  >
+                    {artist}
                   </span>
-                ))}
-              </span>
-            ) : (
-              <span>{track ? "" : ""}</span>
-            )}
+                  {i < track.artists.length - 1 ? ", " : ""}
+                </span>
+              ))
+            ) : null}
           </div>
         </div>
       </div>
