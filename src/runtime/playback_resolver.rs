@@ -67,7 +67,7 @@ impl ResolveStage {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaybackSourceKind {
-    /// Автоматически: Deezer → YouTube Music
+    /// Автоматически: YouTube Music → Deezer
     Auto,
     /// Аудио через каталог YouTube Music
     YouTubeMusic,
@@ -78,7 +78,7 @@ pub enum PlaybackSourceKind {
 impl PlaybackSourceKind {
     pub fn provider_kind(self) -> ProviderKind {
         match self {
-            Self::Auto => ProviderKind::Deezer, // primary; реальная цепочка — chain()
+            Self::Auto => ProviderKind::YouTubeMusic, // primary; реальная цепочка — chain()
             Self::YouTubeMusic => ProviderKind::YouTubeMusic,
             Self::Deezer => ProviderKind::Deezer,
         }
@@ -110,11 +110,11 @@ impl PlaybackSourceKind {
         }
     }
 
-    /// Цепочка probing'а: Auto = Deezer → YouTube Music;
+    /// Цепочка probing'а: Auto = YouTube Music → Deezer;
     /// ручные режимы — только выбранный источник.
     pub fn chain(self) -> Vec<Self> {
         match self {
-            Self::Auto => vec![Self::Deezer, Self::YouTubeMusic],
+            Self::Auto => vec![Self::YouTubeMusic, Self::Deezer],
             other => vec![other],
         }
     }
@@ -124,7 +124,7 @@ impl PlaybackSourceKind {
         match self {
             Self::YouTubeMusic => Self::Deezer,
             Self::Deezer => Self::YouTubeMusic,
-            Self::Auto => Self::YouTubeMusic,
+            Self::Auto => Self::Deezer,
         }
     }
 }
@@ -1049,10 +1049,10 @@ mod tests {
     }
 
     #[test]
-    fn auto_chain_is_deezer_then_ytm_manual_is_single() {
+    fn auto_chain_is_ytm_then_deezer_manual_is_single() {
         assert_eq!(
             PlaybackSourceKind::Auto.chain(),
-            vec![PlaybackSourceKind::Deezer, PlaybackSourceKind::YouTubeMusic]
+            vec![PlaybackSourceKind::YouTubeMusic, PlaybackSourceKind::Deezer]
         );
         assert_eq!(
             PlaybackSourceKind::Deezer.chain(),
