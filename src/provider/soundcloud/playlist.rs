@@ -13,13 +13,64 @@ pub(super) async fn import_playlist(
     source_url: &Url,
 ) -> Result<ImportedPlaylist> {
     proverit_soundcloud_url(source_url)?;
-    let playlist: ScPlaylist = client
+    let resolve_raw: serde_json::Value = client
         .get_json(
             client.v2_url(&["resolve"])?,
             &[("url", source_url.as_str().to_string())],
         )
         .await
         .context("SoundCloud не разобрал ссылку на плейлист")?;
+
+    let kind = resolve_raw.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    if kind == "user" || source_url.path().ends_with("/likes") {
+        let user_id = resolve_raw
+            .get("id")
+            .map(|v| v.to_string().trim_matches('"').to_string())
+            .unwrap_or_default();
+        let username = resolve_raw
+            .get("username")
+            .and_then(|v| v.as_str())
+            .unwrap_or("SoundCloud");
+        let avatar_url = resolve_raw
+            .get("avatar_url")
+            .and_then(|v| v.as_str())
+            .and_then(|u| Url::parse(u).ok());
+
+        let mut tracks = Vec::new();
+        let mut url = client.v2_url(&["users", &user_id, "track_likes"])?;
+        let mut query: Vec<(&str, String)> = vec![
+            ("limit", "50".to_string()),
+            ("linked_partitioning", "true".to_string()),
+        ];
+        for _ in 0..10 {
+            let page: super::models::ScCollection<super::models::ScLikeItem> = client
+                .get_json(url.clone(), &query)
+                .await
+                .context("не удалось загрузить лайки пользователя SoundCloud")?;
+            for item in page.collection {
+                if let Some(track) = item.track.and_then(normalizovat_track) {
+                    tracks.push(track);
+                }
+            }
+            match page.next_href {
+                Some(next) if !next.trim().is_empty() => {
+                    url = Url::parse(&next).context("некорректный next_href от SoundCloud")?;
+                    query.clear();
+                }
+                _ => break,
+            }
+        }
+        return Ok(ImportedPlaylist {
+            title: format!("Лайки {username}"),
+            description: format!("Импортированные лайки пользователя {username} из SoundCloud"),
+            source_url: source_url.clone(),
+            cover_url: avatar_url,
+            tracks,
+        });
+    }
+
+    let playlist: ScPlaylist = serde_json::from_value(resolve_raw)
+        .context("ссылка SoundCloud ведет не на плейлист или альбом")?;
     ensure!(
         matches!(
             playlist.kind.as_str(),
