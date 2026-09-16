@@ -217,9 +217,8 @@ export function BottomPlayer() {
   const errText = failed
     ? `${track?.title ?? ""} — не удалось воспроизвести`
     : null;
-
   return (
-    <footer className={`player ${failed ? "playback-error" : ""}`} style={{ position: "relative" }}>
+    <footer className={`player ${failed ? "playback-error" : ""}`}>
       {errText && (
         <div className="err-banner">
           <span style={{ color: "var(--red)", fontWeight: 700 }}>!</span>
