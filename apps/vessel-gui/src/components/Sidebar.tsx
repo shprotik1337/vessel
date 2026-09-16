@@ -272,8 +272,8 @@ export function Sidebar() {
       {/* Main navigation list */}
       <div className="nav">
         {nav("home")}
-        {nav("wave")}
         {nav("favorites")}
+        {nav("wave")}
         {nav("playlists")}
         {nav("recent")}
         {nav("queue")}
