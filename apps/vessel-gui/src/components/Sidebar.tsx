@@ -273,8 +273,8 @@ export function Sidebar() {
       <div className="nav">
         {nav("home")}
         {nav("favorites")}
-        {nav("wave")}
         {nav("playlists")}
+        {nav("wave")}
         {nav("recent")}
         {nav("queue")}
       </div>
