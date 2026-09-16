@@ -93,6 +93,15 @@ pub struct ScCollection<T> {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ScLikeItem {
+    #[serde(default)]
+    pub track: Option<ScTrack>,
+    #[serde(default)]
+    pub playlist: Option<ScPlaylist>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct ScResolvedStream {
     pub url: String,
 }

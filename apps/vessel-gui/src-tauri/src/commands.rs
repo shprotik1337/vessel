@@ -32,11 +32,12 @@ fn provider_kind_from_str(value: &str) -> Result<vessel_core::model::ProviderKin
 fn credential_kind_from_str(value: &str) -> Result<CredentialKind, String> {
     match value {
         "soundcloud" => Ok(CredentialKind::SoundCloudClientId),
+        "soundcloud_oauth" => Ok(CredentialKind::SoundCloudOAuthToken),
         "yandex" => Ok(CredentialKind::YandexToken),
         "deezer" => Ok(CredentialKind::DeezerArl),
         "spotify" => Ok(CredentialKind::SpotifySpDc),
         "youtube" | "youtube_music" => Ok(CredentialKind::YouTubeCookie),
-        _ => Err(format!("РЅРµРёР·РІРµСЃС‚РЅС‹Р№ РїСЂРѕРІР°Р№РґРµСЂ: {value}")),
+        _ => Err(format!("неизвестный провайдер: {value}")),
     }
 }
 
@@ -1119,47 +1120,92 @@ const POPUP_HOOK_JS: &str = r#"(function(){
   }, true);
 })();"#;
 
-/// JS-хук SoundCloud: перехватывает fetch/XHR, вычленяет client_id из URL
-/// запросов к API и дублирует его в cookie (читается из Rust) и в заголовке.
+/// JS-хук SoundCloud: перехватывает client_id и oauth_token (токен авторизованного аккаунта).
+/// Токен появляется в заголовке Authorization: OAuth ... либо в cookie oauth_token
+/// после реального входа пользователя в свой аккаунт на soundcloud.com.
 const SOUNDCLOUD_HOOK_JS: &str = r#"(function(){
   if (window.__vesselScHook) return;
   window.__vesselScHook = true;
-  var apply = function(id){
+
+  var applyClientId = function(id){
     if (id && /^[a-zA-Z0-9_-]{24,40}$/.test(id)) {
       document.cookie = 'vessel_sc_client_id=' + id + '; path=/; max-age=86400';
-      document.title = 'SC_ID:' + id;
     }
   };
+
+  var applyOAuthToken = function(token){
+    if (!token) return;
+    var clean = token.replace(/^OAuth\s+/i, '').replace(/^Bearer\s+/i, '').trim();
+    if (clean && clean.length > 10) {
+      document.cookie = 'vessel_sc_oauth_token=' + encodeURIComponent(clean) + '; path=/; max-age=86400';
+      document.title = 'SC_AUTH_OK';
+    }
+  };
+
   var extract = function(u){
     try {
-      if (typeof u === 'string' && u.indexOf('client_id=') !== -1) {
-        apply(u.split('client_id=')[1].split('&')[0]);
+      if (typeof u === 'string') {
+        if (u.indexOf('client_id=') !== -1) {
+          applyClientId(u.split('client_id=')[1].split('&')[0]);
+        }
+        if (u.indexOf('oauth_token=') !== -1) {
+          applyOAuthToken(decodeURIComponent(u.split('oauth_token=')[1].split('&')[0]));
+        }
       }
     } catch (e) {}
   };
+
+  var checkHeaders = function(headers){
+    try {
+      if (!headers) return;
+      if (typeof headers.get === 'function') {
+        var a = headers.get('authorization') || headers.get('Authorization');
+        if (a) applyOAuthToken(a);
+      } else if (typeof headers === 'object') {
+        var a = headers['Authorization'] || headers['authorization'];
+        if (a) applyOAuthToken(a);
+      }
+    } catch (e) {}
+  };
+
   var origFetch = window.fetch;
   window.fetch = function(){
     try {
       var input = arguments[0];
+      var init = arguments[1];
       extract((input && input.url) ? input.url : input);
+      if (init && init.headers) checkHeaders(init.headers);
     } catch (e) {}
     return origFetch.apply(this, arguments);
   };
+
   var origOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(m, u){
     extract(u);
     return origOpen.apply(this, arguments);
   };
-  // Кукис мог остаться с прошлой сессии входа — сразу показываем его watcher'у
-  try {
-    var m = document.cookie.match(/vessel_sc_client_id=([^;]+)/);
-    if (m) apply(m[1]);
-  } catch (e) {}
+
+  var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+  XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+    if (header && header.toLowerCase() === 'authorization' && value) {
+      applyOAuthToken(value);
+    }
+    return origSetHeader.apply(this, arguments);
+  };
+
+  var checkCookies = function() {
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)oauth_token=([^;]+)/);
+      if (m && m[1]) applyOAuthToken(decodeURIComponent(m[1]));
+    } catch (e) {}
+  };
+  checkCookies();
+  setInterval(checkCookies, 1000);
 })();"#;
 
-/// Открывает окно WebView со soundcloud.com. Клиент_id нужен даже анониму —
-/// страница сама шлёт его в каждом запросе к API, watcher перехватит и сохранит.
-/// Логиниться не обязательно, но можно.
+/// Открывает окно браузера на странице входа в SoundCloud (https://soundcloud.com/signin).
+/// Окно НЕ закрывается до тех пор, пока пользователь не войдёт в свой реальный аккаунт
+/// (получение cookie `oauth_token`).
 #[tauri::command]
 pub async fn soundcloud_browser_login(app: AppHandle, core: CoreState<'_>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("soundcloud_login") {
@@ -1167,85 +1213,80 @@ pub async fn soundcloud_browser_login(app: AppHandle, core: CoreState<'_>) -> Re
         return Ok(());
     }
     let url = WebviewUrl::External(
-        url::Url::parse("https://soundcloud.com/").map_err(|e| e.to_string())?,
+        url::Url::parse("https://soundcloud.com/signin").map_err(|e| e.to_string())?,
     );
     WebviewWindowBuilder::new(&app, "soundcloud_login", url)
-        .title("SoundCloud — подключение")
+        .title("SoundCloud — вход в аккаунт")
         .inner_size(1000.0, 720.0)
         .min_inner_size(600.0, 500.0)
         .build()
         .map_err(|e| e.to_string())?;
-    spawn_soundcloud_client_id_watcher(app, core);
+    spawn_soundcloud_auth_watcher(app, core);
     Ok(())
 }
 
-/// Фоновая задача: каждые 2с инжектит хуки в окно и проверяет каналы перехвата:
-/// cookie `vessel_sc_client_id`, заголовок окна. Через 10с без результата
-/// подключает автопоиск client_id по HTTP (ассеты веб-плеера) — с ним вход
-/// срабатывает даже если страница не отдала ключ через хук.
-fn spawn_soundcloud_client_id_watcher(app: AppHandle, core: CoreState<'_>) {
+/// Фоновая задача: отслеживает авторизацию пользователя в SoundCloud.
+/// Ждёт, пока в окне появится oauth_token (признак того, что пользователь вошёл
+/// в личный профиль, а не просто гость), сохраняет токен и client_id,
+/// после чего закрывает окно.
+fn spawn_soundcloud_auth_watcher(app: AppHandle, core: CoreState<'_>) {
     let core: Arc<Mutex<GuiCore>> = core.inner().clone();
     tokio::spawn(async move {
-        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2000);
-        let mut discovered: Option<String> = None;
-        for attempt in 0..450u32 {
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1500);
+        for _ in 0..600u32 {
             tokio::time::sleep(POLL_INTERVAL).await;
             let Some(window) = app.get_webview_window("soundcloud_login") else {
-                vessel_core::dlog!("[soundcloud] auth window closed without capture — cancelled");
+                vessel_core::dlog!("[soundcloud] auth window closed without login — cancelled");
                 return;
             };
             if window.is_visible().unwrap_or(false) == false {
                 continue;
             }
-            // (Пере)инжектим хуки: на случай полной перезагрузки страницы.
             let _ = window.eval(POPUP_HOOK_JS);
             let _ = window.eval(SOUNDCLOUD_HOOK_JS);
 
-            // Канал 1: cookie от JS-хука
-            let cookie_id = tauri::async_runtime::spawn_blocking({
+            let auth_res = tauri::async_runtime::spawn_blocking({
                 let app = app.clone();
-                move || crate::webview_cookies::collect_soundcloud_client_id(&app).ok()
+                move || crate::webview_cookies::collect_soundcloud_auth(&app).ok()
             })
             .await
             .ok()
             .flatten();
-            // Канал 2: заголовок окна
-            let title_id = window
-                .title()
-                .ok()
-                .and_then(|t| t.strip_prefix("SC_ID:").map(|s| s.trim().to_string()))
-                .filter(|s| !s.is_empty());
-            let captured = cookie_id.or(title_id);
 
-            // Канал 3: автопоиск по HTTP (страница + JS-ассеты)
-            if captured.is_none() && discovered.is_none() && attempt >= 5 && attempt % 5 == 0 {
-                discovered = vessel_core::provider::soundcloud::discover_client_id()
-                    .await
-                    .ok();
-            }
-            let Some(client_id) = captured.or(discovered.clone()) else {
+            let Some((oauth_token, client_id_from_cookie)) = auth_res else {
                 continue;
             };
 
             vessel_core::dlog!(
-                "[soundcloud] client_id detected ({} bytes) — saving",
-                client_id.len()
+                "[soundcloud] user login detected (oauth_token {} bytes) — saving",
+                oauth_token.len()
             );
+
+            let client_id = match client_id_from_cookie {
+                Some(id) if !id.trim().is_empty() => Some(id),
+                _ => vessel_core::provider::soundcloud::discover_client_id().await.ok(),
+            };
+
             {
                 let mut core = core
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let _ = core
                     .runtime
-                    .save_credential(CredentialKind::SoundCloudClientId, &client_id);
+                    .save_credential(CredentialKind::SoundCloudOAuthToken, &oauth_token);
+                if let Some(id) = &client_id {
+                    let _ = core
+                        .runtime
+                        .save_credential(CredentialKind::SoundCloudClientId, id);
+                }
                 core.app.soundcloud_enabled = true;
                 core.app.config_dirty = true;
-                core.app.status_message = "SoundCloud подключён".to_string();
+                core.app.status_message = "SoundCloud аккаунт подключён".to_string();
             }
             if let Some(window) = app.get_webview_window("soundcloud_login") {
                 let _ = window.close();
             }
-            vessel_core::dlog!("[soundcloud] authenticated: credential saved, window closed");
+            vessel_core::dlog!("[soundcloud] user account authenticated, window closed");
             return;
         }
         vessel_core::dlog!("[soundcloud] auth watcher timed out (15 min) — cancelled");
@@ -1371,7 +1412,7 @@ pub async fn save_credential(
         .save_credential(kind, value)
         .map_err(|e| e.to_string())?;
     match kind {
-        CredentialKind::SoundCloudClientId => {
+        CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
             core.app.soundcloud_enabled = true;
         }
         CredentialKind::YandexToken => {
@@ -1454,7 +1495,7 @@ pub async fn remove_credential(core: CoreState<'_>, provider: String) -> Result<
         .remove_credential(kind.secret_key())
         .map_err(|e| e.to_string())?;
     match kind {
-        CredentialKind::SoundCloudClientId => {
+        CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
             core.app.soundcloud_enabled = false;
         }
         CredentialKind::YandexToken => {

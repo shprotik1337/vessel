@@ -222,7 +222,18 @@ pub async fn probe_provider(
 ) -> anyhow::Result<()> {
     match kind {
         ProviderKind::SoundCloud => {
-            let provider = soundcloud::SoundCloudProvider::new(credential)?;
+            let credential = credential.trim();
+            let provider = if credential.to_ascii_lowercase().starts_with("oauth ")
+                || (credential.contains('-') && credential.len() > 25)
+            {
+                let token = credential
+                    .strip_prefix("OAuth ")
+                    .or_else(|| credential.strip_prefix("oauth "))
+                    .unwrap_or(credential);
+                soundcloud::SoundCloudProvider::with_oauth("", Some(token.to_string()))?
+            } else {
+                soundcloud::SoundCloudProvider::new(credential)?
+            };
             provider.probe().await
         }
         ProviderKind::YandexMusic => {

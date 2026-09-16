@@ -5,6 +5,7 @@ use crate::secrets::{SecretKey, SecretStore};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CredentialKind {
     SoundCloudClientId,
+    SoundCloudOAuthToken,
     YandexToken,
     DeezerArl,
     SpotifySpDc,
@@ -14,8 +15,9 @@ pub enum CredentialKind {
 }
 
 impl CredentialKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::SoundCloudClientId,
+        Self::SoundCloudOAuthToken,
         Self::YandexToken,
         Self::DeezerArl,
         Self::SpotifySpDc,
@@ -27,6 +29,7 @@ impl CredentialKind {
     pub const fn label(self) -> &'static str {
         match self {
             Self::SoundCloudClientId => "SoundCloud client_id",
+            Self::SoundCloudOAuthToken => "SoundCloud OAuth токен",
             Self::YandexToken => "Yandex OAuth токен",
             Self::DeezerArl => "Deezer ARL cookie",
             Self::SpotifySpDc => "Spotify sp_dc",
@@ -39,6 +42,7 @@ impl CredentialKind {
     pub const fn secret_key(self) -> SecretKey {
         match self {
             Self::SoundCloudClientId => SecretKey::SoundCloudClientIdOverride,
+            Self::SoundCloudOAuthToken => SecretKey::SoundCloudOAuthToken,
             Self::YandexToken => SecretKey::YandexToken,
             Self::DeezerArl => SecretKey::DeezerArl,
             Self::SpotifySpDc => SecretKey::SpotifySpDc,
@@ -52,6 +56,9 @@ impl CredentialKind {
         match self {
             Self::SoundCloudClientId => {
                 "После входа ключ приходит сам, здесь можно вставить собственный client_id"
+            }
+            Self::SoundCloudOAuthToken => {
+                "Получается автоматически при входе в аккаунт через браузер"
             }
             Self::YandexToken => {
                 "Вставь OAuth из расширения yandex-music-token, токен останется только локально"
@@ -117,7 +124,8 @@ impl CredentialState {
     pub fn load(secrets: &SecretStore) -> Result<Self> {
         Ok(Self {
             soundcloud: has_value(secrets, SecretKey::SoundCloudClientIdOverride)?
-                || has_value(secrets, SecretKey::SoundCloudClientId)?,
+                || has_value(secrets, SecretKey::SoundCloudClientId)?
+                || has_value(secrets, SecretKey::SoundCloudOAuthToken)?,
             yandex: has_value(secrets, SecretKey::YandexToken)?,
             deezer: has_value(secrets, SecretKey::DeezerArl)?,
             spotify: has_value(secrets, SecretKey::SpotifySpDc)?
@@ -129,7 +137,9 @@ impl CredentialState {
 
     pub const fn is_configured(self, kind: CredentialKind) -> bool {
         match kind {
-            CredentialKind::SoundCloudClientId => self.soundcloud,
+            CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
+                self.soundcloud
+            }
             CredentialKind::YandexToken => self.yandex,
             CredentialKind::DeezerArl => self.deezer,
             CredentialKind::SpotifySpDc | CredentialKind::SpotifyOAuthRefreshToken => self.spotify,
@@ -139,7 +149,9 @@ impl CredentialState {
 
     pub fn set_configured(&mut self, kind: CredentialKind, configured: bool) {
         match kind {
-            CredentialKind::SoundCloudClientId => self.soundcloud = configured,
+            CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
+                self.soundcloud = configured;
+            }
             CredentialKind::YandexToken => self.yandex = configured,
             CredentialKind::DeezerArl => self.deezer = configured,
             CredentialKind::SpotifySpDc | CredentialKind::SpotifyOAuthRefreshToken => {
