@@ -131,10 +131,16 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::YandexMusic => credentials.yandex,
             vessel_core::model::ProviderKind::Deezer => credentials.deezer,
             vessel_core::model::ProviderKind::Spotify => credentials.spotify,
-            // YouTube Music РЎР‚Р В°Р В±Р С•РЎвЂљР В°Р ВµРЎвЂљ Р Р†РЎРѓР ВµР С–Р Т‘Р В° Р С‘ Р В°Р Р…Р С•Р Р…Р С‘Р СР Р…Р С•
-            vessel_core::model::ProviderKind::YouTubeMusic => true,
+            vessel_core::model::ProviderKind::YouTubeMusic => credentials.youtube,
         };
-        let connected = registry.get(kind).is_some() && enabled;
+        let connected = match kind {
+            // YouTube Music работает анонимно — всегда connected, если enabled
+            vessel_core::model::ProviderKind::YouTubeMusic => registry.get(kind).is_some() && enabled,
+            // Остальные — показываем «подключено» только если пользователь
+            // явно сохранил ключ/cookie (иначе на свежей установке SoundCloud
+            // авто-дискавери показывает зелёный бейдж хотя никто не входил)
+            _ => registry.get(kind).is_some() && enabled && has_credentials,
+        };
         let origin = match core.config.provider_routing.get(vessel_core::protocol::kind_segment(kind)) {
             Some(target) if target.starts_with("server:") => {
                 let id = &target["server:".len()..];
