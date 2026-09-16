@@ -77,11 +77,11 @@ function AppContent() {
 
   return (
     <div className="app">
-      <div className="app-body">
-        <Sidebar />
+      <Sidebar />
+      <div className="app-main">
         <main className="content">{renderPage()}</main>
+        <BottomPlayer />
       </div>
-      <BottomPlayer />
       {fullscreenOpen && <FullscreenPlayer />}
       {state?.needs_user_selection && <UserSelector />}
       {toast && (
