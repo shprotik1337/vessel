@@ -12,9 +12,10 @@ import { Settings } from "./pages/Settings";
 import { Artist } from "./pages/Artist";
 import { WavePage } from "./pages/Wave";
 import { UserSelector } from "./components/UserSelector";
+import { FullscreenPlayer } from "./components/FullscreenPlayer";
 
 function AppContent() {
-  const { state, view, playlistId, artist, artistProvider, artistId, toast, toastError } = useApp();
+  const { state, view, playlistId, artist, artistProvider, artistId, toast, toastError, fullscreenOpen } = useApp();
 
   const renderPage = () => {
     switch (view) {
@@ -81,6 +82,7 @@ function AppContent() {
         <main className="content">{renderPage()}</main>
       </div>
       <BottomPlayer />
+      {fullscreenOpen && <FullscreenPlayer />}
       {state?.needs_user_selection && <UserSelector />}
       {toast && (
         <div className="toast-wrap">
