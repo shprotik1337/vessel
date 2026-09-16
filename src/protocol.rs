@@ -27,6 +27,8 @@ pub struct UserCredentials {
     #[serde(default)]
     pub soundcloud_client_id: Option<String>,
     #[serde(default)]
+    pub soundcloud_oauth_token: Option<String>,
+    #[serde(default)]
     pub yandex_token: Option<String>,
     #[serde(default)]
     pub deezer_arl: Option<String>,
@@ -44,6 +46,7 @@ impl UserCredentials {
     /// true, если не передано ни одного ключа — заголовок можно не слать.
     pub fn is_empty(&self) -> bool {
         self.soundcloud_client_id.is_none()
+            && self.soundcloud_oauth_token.is_none()
             && self.yandex_token.is_none()
             && self.deezer_arl.is_none()
             && self.spotify_sp_dc.is_none()

@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 
 import { useApp } from "../store";
 import { PlaylistCover } from "../components/PlaylistCover";
@@ -95,7 +95,8 @@ export function Playlists() {
   }
 
   async function doImportLikes() {
-    if (likesProvider === "soundcloud" && !likesProfileUrl.trim()) {
+    const scConnected = state?.providers?.find((p) => p.kind === "soundcloud")?.connected;
+    if (likesProvider === "soundcloud" && !likesProfileUrl.trim() && !scConnected) {
       showToast(t(lang, "playlists.likesProfileHint"), true);
       return;
     }
@@ -108,7 +109,7 @@ export function Playlists() {
       const count = await api.importLikes(
         likesProvider,
         likesTarget,
-        likesProvider === "soundcloud" ? likesProfileUrl.trim() : null,
+        likesProvider === "soundcloud" && likesProfileUrl.trim() ? likesProfileUrl.trim() : null,
         title,
       );
       await refresh();
@@ -331,7 +332,7 @@ export function Playlists() {
                       value={likesProfileUrl}
                       onChange={(e) => setLikesProfileUrl(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") setImportStep("target");
+                        if (e.key === "Enter" && likesProfileUrl.trim()) setImportStep("target");
                       }}
                       autoFocus
                     />
@@ -340,13 +341,26 @@ export function Playlists() {
                     <button className="btn btn-ghost" onClick={() => setImportStep("provider")}>
                       ← {t(lang, "playlists.back")}
                     </button>
-                    <button
-                      className="btn btn-primary"
-                      disabled={!likesProfileUrl.trim()}
-                      onClick={() => setImportStep("target")}
-                    >
-                      {t(lang, "common.save")}
-                    </button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {state?.providers?.find((p) => p.kind === "soundcloud")?.connected && (
+                        <button
+                          className="btn btn-outline"
+                          onClick={() => {
+                            setLikesProfileUrl("");
+                            setImportStep("target");
+                          }}
+                        >
+                          {lang === "ru" ? "Мой аккаунт" : "My account"}
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-primary"
+                        disabled={!likesProfileUrl.trim()}
+                        onClick={() => setImportStep("target")}
+                      >
+                        {t(lang, "common.save")}
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

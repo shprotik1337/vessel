@@ -27,6 +27,8 @@ pub fn collect_credentials(secrets: &SecretStore) -> UserCredentials {
         soundcloud_client_id: load_secret(secrets, SecretKey::SoundCloudClientIdOverride, &mut Vec::new())
             .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientId, &mut Vec::new()))
             .filter(|value| !value.trim().is_empty()),
+        soundcloud_oauth_token: load_secret(secrets, SecretKey::SoundCloudOAuthToken, &mut Vec::new())
+            .filter(|value| !value.trim().is_empty()),
         yandex_token: load_secret(secrets, SecretKey::YandexToken, &mut Vec::new())
             .filter(|value| !value.trim().is_empty()),
         deezer_arl: load_secret(secrets, SecretKey::DeezerArl, &mut Vec::new())
@@ -53,10 +55,9 @@ pub fn build_provider(
     config: &AppConfig,
 ) -> anyhow::Result<Box<dyn MusicProvider>> {
     let provider: Box<dyn MusicProvider> = match kind {
-        ProviderKind::SoundCloud => Box::new(SoundCloudProvider::new(
-            creds.soundcloud_client_id.clone().ok_or_else(|| {
-                anyhow::anyhow!("SoundCloud: не передан client_id пользователя")
-            })?,
+        ProviderKind::SoundCloud => Box::new(SoundCloudProvider::with_oauth(
+            creds.soundcloud_client_id.clone().unwrap_or_default(),
+            creds.soundcloud_oauth_token.clone(),
         )?),
         ProviderKind::YandexMusic => Box::new(YandexProvider::new(
             creds.yandex_token.clone().ok_or_else(|| {
@@ -106,7 +107,9 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: b
             .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientIdOverride, &mut notices))
             .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientId, &mut notices))
             .unwrap_or_default();
-        match SoundCloudProvider::new(soundcloud_key) {
+        let oauth_token = load_secret(secrets, SecretKey::SoundCloudOAuthToken, &mut notices)
+            .filter(|value| !value.trim().is_empty());
+        match SoundCloudProvider::with_oauth(soundcloud_key, oauth_token) {
             Ok(provider) => registry.register(provider),
             Err(error) => notices.push(format!("SoundCloud не настроен: {error}")),
         }

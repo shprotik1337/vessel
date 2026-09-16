@@ -7,13 +7,15 @@ use url::Url;
 pub(super) struct SoundCloudClient {
     http: Client,
     client_id: String,
+    oauth_token: Option<String>,
     api_v2: Url,
 }
 
 impl SoundCloudClient {
-    pub(super) fn new(client_id: String) -> Result<Self> {
+    pub(super) fn new(client_id: String, oauth_token: Option<String>) -> Result<Self> {
         Self::from_parts(
             client_id,
+            oauth_token,
             Url::parse("https://api-v2.soundcloud.com/")?,
             build_http(Client::builder())?,
         )
@@ -23,15 +25,27 @@ impl SoundCloudClient {
     pub(super) fn with_base(client_id: String, api_v2: Url) -> Result<Self> {
         // Пул увидел полуживой мок-сокет и решил устроить лотерею, в тестах этот балаган закрыт
         let http = build_http(Client::builder().pool_max_idle_per_host(0))?;
-        Self::from_parts(client_id, api_v2, http)
+        Self::from_parts(client_id, None, api_v2, http)
     }
 
-    fn from_parts(client_id: String, api_v2: Url, http: Client) -> Result<Self> {
+    fn from_parts(
+        client_id: String,
+        oauth_token: Option<String>,
+        api_v2: Url,
+        http: Client,
+    ) -> Result<Self> {
         Ok(Self {
             http,
             client_id,
+            oauth_token,
             api_v2,
         })
+    }
+
+    pub(super) fn has_oauth(&self) -> bool {
+        self.oauth_token
+            .as_ref()
+            .is_some_and(|t| !t.trim().is_empty())
     }
 
     pub(super) fn v2_url(&self, path: &[&str]) -> Result<Url> {
@@ -57,11 +71,22 @@ impl SoundCloudClient {
         T: DeserializeOwned,
     {
         let mut client_id = self.effective_client_id(false).await?;
-        let resp = self
+        let mut req = self
             .http
             .get(url.clone())
             .query(query)
-            .query(&[("client_id", client_id.as_str())])
+            .query(&[("client_id", client_id.as_str())]);
+
+        if let Some(token) = &self.oauth_token {
+            let auth_header = if token.to_ascii_lowercase().starts_with("oauth ") {
+                token.clone()
+            } else {
+                format!("OAuth {token}")
+            };
+            req = req.header(reqwest::header::AUTHORIZATION, auth_header);
+        }
+
+        let resp = req
             .send()
             .await
             .context("SoundCloud не ответил")?;
@@ -72,10 +97,20 @@ impl SoundCloudClient {
             // Протухший или невалидный ключ — форсированно сканируем новый
             crate::dlog!("[SoundCloud] client_id вернул {}, пробуем обновить...", resp.status());
             client_id = self.effective_client_id(true).await?;
-            self.http
+            let mut req2 = self
+                .http
                 .get(url)
                 .query(query)
-                .query(&[("client_id", client_id.as_str())])
+                .query(&[("client_id", client_id.as_str())]);
+            if let Some(token) = &self.oauth_token {
+                let auth_header = if token.to_ascii_lowercase().starts_with("oauth ") {
+                    token.clone()
+                } else {
+                    format!("OAuth {token}")
+                };
+                req2 = req2.header(reqwest::header::AUTHORIZATION, auth_header);
+            }
+            req2
                 .send()
                 .await
                 .context("SoundCloud не ответил при повторном запросе")?

@@ -123,11 +123,68 @@ pub fn collect_deezer_arl(app: &AppHandle) -> anyhow::Result<String> {
     }
 }
 
-/// Домены, с которых читаем перехваченный client_id SoundCloud.
-const SOUNDCLOUD_COOKIE_DOMAINS: &[&str] = &["https://soundcloud.com/"];
+/// Домены, с которых читаем cookies авторизации SoundCloud.
+const SOUNDCLOUD_COOKIE_DOMAINS: &[&str] = &[
+    "https://soundcloud.com/",
+    "https://secure.soundcloud.com/",
+    "https://api-v2.soundcloud.com/",
+];
+
+/// Читает `oauth_token` и `client_id` из окна входа SoundCloud.
+/// Возвращает Ok((oauth_token, Option<client_id>)) только тогда, когда пользователь
+/// успешно залогинился в свой аккаунт SoundCloud (появилась cookie `oauth_token`
+/// или `vessel_sc_oauth_token`).
+pub fn collect_soundcloud_auth(app: &AppHandle) -> anyhow::Result<(String, Option<String>)> {
+    let window = app
+        .get_webview_window("soundcloud_login")
+        .ok_or_else(|| anyhow::anyhow!("окно входа SoundCloud не открыто"))?;
+
+    let mut oauth_token: Option<String> = None;
+    let mut client_id: Option<String> = None;
+    let mut urls: Vec<Url> = Vec::new();
+
+    if let Ok(current) = window.url() {
+        urls.push(current);
+    }
+    for url_str in SOUNDCLOUD_COOKIE_DOMAINS {
+        if let Ok(url) = Url::parse(url_str) {
+            urls.push(url);
+        }
+    }
+
+    let webview = window.as_ref();
+    for url in urls {
+        if let Ok(cookies) = webview.cookies_for_url(url) {
+            for cookie in cookies {
+                let name = cookie.name();
+                let val = cookie.value().trim();
+                if val.is_empty() {
+                    continue;
+                }
+                if name == "oauth_token" || name == "vessel_sc_oauth_token" {
+                    let clean = val
+                        .trim_start_matches("OAuth ")
+                        .trim_start_matches("oauth ")
+                        .trim();
+                    if clean.len() > 10 {
+                        oauth_token = Some(clean.to_string());
+                    }
+                } else if name == "vessel_sc_client_id" {
+                    client_id = Some(val.to_string());
+                }
+            }
+        }
+    }
+
+    let token = oauth_token.ok_or_else(|| {
+        anyhow::anyhow!("oauth_token ещё не получен — войдите в аккаунт SoundCloud")
+    })?;
+    Ok((token, client_id))
+}
 
 /// Читает cookie `vessel_sc_client_id` — её ставит JS-хук в окне входа,
 /// перехватив client_id из запросов страницы к API.
+#[allow(dead_code)]
 pub fn collect_soundcloud_client_id(app: &AppHandle) -> anyhow::Result<String> {
     let window = app
         .get_webview_window("soundcloud_login")

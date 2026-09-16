@@ -40,8 +40,12 @@ pub struct SoundCloudProvider {
 
 impl SoundCloudProvider {
     pub fn new(client_id: impl Into<String>) -> Result<Self> {
+        Self::with_oauth(client_id, None)
+    }
+
+    pub fn with_oauth(client_id: impl Into<String>, oauth_token: Option<String>) -> Result<Self> {
         Ok(Self {
-            client: SoundCloudClient::new(client_id.into())?,
+            client: SoundCloudClient::new(client_id.into(), oauth_token)?,
         })
     }
 }
@@ -100,53 +104,113 @@ impl MusicProvider for SoundCloudProvider {
     }
 
     async fn liked_tracks(&self, profile_url: Option<&str>) -> Result<Vec<TrackRef>> {
-        // SoundCloud: лайки пользователя = GET /users/{id}/likes.
-        // Нужен URL профиля (https://soundcloud.com/username) — из него достаём id.
-        let username = profile_url
-            .and_then(|url| {
-                let url = url.trim();
-                let idx = url.rfind('/')?;
-                let name = url[idx + 1..].trim();
-                if name.is_empty() { None } else { Some(name.to_string()) }
-            })
-            .context("для импорта лайков SoundCloud укажи URL профиля, например https://soundcloud.com/username")?;
-        let user: models::ScUser = self
-            .client
-            .get_json(self.client.v2_url(&["users", &username])?, &[])
-            .await
-            .context("не удалось найти пользователя SoundCloud по URL профиля")?;
-        if user.id.is_empty() {
-            bail!("SoundCloud не вернул id пользователя")
-        }
-        let mut tracks = Vec::new();
-        let mut url = self.client.v2_url(&["users", &user.id, "likes"])?;
-        loop {
-            let page: models::ScCollection<models::ScTrack> = self
-                .client
-                .get_json(
-                    url,
-                    &[
+        let raw = profile_url
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+
+        let (mut url, mut query) = match raw {
+            Some(raw) => {
+                // 1. Получаем числовой id пользователя SoundCloud
+                let user_id = if raw.chars().all(|c| c.is_ascii_digit()) {
+                    raw.to_string()
+                } else {
+                    let mut clean = raw.to_string();
+                    if !clean.starts_with("http://") && !clean.starts_with("https://") {
+                        clean = format!("https://soundcloud.com/{clean}");
+                    }
+                    while clean.ends_with('/') {
+                        clean.pop();
+                    }
+                    for suffix in ["/likes", "/tracks", "/albums", "/sets", "/reposts"] {
+                        if clean.to_ascii_lowercase().ends_with(suffix) {
+                            clean.truncate(clean.len() - suffix.len());
+                            break;
+                        }
+                    }
+                    while clean.ends_with('/') {
+                        clean.pop();
+                    }
+
+                    let resolve_url = self.client.v2_url(&["resolve"])?;
+                    let user: models::ScUser = self
+                        .client
+                        .get_json(resolve_url, &[("url", clean)])
+                        .await
+                        .context("SoundCloud не нашёл профиль по указанной ссылке. Проверь правильность ссылки на профиль.")?;
+
+                    if user.id.is_empty() {
+                        bail!("SoundCloud не вернул id пользователя");
+                    }
+                    user.id
+                };
+                (
+                    self.client.v2_url(&["users", &user_id, "track_likes"])?,
+                    vec![
                         ("limit", "50".to_string()),
                         ("linked_partitioning", "true".to_string()),
-                        ("access", "playable,preview".to_string()),
                     ],
                 )
-                .await?;
-            tracks.extend(page.collection.into_iter().filter_map(normalizovat_track));
+            }
+            None => {
+                if self.client.has_oauth() {
+                    (
+                        self.client.v2_url(&["me", "track_likes"])?,
+                        vec![
+                            ("limit", "50".to_string()),
+                            ("linked_partitioning", "true".to_string()),
+                        ],
+                    )
+                } else {
+                    bail!("для импорта лайков SoundCloud укажи URL профиля (например https://soundcloud.com/username) или войди в свой аккаунт SoundCloud в Настройках")
+                }
+            }
+        };
+
+        // 2. Загружаем лайки через /users/{id}/track_likes или /me/track_likes
+        let mut tracks = Vec::new();
+        // До 500 лайков (10 страниц по 50)
+        for _ in 0..10 {
+            let page: models::ScCollection<models::ScLikeItem> = self
+                .client
+                .get_json(url.clone(), &query)
+                .await
+                .context("не удалось загрузить страницу лайков SoundCloud")?;
+
+            for item in page.collection {
+                if let Some(track) = item.track.and_then(normalizovat_track) {
+                    tracks.push(track);
+                }
+            }
+
             match page.next_href {
-                Some(next) => url = Url::parse(&next)?,
-                None => break,
+                Some(next) if !next.trim().is_empty() => {
+                    url = Url::parse(&next).context("некорректный next_href от SoundCloud")?;
+                    query.clear();
+                }
+                _ => break,
             }
         }
+
         Ok(tracks)
     }
 }
 
 impl SoundCloudProvider {
-    /// Проверяет, что client_id реально работает: делает настоящий запрос
-    /// к поиску SoundCloud тем же кодом, которым идёт обычный поиск.
+    /// Проверяет, что client_id или oauth_token реально работают:
+    /// если есть oauth_token — делает запрос к /me;
+    /// если только client_id — делает настоящий запрос к поиску.
     pub async fn probe(&self) -> Result<()> {
-        search_tracks(&self.client, "vessel probe", None).await.map(|_| ())
+        if self.client.has_oauth() {
+            let url = self.client.v2_url(&["me"])?;
+            let _: models::ScUser = self
+                .client
+                .get_json(url, &[])
+                .await
+                .context("не удалось подтвердить авторизацию в SoundCloud (токен недействителен)")?;
+            Ok(())
+        } else {
+            search_tracks(&self.client, "vessel probe", None).await.map(|_| ())
+        }
     }
 }
 
