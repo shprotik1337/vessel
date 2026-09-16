@@ -36,6 +36,7 @@ pub struct GuiCore {
 pub struct ImageProxyConfig {
     pub server_url: String,
     pub token: String,
+    pub routed_providers: Vec<String>,
 }
 
 /// Р СџР С•Р В»Р Р…Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ, Р С”Р С•РЎвЂљР С•РЎР‚Р С•Р Вµ РЎвЂћРЎР‚Р С•Р Р…РЎвЂљР ВµР Р…Р Т‘ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ Р Р…Р В°Р С—РЎР‚РЎРЏР С˜РЎС“РЎР‹ Р С—Р С• Р В·Р В°Р С—РЎР‚Р С•РЎРѓРЎС“.
@@ -175,26 +176,41 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
 pub fn build_full_state(core: &GuiCore) -> FullState {
     let player = core.app.player.clone();
     let image_proxy = {
-        let server = core
-            .config
-            .provider_routing
-            .values()
-            .find_map(|target| target.strip_prefix("server:"))
-            .and_then(|server_id| core.config.vessel_servers.iter().find(|s| s.id == server_id))
-            .or_else(|| core.config.vessel_servers.first());
+        // Проксируем изображения только для провайдеров, которые ЯВНО переключены на «Сервер».
+        // В чисто локальном режиме VPS не используется вообще (image_proxy = None).
+        let mut routed_providers = Vec::new();
+        let mut active_server_id = None;
+
+        for (provider_segment, target) in &core.config.provider_routing {
+            if let Some(server_id) = target.strip_prefix("server:") {
+                routed_providers.push(provider_segment.clone());
+                if active_server_id.is_none() {
+                    active_server_id = Some(server_id.to_string());
+                }
+            }
+        }
+
+        let server = active_server_id.and_then(|server_id| {
+            core.config.vessel_servers.iter().find(|s| s.id == server_id)
+        });
 
         if let Some(server) = server {
-            let secret_name = format!("vessel-server:{}", server.id);
-            let token = core
-                .runtime
-                .get_named_secret(&secret_name)
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-            Some(ImageProxyConfig {
-                server_url: server.url.trim_end_matches('/').to_string(),
-                token,
-            })
+            if !routed_providers.is_empty() {
+                let secret_name = format!("vessel-server:{}", server.id);
+                let token = core
+                    .runtime
+                    .get_named_secret(&secret_name)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
+                Some(ImageProxyConfig {
+                    server_url: server.url.trim_end_matches('/').to_string(),
+                    token,
+                    routed_providers,
+                })
+            } else {
+                None
+            }
         } else {
             None
         }
