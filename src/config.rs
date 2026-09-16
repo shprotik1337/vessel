@@ -137,6 +137,15 @@ pub struct AppConfig {
     /// `server:<id>` из `vessel_servers`.
     #[serde(default)]
     pub provider_routing: std::collections::BTreeMap<String, String>,
+    /// Discord Rich Presence (RPC) статус
+    #[serde(default = "default_discord_rpc")]
+    pub discord_rpc: bool,
+    #[serde(default)]
+    pub discord_rpc_client_id: Option<String>,
+}
+
+fn default_discord_rpc() -> bool {
+    true
 }
 
 impl Default for AppConfig {
@@ -172,6 +181,8 @@ impl Default for AppConfig {
             spotify_playback_source: None,
             vessel_servers: Vec::new(),
             provider_routing: std::collections::BTreeMap::new(),
+            discord_rpc: true,
+            discord_rpc_client_id: None,
         }
     }
 }

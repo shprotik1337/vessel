@@ -1247,8 +1247,143 @@ export function Settings() {
             <>
               <div className="sett-hd">
                 <div className="sett-title">{t(lang, "settings.playback.title")}</div>
-                <div className="sett-sub">Repeat behavior.</div>
+                <div className="sett-sub">{t(lang, "settings.discordRpc.desc")}</div>
               </div>
+
+              <div className="group">
+                <div className="group-hd">
+                  <span className="group-title">{t(lang, "settings.discordRpc.title")}</span>
+                </div>
+                <div className="panel">
+                  <div className="set-row">
+                    <div className="set-cell">
+                      <div className="set-title">{t(lang, "settings.discordRpc.title")}</div>
+                      <div className="set-desc">{t(lang, "settings.discordRpc.desc")}</div>
+                    </div>
+                    <div className="btns">
+                      <button
+                        className={`btn btn-sm ${state.discord_rpc ? "btn-primary" : "btn-outline"}`}
+                        onClick={async () => {
+                          try {
+                            await api.setDiscordRpc(!state.discord_rpc);
+                            await refresh();
+                          } catch (error) {
+                            showToast(String(error), true);
+                          }
+                        }}
+                      >
+                        {state.discord_rpc
+                          ? t(lang, "settings.disable")
+                          : t(lang, "settings.enable")}
+                      </button>
+                    </div>
+                  </div>
+
+                  {state.discord_rpc && (
+                    <div style={{ padding: "14px 18px", borderTop: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
+                        {t(lang, "settings.discordRpc.preview")}:
+                      </div>
+                      <div
+                        style={{
+                          background: "#111214",
+                          borderRadius: "14px",
+                          padding: "16px",
+                          display: "flex",
+                          gap: "14px",
+                          alignItems: "center",
+                          maxWidth: "400px",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          color: "#fff",
+                        }}
+                      >
+                        <div style={{ position: "relative", width: "68px", height: "68px", flexShrink: 0 }}>
+                          <img
+                            src={
+                              state.now_playing?.artwork_url ||
+                              "https://cdn.rcd.gg/PreMiD/websites/S/Spotify/assets/logo.png"
+                            }
+                            alt="Cover"
+                            style={{
+                              width: "68px",
+                              height: "68px",
+                              borderRadius: "10px",
+                              objectFit: "cover",
+                              background: "#222",
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: 700,
+                              color: "#f2f3f5",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              lineHeight: "1.2",
+                            }}
+                          >
+                            {state.now_playing?.title || "RATHER LIE"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#b5bac1",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              marginTop: "3px",
+                              lineHeight: "1.2",
+                            }}
+                          >
+                            {state.now_playing
+                              ? `${state.now_playing.artists.join(", ") || "Artist"} • ${state.now_playing.provider}`
+                              : "Playboi Carti, The Weeknd • Spotify"}
+                          </div>
+
+                          <div style={{ marginTop: "8px" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                fontSize: "10px",
+                                color: "#949ba4",
+                                marginBottom: "4px",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              <span>00:19</span>
+                              <span>03:29</span>
+                            </div>
+                            <div
+                              style={{
+                                width: "100%",
+                                height: "4px",
+                                background: "#4e5058",
+                                borderRadius: "2px",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "25%",
+                                  height: "100%",
+                                  background: "#fff",
+                                  borderRadius: "2px",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="group">
                 <div className="group-hd">
                   <span className="group-title">{t(lang, "settings.repeat")}</span>

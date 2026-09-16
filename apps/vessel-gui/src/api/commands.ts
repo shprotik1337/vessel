@@ -418,6 +418,14 @@ export async function setLanguage(language: string): Promise<void> {
   return invoke("set_language", { language });
 }
 
+export async function getDiscordRpc(): Promise<boolean> {
+  return invoke<boolean>("get_discord_rpc");
+}
+
+export async function setDiscordRpc(enabled: boolean): Promise<void> {
+  return invoke("set_discord_rpc", { enabled });
+}
+
 export async function pickFolder(): Promise<string | null> {
   return invoke<string | null>("pick_folder");
 }
