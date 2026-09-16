@@ -402,8 +402,12 @@ impl Runtime {
 
     pub fn remove_credential(&mut self, key: crate::secrets::SecretKey) -> anyhow::Result<()> {
         self.secrets.remove(key)?;
+        if key == crate::secrets::SecretKey::SoundCloudClientIdOverride {
+            let _ = self.secrets.remove(crate::secrets::SecretKey::SoundCloudClientId);
+        }
         match key {
-            crate::secrets::SecretKey::SoundCloudClientIdOverride => {
+            crate::secrets::SecretKey::SoundCloudClientIdOverride
+            | crate::secrets::SecretKey::SoundCloudClientId => {
                 self.config.soundcloud_enabled = false;
             }
             crate::secrets::SecretKey::YandexToken => self.config.yandex_enabled = false,

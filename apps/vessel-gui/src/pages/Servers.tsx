@@ -152,7 +152,7 @@ export function ServersTab() {
             <div className="input-row">
               <input
                 type="text"
-                placeholder="http://95.85.253.133:7700"
+                placeholder="http://example.com:7700"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 style={{ minWidth: 0, flex: 1 }}
