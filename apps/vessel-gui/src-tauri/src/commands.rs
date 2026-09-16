@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use vessel_core::{
     credentials::CredentialKind,
-    model::{Playlist, ProviderKind, RepeatMode, SearchProvider, TrackRef},
+    model::{Playlist, RepeatMode, SearchProvider, TrackRef},
     storage::HistoryEntry,
 };
 use serde::Serialize;
@@ -1857,50 +1857,33 @@ pub async fn import_likes(
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
-    // Если для SoundCloud выбран собственный аккаунт (ссылка пустая) —
-    // токен и сессия сохранены локально в настольном приложении,
-    // поэтому сразу используем локального провайдера.
-    let tracks = if kind == ProviderKind::SoundCloud && clean_url.is_none() {
-        let local_registry = {
-            let core = lock(&core);
-            core.runtime.local_provider_registry()
-        };
-        let Some(local_provider) = local_registry.get(kind) else {
-            return Err("SoundCloud не подключён (войдите в аккаунт в Настройках)".to_string());
-        };
-        local_provider
-            .liked_tracks(None)
-            .await
-            .map_err(|e| format!("{e:#}"))?
-    } else {
-        let registry = {
-            let core = lock(&core);
-            core.runtime.provider_registry()
-        };
-        let Some(provider_impl) = registry.get(kind) else {
-            return Err(format!("{} не подключён", kind.label()));
-        };
-        match provider_impl.liked_tracks(clean_url).await {
-            Ok(tracks) => tracks,
-            Err(err) => {
-                // Если провайдер был удалённым (Vessel Server) и вернул ошибку
-                // (например 502 или старая версия сервера) — делаем fallback на локального провайдера!
-                if provider_impl.is_remote() {
-                    let local_registry = {
-                        let core = lock(&core);
-                        core.runtime.local_provider_registry()
-                    };
-                    if let Some(local_provider) = local_registry.get(kind) {
-                        local_provider
-                            .liked_tracks(clean_url)
-                            .await
-                            .map_err(|e| format!("Ошибка сервера ({err:#}), а локально: {e:#}"))?
-                    } else {
-                        return Err(format!("{err:#}"));
-                    }
+    let registry = {
+        let core = lock(&core);
+        core.runtime.provider_registry()
+    };
+    let Some(provider_impl) = registry.get(kind) else {
+        return Err(format!("{} не подключён", kind.label()));
+    };
+    let tracks = match provider_impl.liked_tracks(clean_url).await {
+        Ok(tracks) => tracks,
+        Err(err) => {
+            // Если провайдер был удалённым (Vessel Server) и вернул ошибку
+            // (например 502 или старая версия сервера) — делаем fallback на локального провайдера!
+            if provider_impl.is_remote() {
+                let local_registry = {
+                    let core = lock(&core);
+                    core.runtime.local_provider_registry()
+                };
+                if let Some(local_provider) = local_registry.get(kind) {
+                    local_provider
+                        .liked_tracks(clean_url)
+                        .await
+                        .map_err(|e| format!("Ошибка сервера ({err:#}), а локально: {e:#}"))?
                 } else {
                     return Err(format!("{err:#}"));
                 }
+            } else {
+                return Err(format!("{err:#}"));
             }
         }
     };

@@ -153,8 +153,18 @@ impl MusicProvider for SoundCloudProvider {
             }
             None => {
                 if self.client.has_oauth() {
+                    let me_url = self.client.v2_url(&["me"])?;
+                    let empty_query: [(&str, String); 0] = [];
+                    let me: models::ScUser = self
+                        .client
+                        .get_json(me_url, &empty_query)
+                        .await
+                        .context("не удалось получить профиль текущего пользователя SoundCloud")?;
+                    if me.id.is_empty() {
+                        bail!("SoundCloud не вернул id текущего пользователя");
+                    }
                     (
-                        self.client.v2_url(&["me", "track_likes"])?,
+                        self.client.v2_url(&["users", &me.id, "track_likes"])?,
                         vec![
                             ("limit", "50".to_string()),
                             ("linked_partitioning", "true".to_string()),
