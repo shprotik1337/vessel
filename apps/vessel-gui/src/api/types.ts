@@ -62,6 +62,7 @@ export interface ProviderStatus {
 export interface ImageProxyConfig {
   server_url: string;
   token: string;
+  routed_providers: string[];
 }
 
 export interface FullState {

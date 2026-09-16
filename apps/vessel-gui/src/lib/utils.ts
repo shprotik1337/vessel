@@ -10,6 +10,35 @@ export function getActiveImageProxy(): ImageProxyConfig | null {
   return activeImageProxy;
 }
 
+function inferProviderFromUrl(url: string): string | null {
+  const lower = url.toLowerCase();
+  if (lower.includes(".scdn.co") || lower.includes("spotifycdn.com")) {
+    return "spotify";
+  }
+  if (lower.includes(".sndcdn.com")) {
+    return "soundcloud";
+  }
+  if (lower.includes(".dzcdn.net") || lower.includes("deezer.com")) {
+    return "deezer";
+  }
+  if (
+    lower.includes(".googleusercontent.com") ||
+    lower.includes("ytimg.com") ||
+    lower.includes("ggpht.com") ||
+    lower.includes("youtube.com")
+  ) {
+    return "youtube_music";
+  }
+  if (
+    lower.includes("avatars.yandex.net") ||
+    lower.includes("yandex.ru") ||
+    lower.includes("yandex.net")
+  ) {
+    return "yandex_music";
+  }
+  return null;
+}
+
 export function resolveArtworkUrl(url: string | null | undefined): string | undefined {
   if (!url || typeof url !== "string") return undefined;
   const trimmed = url.trim();
@@ -41,8 +70,15 @@ export function resolveArtworkUrl(url: string | null | undefined): string | unde
     return trimmed;
   }
 
-  // Если подключен Vessel Server — направляем зарубежные картинки через Image Proxy сервера
-  if (activeImageProxy?.server_url) {
+  // VPS используется ТОЛЬКО если активен сервер и данный провайдер переключен на «Сервер».
+  // В локальном режиме всё обрабатывается строго локально, VPS никак не взаимодействует.
+  if (activeImageProxy?.server_url && activeImageProxy.routed_providers?.length > 0) {
+    const prov = inferProviderFromUrl(trimmed);
+    if (prov && !activeImageProxy.routed_providers.includes(prov)) {
+      // Провайдер стоит на «Локально» — грузим напрямую
+      return trimmed;
+    }
+
     const base = activeImageProxy.server_url.replace(/\/+$/, "");
     const params = new URLSearchParams();
     params.set("url", trimmed);
@@ -52,6 +88,7 @@ export function resolveArtworkUrl(url: string | null | undefined): string | unde
     return `${base}/api/v1/image?${params.toString()}`;
   }
 
+  // Чисто локальный режим — напрямую, без обращения к серверу
   return trimmed;
 }
 
