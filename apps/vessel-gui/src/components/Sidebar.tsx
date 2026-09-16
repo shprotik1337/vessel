@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { useApp } from "../store";
 import { TextInputModal } from "./Modal";
 import { t } from "../i18n";
+import { resolveArtworkUrl } from "../lib/utils";
 import * as api from "../api/commands";
 
 function IconCollapse() {
@@ -332,7 +333,7 @@ export function Sidebar() {
                       }}
                     >
                       <img
-                        src={p.cover_url ?? p.tracks[0]?.artwork_url ?? ""}
+                        src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
                         alt=""
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
@@ -375,7 +376,7 @@ export function Sidebar() {
                 {p.cover_url || p.tracks[0]?.artwork_url ? (
                   <div className="pl-mark-collapsed">
                     <img
-                      src={p.cover_url ?? p.tracks[0]?.artwork_url ?? ""}
+                      src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
                       alt=""
                       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                     />

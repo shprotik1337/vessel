@@ -861,10 +861,18 @@ button{font-family:inherit}
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px 30px 45vh 0;
+  padding: 32px 30px 45vh 0;
   scroll-behavior: smooth;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%);
+  /* В начале списка верх не затемняется вообще — первая строка кристально белая */
+  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 90px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 90px), transparent 100%);
+  transition: mask-image 0.2s ease, -webkit-mask-image 0.2s ease;
+}
+
+/* Затемнение сверху появляется только тогда, когда текст прокручен вниз */
+.fs-lyrics-container.scrolled-top {
+  mask-image: linear-gradient(to bottom, transparent 0%, black 44px, black calc(100% - 90px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 44px, black calc(100% - 90px), transparent 100%);
 }
 
 .fs-lyrics-container::-webkit-scrollbar {
