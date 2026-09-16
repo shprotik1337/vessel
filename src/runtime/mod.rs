@@ -376,6 +376,14 @@ impl Runtime {
         CredentialState::load(&self.secrets)
     }
 
+    pub fn secrets(&self) -> &SecretStore {
+        &self.secrets
+    }
+
+    pub fn local_provider_registry(&self) -> ProviderRegistry {
+        providers::build_registry(&self.config, &self.secrets, false).registry
+    }
+
     pub fn provider_registry(&self) -> Arc<ProviderRegistry> {
         Arc::clone(&self.providers)
     }
