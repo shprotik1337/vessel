@@ -32,7 +32,13 @@ pub struct GuiCore {
     pub last_progress_at: Instant,
 }
 
-/// Р СџР С•Р В»Р Р…Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ, Р С”Р С•РЎвЂљР С•РЎР‚Р С•Р Вµ РЎвЂћРЎР‚Р С•Р Р…РЎвЂљР ВµР Р…Р Т‘ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ Р Р…Р В°Р С—РЎР‚РЎРЏР СРЎС“РЎР‹ Р С—Р С• Р В·Р В°Р С—РЎР‚Р С•РЎРѓРЎС“.
+#[derive(Serialize, Clone)]
+pub struct ImageProxyConfig {
+    pub server_url: String,
+    pub token: String,
+}
+
+/// Р СџР С•Р В»Р Р…Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ, Р С”Р С•РЎвЂљР С•РЎР‚Р С•Р Вµ РЎвЂћРЎР‚Р С•Р Р…РЎвЂљР ВµР Р…Р Т‘ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ Р Р…Р В°Р С—РЎР‚РЎРЏР С˜РЎС“РЎР‹ Р С—Р С• Р В·Р В°Р С—РЎР‚Р С•РЎРѓРЎС“.
 #[derive(Serialize, Clone)]
 pub struct FullState {
     pub player: PlayerState,
@@ -54,6 +60,7 @@ pub struct FullState {
     pub needs_user_selection: bool,
     pub language: String,
     pub wave_source: String,
+    pub image_proxy: Option<ImageProxyConfig>,
 }
 
 #[derive(Serialize, Clone)]
@@ -167,6 +174,32 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
 
 pub fn build_full_state(core: &GuiCore) -> FullState {
     let player = core.app.player.clone();
+    let image_proxy = {
+        let server = core
+            .config
+            .provider_routing
+            .values()
+            .find_map(|target| target.strip_prefix("server:"))
+            .and_then(|server_id| core.config.vessel_servers.iter().find(|s| s.id == server_id))
+            .or_else(|| core.config.vessel_servers.first());
+
+        if let Some(server) = server {
+            let secret_name = format!("vessel-server:{}", server.id);
+            let token = core
+                .runtime
+                .get_named_secret(&secret_name)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            Some(ImageProxyConfig {
+                server_url: server.url.trim_end_matches('/').to_string(),
+                token,
+            })
+        } else {
+            None
+        }
+    };
+
     FullState {
         player,
         queue: core.app.queue.clone(),
@@ -191,6 +224,7 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
             .wave_source
             .clone()
             .unwrap_or_else(|| "favorites".to_string()),
+        image_proxy,
     }
 }
 

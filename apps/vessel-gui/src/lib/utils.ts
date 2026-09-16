@@ -1,4 +1,59 @@
-import type { PlaybackCapability, TrackRef } from "../api/types";
+import type { ImageProxyConfig, PlaybackCapability, TrackRef } from "../api/types";
+
+let activeImageProxy: ImageProxyConfig | null = null;
+
+export function setActiveImageProxy(proxy: ImageProxyConfig | null | undefined) {
+  activeImageProxy = proxy ?? null;
+}
+
+export function getActiveImageProxy(): ImageProxyConfig | null {
+  return activeImageProxy;
+}
+
+export function resolveArtworkUrl(url: string | null | undefined): string | undefined {
+  if (!url || typeof url !== "string") return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+
+  // Прямая загрузка для российских сервисов (Яндекс Музыка не блокируется в РФ)
+  if (
+    trimmed.includes("avatars.yandex.net") ||
+    trimmed.includes("yandex.ru") ||
+    trimmed.includes("yandex.net")
+  ) {
+    return trimmed;
+  }
+
+  // Локальные ассеты, data URI, blob
+  if (
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("asset://") ||
+    trimmed.startsWith("http://localhost") ||
+    trimmed.startsWith("http://127.0.0.1")
+  ) {
+    return trimmed;
+  }
+
+  // Защита от повторного проксирования
+  if (trimmed.includes("/api/v1/image?")) {
+    return trimmed;
+  }
+
+  // Если подключен Vessel Server — направляем зарубежные картинки через Image Proxy сервера
+  if (activeImageProxy?.server_url) {
+    const base = activeImageProxy.server_url.replace(/\/+$/, "");
+    const params = new URLSearchParams();
+    params.set("url", trimmed);
+    if (activeImageProxy.token) {
+      params.set("token", activeImageProxy.token);
+    }
+    return `${base}/api/v1/image?${params.toString()}`;
+  }
+
+  return trimmed;
+}
 
 export function formatTime(ms: number | null | undefined): string {
   if (ms == null || ms <= 0) return "0:00";

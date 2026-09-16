@@ -8,6 +8,7 @@ import {
   isFavorite,
   trackKey,
   canPlay,
+  resolveArtworkUrl,
 } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
@@ -315,7 +316,7 @@ export function TrackRow({
                       style={{ background: "var(--track)", overflow: "hidden" }}
                     >
                       <img
-                        src={p.cover_url ?? p.tracks[0]?.artwork_url ?? ""}
+                        src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
                         alt=""
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />

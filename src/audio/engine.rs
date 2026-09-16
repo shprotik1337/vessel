@@ -21,7 +21,7 @@ use super::{
     types::{AudioEvent, AudioStatus},
 };
 
-const AUDIO_CHUNKS: usize = 12;
+const AUDIO_CHUNKS: usize = 128;
 
 pub struct AudioEngine {
     _stream: Stream,

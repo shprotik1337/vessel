@@ -59,6 +59,11 @@ export interface ProviderStatus {
   origin: string;
 }
 
+export interface ImageProxyConfig {
+  server_url: string;
+  token: string;
+}
+
 export interface FullState {
   player: PlayerState;
   queue: TrackRef[];
@@ -79,6 +84,7 @@ export interface FullState {
   needs_user_selection: boolean;
   language: string;
   wave_source: string;
+  image_proxy?: ImageProxyConfig | null;
 }
 
 export interface UserProfile {

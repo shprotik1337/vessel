@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { resolveArtworkUrl } from "../lib/utils";
 
 const TONES = [
   "#26262A",
@@ -49,9 +50,11 @@ export function Artwork({
     ...extraStyle,
   };
 
-  const img = url ? (
+  const resolvedUrl = resolveArtworkUrl(url);
+
+  const img = resolvedUrl ? (
     <img
-      src={url}
+      src={resolvedUrl}
       alt={alt}
       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
     />
@@ -66,7 +69,7 @@ export function Artwork({
       onMouseEnter={() => onPlayClick && setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {url ? (
+      {resolvedUrl ? (
         <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>{img}</div>
       ) : square ? null : (
         <span

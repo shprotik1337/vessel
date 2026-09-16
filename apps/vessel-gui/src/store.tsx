@@ -15,6 +15,7 @@ import type {
   TrackRef,
 } from "./api/types";
 import { normalizeLang, type Lang } from "./i18n";
+import { setActiveImageProxy } from "./lib/utils";
 import * as api from "./api/commands";
 
 export interface AppStore {
@@ -131,6 +132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const fresh = await api.getState();
+      setActiveImageProxy(fresh.image_proxy);
       setState(fresh);
       setPlaylists(fresh.playlists);
     } catch (error) {
@@ -138,6 +140,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       showToast("Не удалось получить состояние", true);
     }
   }, [showToast]);
+
+  useEffect(() => {
+    setActiveImageProxy(state?.image_proxy);
+  }, [state?.image_proxy]);
 
   const playTracks = useCallback(
     async (tracks: TrackRef[], start = 0) => {

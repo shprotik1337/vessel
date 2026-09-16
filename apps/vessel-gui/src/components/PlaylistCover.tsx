@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { TrackRef } from "../api/types";
 import { tone } from "./Artwork";
+import { resolveArtworkUrl } from "../lib/utils";
 
 interface PlaylistCoverProps {
   tracks: TrackRef[];
@@ -39,9 +40,11 @@ export function PlaylistCover({
 
   const cellSize = size ? size / 2 : "50%";
 
-  const content = coverUrl ? (
+  const resolvedCover = resolveArtworkUrl(coverUrl);
+
+  const content = resolvedCover ? (
     <img
-      src={coverUrl}
+      src={resolvedCover}
       alt=""
       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
     />
@@ -60,25 +63,28 @@ export function PlaylistCover({
       ♫
     </div>
   ) : (
-    first.map((track, i) => (
-      <div
-        key={i}
-        style={{
-          width: cellSize,
-          height: cellSize,
-          overflow: "hidden",
-          background: tone(i + 1),
-        }}
-      >
-        {track.artwork_url ? (
-          <img
-            src={track.artwork_url}
-            alt=""
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-          />
-        ) : null}
-      </div>
-    ))
+    first.map((track, i) => {
+      const trackArt = resolveArtworkUrl(track.artwork_url);
+      return (
+        <div
+          key={i}
+          style={{
+            width: cellSize,
+            height: cellSize,
+            overflow: "hidden",
+            background: tone(i + 1),
+          }}
+        >
+          {trackArt ? (
+            <img
+              src={trackArt}
+              alt=""
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+          ) : null}
+        </div>
+      );
+    })
   );
 
   return (

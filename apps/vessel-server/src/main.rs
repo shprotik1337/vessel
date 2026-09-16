@@ -167,6 +167,11 @@ struct WaveQuery {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ImageQuery {
+    url: String,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config_path = std::env::args()
@@ -255,6 +260,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/providers/{provider}/playback/resolve", post(resolve))
         .route("/api/v1/tracks/related", post(related))
         .route("/api/v1/s/{token}", get(stream))
+        .route("/api/v1/image", get(image_proxy))
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .with_state(state.clone());
 
@@ -280,35 +286,45 @@ async fn shutdown_signal() {
 async fn require_token(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
-    let response = if method == Method::GET && path == "/api/v1/health" {
+    if method == Method::GET && path == "/api/v1/health" {
         return next.run(request).await;
-    } else {
-        let bearer = request
+    }
+
+    let bearer = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::to_string);
+
+    let query_token = request.uri().query().and_then(|q| {
+        url::form_urlencoded::parse(q.as_bytes())
+            .find(|(k, _)| k == "token")
+            .map(|(_, v)| v.into_owned())
+    });
+
+    let token = bearer.or(query_token);
+
+    // отладка resolve-401: печатаем ПРЕФИКС токена (не секрет) + сам header
+    if path.contains("/playback/resolve") {
+        let header_present = request
             .headers()
             .get(header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.strip_prefix("Bearer "))
-            .map(str::to_string);
-        // отладка resolve-401: печатаем ПРЕФИКС токена (не секрет) + сам header
-        if path.contains("/playback/resolve") {
-            let header_present = request
-                .headers()
-                .get(header::AUTHORIZATION)
-                .map(|v| v.to_str().map(|s| s.chars().take(12).collect::<String>()).unwrap_or_default())
-                .unwrap_or_else(|| "<нет header>".to_string());
-            println!(
-                "[auth] {method} {path}: header={header_present} bearer_prefix={}",
-                bearer.as_deref().map(|t| t.chars().take(8).collect::<String>()).unwrap_or_else(|| "<нет>".to_string())
-            );
-        }
-        match bearer {
-            Some(token) if state.tokens.iter().any(|allowed| allowed == &token) => next.run(request).await,
-            _ => (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "detail": "нужен корректный Authorization: Bearer <токен>" })),
-            )
-                .into_response(),
-        }
+            .map(|v| v.to_str().map(|s| s.chars().take(12).collect::<String>()).unwrap_or_default())
+            .unwrap_or_else(|| "<нет header>".to_string());
+        println!(
+            "[auth] {method} {path}: header={header_present} bearer_prefix={}",
+            token.as_deref().map(|t| t.chars().take(8).collect::<String>()).unwrap_or_else(|| "<нет>".to_string())
+        );
+    }
+
+    let response = match token {
+        Some(token) if state.tokens.iter().any(|allowed| allowed == &token) => next.run(request).await,
+        _ => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "detail": "нужен корректный Authorization: Bearer <токен> или ?token=<токен>" })),
+        )
+            .into_response(),
     };
     // однопоточный лог запроса: видно ВСЁ, что шло через сервер (без секретов)
     println!("[api] {method} {path} -> {}", response.status().as_u16());
@@ -708,6 +724,120 @@ fn parse_range(range: Option<&str>, size: u64) -> Option<(u64, u64)> {
     Some((start, end))
 }
 
+fn is_allowed_image_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    let host = host.trim();
+    // Spotify
+    host.ends_with(".scdn.co") || host == "scdn.co"
+        || host.ends_with(".spotifycdn.com") || host == "spotifycdn.com"
+    // SoundCloud
+        || host.ends_with(".sndcdn.com") || host == "sndcdn.com"
+    // Deezer
+        || host.ends_with(".dzcdn.net") || host == "dzcdn.net"
+        || host.ends_with(".deezer.com") || host == "deezer.com"
+    // YouTube / Google
+        || host.ends_with(".googleusercontent.com") || host == "googleusercontent.com"
+        || host.ends_with(".ggpht.com") || host == "ggpht.com"
+        || host.ends_with(".ytimg.com") || host == "ytimg.com"
+        || host.ends_with(".youtube.com") || host == "youtube.com"
+    // Yandex
+        || host.ends_with(".yandex.net") || host == "yandex.net"
+        || host.ends_with(".yandex.ru") || host == "yandex.ru"
+}
+
+async fn image_proxy(
+    State(state): State<AppState>,
+    Query(query): Query<ImageQuery>,
+) -> Response {
+    let parsed_url = match Url::parse(&query.url) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "detail": "некорректный URL изображения" })),
+            )
+                .into_response();
+        }
+    };
+
+    if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "detail": "поддерживаются только http/https URL" })),
+        )
+            .into_response();
+    }
+
+    let Some(host) = parsed_url.host_str() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "detail": "отсутствует хост в URL" })),
+        )
+            .into_response();
+    };
+
+    if !is_allowed_image_host(host) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "detail": format!("хост {host} не разрешён для проксирования") })),
+        )
+            .into_response();
+    }
+
+    let upstream = match state
+        .http
+        .get(parsed_url.as_str())
+        .header(
+            header::ACCEPT,
+            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        )
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(err) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "detail": format!("ошибка запроса к источнику: {err}") })),
+            )
+                .into_response();
+        }
+    };
+
+    let status = upstream.status();
+    if !status.is_success() {
+        return (
+            status,
+            Json(json!({ "detail": format!("источник вернул статус {status}") })),
+        )
+            .into_response();
+    }
+
+    let content_type = upstream
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .cloned()
+        .unwrap_or_else(|| HeaderValue::from_static("image/jpeg"));
+
+    let content_length = upstream.headers().get(header::CONTENT_LENGTH).cloned();
+
+    use futures_util::StreamExt;
+    let stream = upstream.bytes_stream().map(|res| res.map_err(axum::Error::new));
+    let mut response = Response::new(Body::from_stream(stream));
+
+    *response.status_mut() = StatusCode::OK;
+    response.headers_mut().insert(header::CONTENT_TYPE, content_type);
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=604800, immutable"),
+    );
+    if let Some(len) = content_length {
+        response.headers_mut().insert(header::CONTENT_LENGTH, len);
+    }
+
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_range;
@@ -723,5 +853,23 @@ mod tests {
         // суффиксный диапазон — последние N байт (moov в конце m4a)
         assert_eq!(parse_range(Some("bytes=-12"), 100), Some((88, 99)));
         assert_eq!(parse_range(Some("bytes=-512"), 6815744), Some((6815232, 6815743)));
+    }
+
+    #[test]
+    fn allowed_image_hosts() {
+        use super::is_allowed_image_host;
+        assert!(is_allowed_image_host("i.scdn.co"));
+        assert!(is_allowed_image_host("image-cdn-ak.spotifycdn.com"));
+        assert!(is_allowed_image_host("i1.sndcdn.com"));
+        assert!(is_allowed_image_host("e-cdns-images.dzcdn.net"));
+        assert!(is_allowed_image_host("lh3.googleusercontent.com"));
+        assert!(is_allowed_image_host("yt3.ggpht.com"));
+        assert!(is_allowed_image_host("i.ytimg.com"));
+        assert!(is_allowed_image_host("avatars.yandex.net"));
+
+        assert!(!is_allowed_image_host("evil.com"));
+        assert!(!is_allowed_image_host("internal.corp"));
+        assert!(!is_allowed_image_host("localhost"));
+        assert!(!is_allowed_image_host("192.168.1.1"));
     }
 }
