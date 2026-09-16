@@ -18,6 +18,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod commands;
+mod discord_rpc;
 mod webview_cookies;
 
 pub struct GuiCore {
@@ -62,6 +63,7 @@ pub struct FullState {
     pub language: String,
     pub wave_source: String,
     pub image_proxy: Option<ImageProxyConfig>,
+    pub discord_rpc: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -241,6 +243,7 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
             .clone()
             .unwrap_or_else(|| "favorites".to_string()),
         image_proxy,
+        discord_rpc: core.config.discord_rpc,
     }
 }
 
@@ -268,6 +271,7 @@ pub struct ProgressPayload {
 
 /// Р С›РЎРѓР Р…Р С•Р Р†Р Р…Р С•Р в„– РЎвЂ Р С‘Р С”Р В»: Р С–Р С•Р Р…РЎРЏР ВµРЎвЂљ runtime, Р С—Р ВµРЎР‚РЎРѓР С‘РЎРѓРЎвЂљР С‘РЎвЂљ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ, РЎв‚¬Р В»РЎвЂРЎвЂљ РЎРѓР С•Р В±РЎвЂ№РЎвЂљР С‘РЎРЏ.
 fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
+    let mut discord = discord_rpc::DiscordRpc::default();
     loop {
         let mut core = match core.lock() {
             Ok(guard) => guard,
@@ -288,6 +292,16 @@ fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
             core.last_progress_at = now;
             emit_progress(&app, &core);
         }
+
+        discord.set_client_id(core.config.discord_rpc_client_id.as_deref());
+        discord.update(
+            core.config.discord_rpc,
+            core.app.player.status,
+            core.app.now_playing.as_ref(),
+            core.app.player.position_ms,
+            core.app.player.duration_ms,
+        );
+
         drop(core);
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -531,6 +545,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::delete_user,
             commands::get_language,
             commands::set_language,
+            commands::get_discord_rpc,
+            commands::set_discord_rpc,
             commands::pick_folder,
             commands::pick_file,
             commands::save_file_as,

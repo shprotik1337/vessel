@@ -86,6 +86,7 @@ export interface FullState {
   language: string;
   wave_source: string;
   image_proxy?: ImageProxyConfig | null;
+  discord_rpc: boolean;
 }
 
 export interface UserProfile {

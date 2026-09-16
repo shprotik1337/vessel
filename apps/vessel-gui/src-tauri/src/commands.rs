@@ -1840,6 +1840,21 @@ pub async fn set_language(core: CoreState<'_>, language: String) -> Result<(), S
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_discord_rpc(core: CoreState<'_>) -> Result<bool, String> {
+    let core = lock(&core);
+    Ok(core.config.discord_rpc)
+}
+
+#[tauri::command]
+pub async fn set_discord_rpc(core: CoreState<'_>, enabled: bool) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.discord_rpc = enabled;
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+
 /// РРјРїРѕСЂС‚ Р»Р°Р№РєРѕРІ РёР· РїР»Р°С‚С„РѕСЂРјС‹.
 /// target: "favorites" | "playlist" (СЃРѕР·РґР°С‚СЊ РЅРѕРІС‹Р№ РїР»РµР№Р»РёСЃС‚)
 /// profile_url РЅСѓР¶РµРЅ РґР»СЏ SoundCloud (https://soundcloud.com/username).
