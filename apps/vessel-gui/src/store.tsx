@@ -31,6 +31,8 @@ export interface AppStore {
   lang: Lang;
   waveTracks: TrackRef[];
   setWaveTracks: (tracks: TrackRef[]) => void;
+  fullscreenOpen: boolean;
+  setFullscreenOpen: (open: boolean) => void;
   setView: (view: string) => void;
   navigateTo: (
     view: string,
@@ -72,6 +74,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [artistId, setArtistId] = useState<string | null>(null);
   const [, setHistory] = useState<NavEntry[]>([]);
   const [waveTracks, setWaveTracks] = useState<TrackRef[]>([]);
+  const [fullscreenOpen, setFullscreenOpen] = useState<boolean>(false);
 
   const navigateTo = useCallback(
     (
@@ -200,6 +203,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         lang,
         waveTracks,
         setWaveTracks,
+        fullscreenOpen,
+        setFullscreenOpen,
       }}
     >
       {children}

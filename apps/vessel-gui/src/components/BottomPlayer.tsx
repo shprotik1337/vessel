@@ -43,8 +43,17 @@ const MUTE_SVG = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
 );
 
+const FULLSCREEN_SVG = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 3 21 3 21 9" />
+    <polyline points="9 21 3 21 3 15" />
+    <line x1="21" y1="3" x2="14" y2="10" />
+    <line x1="3" y1="21" x2="10" y2="14" />
+  </svg>
+);
+
 export function BottomPlayer() {
-  const { state, showToast, refresh, navigateTo, lang } = useApp();
+  const { state, showToast, refresh, navigateTo, lang, fullscreenOpen, setFullscreenOpen } = useApp();
   if (!state) return null;
 
   const track = state.now_playing;
@@ -305,6 +314,15 @@ export function BottomPlayer() {
         </div>
       </div>
       <div className="pl-right">
+        <button
+          className={`pl-fullscreen-btn ${fullscreenOpen ? "active" : ""}`}
+          onClick={() => setFullscreenOpen(!fullscreenOpen)}
+          title={t(lang, "bottom.fullscreen")}
+          aria-label="Fullscreen player"
+          disabled={!track}
+        >
+          {FULLSCREEN_SVG}
+        </button>
         <div className="divider" />
         <div className="vol">
           <button
