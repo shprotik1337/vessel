@@ -4,6 +4,7 @@ import { useApp } from "../store";
 import {
   formatDuration,
   artistLabel,
+  filterValidArtists,
   providerLabel,
   isFavorite,
   trackKey,
@@ -202,24 +203,27 @@ export function TrackRow({
             style={{ display: "flex" }}
             onClick={(e) => e.stopPropagation()}
           >
-            {track.artists.length > 0
-              ? track.artists.map((artist, i) => (
-                  <span key={`${artist}-${i}`}>
-                    <span
-                      style={{
-                        cursor: onArtistClick ? "pointer" : undefined,
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onArtistClick) onArtistClick(artist, track.provider);
-                      }}
-                    >
-                      {artist}
+            {(() => {
+              const validArtists = filterValidArtists(track.artists);
+              return validArtists.length > 0
+                ? validArtists.map((artist, i) => (
+                    <span key={`${artist}-${i}`}>
+                      <span
+                        style={{
+                          cursor: onArtistClick ? "pointer" : undefined,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onArtistClick) onArtistClick(artist, track.provider);
+                        }}
+                      >
+                        {artist}
+                      </span>
+                      {i < validArtists.length - 1 ? ", " : ""}
                     </span>
-                    {i < track.artists.length - 1 ? ", " : ""}
-                  </span>
-                ))
-              : artistLabel([])}
+                  ))
+                : artistLabel([]);
+            })()}
           </span>
         </div>
         {showAlbum ? <span className="c-album">—</span> : <span />}

@@ -1,7 +1,7 @@
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
 import { WaveSection } from "../components/WaveSection";
-import { trackKey, dedupe } from "../lib/utils";
+import { trackKey, dedupe, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import { Artwork } from "../components/Artwork";
@@ -90,7 +90,7 @@ export function Home() {
                 />
                 <div className="card-t">{track.title}</div>
                 <div className="card-s">
-                  {track.artists.map((artist, i) => (
+                  {filterValidArtists(track.artists).map((artist, i, arr) => (
                     <span
                       key={`${artist}-${i}`}
                       style={{ cursor: "pointer" }}
@@ -100,7 +100,7 @@ export function Home() {
                       }}
                     >
                       {artist}
-                      {i < track.artists.length - 1 ? ", " : ""}
+                      {i < arr.length - 1 ? ", " : ""}
                     </span>
                   ))}
                 </div>

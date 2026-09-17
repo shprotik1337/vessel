@@ -558,7 +558,18 @@ pub fn run() -> anyhow::Result<()> {
             commands::vessel_server_add,
             commands::vessel_server_remove,
             commands::vessel_route_set,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_is_maximized,
+            commands::window_close,
+            commands::window_start_dragging,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             let app_handle = app.handle().clone();
             let core_state = app.state::<Arc<Mutex<GuiCore>>>().inner();
@@ -577,6 +588,50 @@ pub fn run() -> anyhow::Result<()> {
                 let _guard = runtime.enter();
                 driver_loop(core, app_handle);
             });
+
+            let show_item = tauri::menu::MenuItem::with_id(app, "show", "Показать", true, None::<&str>)?;
+            let quit_item = tauri::menu::MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
+            let tray_menu = tauri::menu::Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let mut tray_builder = tauri::tray::TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder.build(app)?;
 
             Ok(())
         })

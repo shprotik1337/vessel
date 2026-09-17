@@ -107,28 +107,21 @@ function IconSettings() {
 }
 
 export function Sidebar() {
-  const { state, view, playlistId, navigateTo, showToast, refresh, lang } = useApp();
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem("vessel_sidebar_collapsed") === "true";
-    } catch {
-      return false;
-    }
-  });
+  const {
+    state,
+    view,
+    playlistId,
+    navigateTo,
+    showToast,
+    refresh,
+    lang,
+    sidebarCollapsed: collapsed,
+    toggleSidebarCollapsed: toggleCollapsed,
+  } = useApp();
   const [plExpanded, setPlExpanded] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
-
-  const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem("vessel_sidebar_collapsed", String(next));
-      } catch {}
-      return next;
-    });
-  };
 
   const reorderPlaylists = async (from: number, to: number) => {
     if (!state) return;

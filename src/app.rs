@@ -247,7 +247,7 @@ impl App {
             Action::PlaybackFailed(error) => {
                 // Явный ERROR-статус: не возвращаемся молча в старое состояние
                 self.player.status = PlaybackStatus::Error;
-                self.status_message = format!("Не удалось включить трек: {error}");
+                self.status_message = error;
             }
             Action::PlaybackNotice(message) => {
                 // Некритичное предупреждение (клип-версия и т.п.)

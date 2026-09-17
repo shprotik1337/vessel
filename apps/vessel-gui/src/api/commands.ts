@@ -492,3 +492,23 @@ export const PROVIDER_SEGMENT: Record<string, string> = {
   spotify: "spotify",
   youtube_music: "youtube_music",
 };
+
+export async function windowMinimize(): Promise<void> {
+  return invoke("window_minimize");
+}
+
+export async function windowToggleMaximize(): Promise<void> {
+  return invoke("window_toggle_maximize");
+}
+
+export async function windowIsMaximized(): Promise<boolean> {
+  return invoke<boolean>("window_is_maximized");
+}
+
+export async function windowClose(): Promise<void> {
+  return invoke("window_close");
+}
+
+export async function windowStartDragging(): Promise<void> {
+  return invoke("window_start_dragging");
+}
