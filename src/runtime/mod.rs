@@ -623,6 +623,7 @@ impl Runtime {
             actions.push(Action::Audio(crate::audio::AudioEvent::Buffering));
             self.playback_task = Some(tokio::spawn(async move {
                 let mut failures: Vec<String> = Vec::new();
+                let mut any_candidates_found = false;
                 // Кандидаты пришли из общего поиска (клип-версия) — нужна
                 // пометка для предупреждения в UI
                 let mut candidates_from_general = false;
@@ -645,6 +646,9 @@ impl Runtime {
                                 candidates.len()
                             );
                             candidates_from_general = false;
+                            if !candidates.is_empty() {
+                                any_candidates_found = true;
+                            }
                             candidates
                         }
                         Ok((None, stage)) => {
@@ -674,6 +678,9 @@ impl Runtime {
                                             video_candidates.len()
                                         );
                                         candidates_from_general = true;
+                                        if !video_candidates.is_empty() {
+                                            any_candidates_found = true;
+                                        }
                                         video_candidates
                                     }
                                     Ok((None, stage)) => {
@@ -773,9 +780,15 @@ impl Runtime {
                     ));
                 }
 
+                let err_msg = if any_candidates_found {
+                    "Не удалось загрузить трек".to_string()
+                } else {
+                    "Трек не был найден".to_string()
+                };
+
                 let _ = sender.send(RuntimeMessage::PlaybackFailed {
                     generation,
-                    error: failures.join("; "),
+                    error: err_msg,
                 });
             }));
             return;

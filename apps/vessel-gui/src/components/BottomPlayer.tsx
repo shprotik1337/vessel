@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
 
 import { useApp } from "../store";
-import { formatTime, providerLabel, isFavorite
- } from "../lib/utils";
+import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import * as api from "../api/commands";
@@ -240,23 +239,26 @@ export function BottomPlayer() {
           <span className="ttl" title={track?.title ?? ""}>
             {track?.title ?? t(lang, "bottom.noTrack")}
           </span>
-          <div className="pl-sub" title={track?.artists.join(", ") ?? ""}>
-            {track && track.artists.length > 0 ? (
-              track.artists.map((artist, i) => (
-                <span key={`${artist}-${i}`}>
-                  <span
-                    className="pl-artist-link"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigateTo("artist", { artist, provider: track.provider });
-                    }}
-                  >
-                    {artist}
+          <div className="pl-sub" title={filterValidArtists(track?.artists).join(", ")}>
+            {track && (() => {
+              const valid = filterValidArtists(track.artists);
+              return valid.length > 0 ? (
+                valid.map((artist, i) => (
+                  <span key={`${artist}-${i}`}>
+                    <span
+                      className="pl-artist-link"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateTo("artist", { artist, provider: track.provider });
+                      }}
+                    >
+                      {artist}
+                    </span>
+                    {i < valid.length - 1 ? ", " : ""}
                   </span>
-                  {i < track.artists.length - 1 ? ", " : ""}
-                </span>
-              ))
-            ) : null}
+                ))
+              ) : null;
+            })()}
           </div>
         </div>
         <button

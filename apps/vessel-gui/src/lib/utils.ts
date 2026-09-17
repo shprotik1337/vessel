@@ -140,9 +140,25 @@ export function providerLabel(provider: string): string {
   }
 }
 
+export function isPlayCountString(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const t = text.trim();
+  if (!t) return false;
+  return /plays?|views?|прослушиван|просмотр|воспроизведен|reprodu|écoute|ecoute|lecture|wiedergabe|aufruf|odtworze/i.test(t)
+    || /^\s*[\d.,]+\s*[KMBkmb]?\s*$/i.test(t);
+}
+
+export function filterValidArtists(artists: string[] | null | undefined): string[] {
+  if (!artists || !Array.isArray(artists)) return [];
+  return artists
+    .map((a) => a.trim())
+    .filter((a) => a.length > 0 && !isPlayCountString(a));
+}
+
 export function artistLabel(artists: string[]): string {
-  if (!artists || artists.length === 0) return "Unknown artist";
-  return artists.join(", ");
+  const valid = filterValidArtists(artists);
+  if (valid.length === 0) return "Unknown artist";
+  return valid.join(", ");
 }
 
 export function canPlay(capability: PlaybackCapability | undefined): boolean {

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useApp } from "../store";
-import { formatTime, providerLabel, isFavorite } from "../lib/utils";
+import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import * as api from "../api/commands";
@@ -145,7 +145,8 @@ export function FullscreenPlayer() {
     setUserScrolled(false);
     setScrolledTop(false);
 
-    const primaryArtist = track.artists.length > 0 ? track.artists.join(", ") : "";
+    const validArtists = filterValidArtists(track.artists);
+    const primaryArtist = validArtists.join(", ");
     const durSecs = track.duration_ms
       ? track.duration_ms / 1000
       : player?.duration_ms
@@ -452,7 +453,7 @@ export function FullscreenPlayer() {
               </button>
             </div>
             <div className="fs-track-artists">
-              {track.artists.map((artist, idx) => (
+              {filterValidArtists(track.artists).map((artist, idx, arr) => (
                 <span key={`${artist}-${idx}`}>
                   <span
                     className="fs-artist-link"
@@ -463,7 +464,7 @@ export function FullscreenPlayer() {
                   >
                     {artist}
                   </span>
-                  {idx < track.artists.length - 1 ? ", " : ""}
+                  {idx < arr.length - 1 ? ", " : ""}
                 </span>
               ))}
             </div>

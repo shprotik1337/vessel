@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -34,6 +35,10 @@ export interface AppStore {
   setWaveTracks: (tracks: TrackRef[]) => void;
   fullscreenOpen: boolean;
   setFullscreenOpen: (open: boolean) => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  searchProvider: string;
+  setSearchProvider: (provider: string) => void;
   setView: (view: string) => void;
   navigateTo: (
     view: string,
@@ -44,7 +49,11 @@ export interface AppStore {
       artistId?: string;
     },
   ) => void;
+  canGoBack: boolean;
   goBack: () => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  toggleSidebarCollapsed: () => void;
   showToast: (message: string, error?: boolean) => void;
   playTracks: (tracks: TrackRef[], start?: number) => Promise<void>;
   refresh: () => Promise<void>;
@@ -73,9 +82,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [artist, setArtist] = useState<string | null>(null);
   const [artistProvider, setArtistProvider] = useState<string | null>(null);
   const [artistId, setArtistId] = useState<string | null>(null);
-  const [, setHistory] = useState<NavEntry[]>([]);
+  const [history, setHistory] = useState<NavEntry[]>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("vessel_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("vessel_sidebar_collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const canGoBack = history.length > 0;
   const [waveTracks, setWaveTracks] = useState<TrackRef[]>([]);
   const [fullscreenOpen, setFullscreenOpen] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchProvider, setSearchProvider] = useState<string>("all");
 
   const navigateTo = useCallback(
     (
@@ -187,6 +217,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [refresh]);
 
+  const lastErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state?.player.status === "error" && state?.status_message) {
+      if (lastErrorRef.current !== state.status_message) {
+        lastErrorRef.current = state.status_message;
+        showToast(state.status_message, true);
+      }
+    } else if (state?.player.status !== "error") {
+      lastErrorRef.current = null;
+    }
+  }, [state?.player.status, state?.status_message, showToast]);
+
   return (
     <AppContext.Provider
       value={{
@@ -202,7 +244,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         artistId,
         setView,
         navigateTo,
+        canGoBack,
         goBack,
+        sidebarCollapsed,
+        setSidebarCollapsed,
+        toggleSidebarCollapsed,
         showToast,
         playTracks,
         refresh,
@@ -211,6 +257,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setWaveTracks,
         fullscreenOpen,
         setFullscreenOpen,
+        searchQuery,
+        setSearchQuery,
+        searchProvider,
+        setSearchProvider,
       }}
     >
       {children}

@@ -1,3 +1,5 @@
+import { isPlayCountString } from "./utils";
+
 export interface LyricLine {
   time: number; // in seconds
   text: string;
@@ -71,20 +73,25 @@ export async function fetchLyrics(
   durationSecs?: number,
   album?: string
 ): Promise<LyricsData | null> {
-  const cacheKey = `${artist.toLowerCase()} - ${title.toLowerCase()}`;
+  const effectiveArtist = isPlayCountString(artist) ? "" : artist.trim();
+  const rawPrimary = effectiveArtist.split(/[,&/]|feat\.|ft\./i)[0].trim();
+  const primaryArtist = isPlayCountString(rawPrimary) ? "" : rawPrimary;
+
+  const cacheKey = `${(primaryArtist || effectiveArtist).toLowerCase()} - ${title.toLowerCase()}`;
   if (lyricsCache.has(cacheKey)) {
     return lyricsCache.get(cacheKey) ?? null;
   }
 
   const cleanedTitle = cleanTitle(title);
-  const primaryArtist = artist.split(/[,&/]|feat\.|ft\./i)[0].trim();
 
   try {
     // 1. Try exact match with duration
     const params = new URLSearchParams({
       track_name: cleanedTitle || title,
-      artist_name: primaryArtist || artist,
     });
+    if (primaryArtist || effectiveArtist) {
+      params.append("artist_name", primaryArtist || effectiveArtist);
+    }
     if (album) params.append("album_name", album);
     if (durationSecs && durationSecs > 0) {
       params.append("duration", Math.round(durationSecs).toString());
@@ -108,8 +115,10 @@ export async function fetchLyrics(
     // 2. Fallback: search query
     const searchParams = new URLSearchParams({
       track_name: cleanedTitle || title,
-      artist_name: primaryArtist || artist,
     });
+    if (primaryArtist || effectiveArtist) {
+      searchParams.append("artist_name", primaryArtist || effectiveArtist);
+    }
     res = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
       headers: {
         "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
@@ -134,7 +143,9 @@ export async function fetchLyrics(
     }
 
     // 3. Fallback: general query string search
-    const query = `${primaryArtist} ${cleanedTitle}`.trim();
+    const query = primaryArtist || effectiveArtist
+      ? `${primaryArtist || effectiveArtist} ${cleanedTitle}`.trim()
+      : cleanedTitle.trim();
     const qParams = new URLSearchParams({ q: query });
     res = await fetch(`https://lrclib.net/api/search?${qParams.toString()}`, {
       headers: {

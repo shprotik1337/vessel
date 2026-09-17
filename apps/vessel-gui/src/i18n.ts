@@ -14,6 +14,7 @@ const ru = {
   "nav.searchEverything": "Поиск по всему",
   "nav.collapse": "Свернуть панель",
   "nav.expand": "Развернуть панель",
+  "nav.back": "Назад",
   "settings.title": "Настройки",
   "settings.sub": "Сервисы, воспроизведение и хранилище.",
   "settings.services": "Сервисы",
@@ -344,6 +345,13 @@ const ru = {
   "wave.settingsSub": "Выбери, из каких платформ собирать волну.",
   "wave.allTogether": "Всё вместе (все доступные)",
   "common.save": "Сохранить",
+  "titlebar.searchPlaceholder": "Поиск по всем сервисам",
+  "titlebar.fullscreen": "Полноэкранный плеер",
+  "titlebar.minimize": "Свернуть",
+  "titlebar.maximize": "Развернуть",
+  "titlebar.restore": "Восстановить",
+  "titlebar.close": "Закрыть (в трей)",
+  "titlebar.all": "Все",
 };
 
 const en: typeof ru = {
@@ -360,6 +368,7 @@ const en: typeof ru = {
   "nav.searchEverything": "Search everything",
   "nav.collapse": "Collapse sidebar",
   "nav.expand": "Expand sidebar",
+  "nav.back": "Back",
   "settings.title": "Settings",
   "settings.sub": "Services, playback and storage.",
   "settings.services": "Services",
@@ -690,6 +699,13 @@ const en: typeof ru = {
   "wave.settingsSub": "Choose which platforms the wave is built from.",
   "wave.allTogether": "All together (all available)",
   "common.save": "Save",
+  "titlebar.searchPlaceholder": "Search across all services",
+  "titlebar.fullscreen": "Fullscreen player",
+  "titlebar.minimize": "Minimize",
+  "titlebar.maximize": "Maximize",
+  "titlebar.restore": "Restore",
+  "titlebar.close": "Close (to tray)",
+  "titlebar.all": "All",
 };
 
 export const dicts: Record<Lang, typeof ru> = { ru, en };

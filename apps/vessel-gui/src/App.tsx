@@ -14,6 +14,8 @@ import { WavePage } from "./pages/Wave";
 import { UserSelector } from "./components/UserSelector";
 import { FullscreenPlayer } from "./components/FullscreenPlayer";
 
+import { Titlebar } from "./components/Titlebar";
+
 function AppContent() {
   const { state, view, playlistId, artist, artistProvider, artistId, toast, toastError, fullscreenOpen } = useApp();
 
@@ -76,11 +78,14 @@ function AppContent() {
   };
 
   return (
-    <div className="app">
-      <Sidebar />
-      <div className="app-main">
-        <main className="content">{renderPage()}</main>
-        <BottomPlayer />
+    <div className="app-shell">
+      <Titlebar />
+      <div className="app">
+        <Sidebar />
+        <div className="app-main">
+          <main className="content">{renderPage()}</main>
+          <BottomPlayer />
+        </div>
       </div>
       {fullscreenOpen && <FullscreenPlayer />}
       {state?.needs_user_selection && <UserSelector />}

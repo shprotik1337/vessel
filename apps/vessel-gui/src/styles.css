@@ -14,10 +14,41 @@ button{font-family:inherit}
 ::-webkit-scrollbar-thumb:hover{background:#3A3B3F}
 ::-webkit-scrollbar-track{background:transparent}
 
-.app{display:flex;flex-direction:row;height:100vh;overflow:hidden}
+.app-shell{display:flex;flex-direction:column;height:100vh;width:100vw;overflow:hidden;background:var(--bg)}
+.app{display:flex;flex-direction:row;flex:1;min-height:0;overflow:hidden}
 .app-main{flex:1;display:flex;flex-direction:column;min-width:0;height:100%;overflow:hidden;position:relative}
 
-.sidebar{width:232px;height:100vh;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;gap:16px;padding:14px 10px;overflow-y:auto;overflow-x:hidden;transition:width .2s cubic-bezier(0.4,0,0.2,1),padding .2s ease}
+/* Titlebar (Custom Frameless Window Topbar) */
+.titlebar{display:flex;align-items:center;height:34px;background:var(--bg);border-bottom:1px solid var(--border);user-select:none;z-index:999;position:relative;flex-shrink:0;-webkit-app-region:drag;cursor:default;padding:0 0 0 16px}
+.titlebar-brand{display:flex;align-items:baseline;gap:6px;color:var(--text);-webkit-app-region:drag;pointer-events:none;flex-shrink:0}
+.titlebar-app-name{font-size:12.5px;font-weight:600;letter-spacing:0.2px;color:var(--text)}
+.titlebar-app-version{font-size:11px;font-weight:400;color:var(--text3);font-variant-numeric:tabular-nums}
+.titlebar-drag-space{flex:1;height:100%;-webkit-app-region:drag}
+.titlebar-right{display:flex;align-items:center;height:100%;justify-content:flex-end;flex-shrink:0;margin-left:auto;-webkit-app-region:no-drag}
+.titlebar-btn{display:flex;align-items:center;justify-content:center;width:46px;height:100%;border:none;background:transparent;color:#8e8f96;cursor:pointer;transition:background .1s ease,color .1s ease;outline:none;-webkit-app-region:no-drag}
+.titlebar-btn:hover{background:rgba(255,255,255,0.08);color:#ffffff}
+.titlebar-btn.close:hover{background:#e81123!important;color:#ffffff!important}
+.titlebar-btn.close:active{background:#bf101d!important}
+
+/* Search Page - Search Pill Container matching user reference */
+.search-pill-container{width:100%;margin-bottom:20px}
+.search-pill{display:flex;align-items:center;width:100%;height:46px;background:var(--elev);border:1px solid var(--border);border-radius:9999px;padding:0 8px 0 16px;gap:12px;transition:border-color .15s,background .15s,box-shadow .15s;position:relative}
+.search-pill:focus-within{border-color:var(--border2);background:var(--elev2);box-shadow:0 0 0 1px rgba(255,255,255,0.06)}
+.search-pill-icon{color:var(--text3);flex-shrink:0}
+.search-pill-input{flex:1;min-width:0;height:100%;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;font-family:inherit}
+.search-pill-input::placeholder{color:var(--text3)}
+.search-pill-provider{position:relative;flex-shrink:0}
+.search-pill-provider-badge{display:flex;align-items:center;gap:7px;height:32px;padding:0 14px;border-radius:16px;background:#202024;border:1px solid #34353c;color:#e4e4e8;font-size:12.5px;font-weight:500;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+.search-pill-provider-badge:hover{background:#2a2a30;border-color:#484952;color:#ffffff}
+.search-pill-provider-text{white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.search-pill-chevron{color:#9a9ba1;transition:transform .15s ease}
+.search-pill-chevron.open{transform:rotate(180deg)}
+.search-pill-dropdown{position:absolute;top:calc(100% + 8px);right:0;min-width:160px;background:#18181b;border:1px solid #32333a;border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,0.65);z-index:1000;display:flex;flex-direction:column;gap:2px}
+.search-pill-option{display:flex;align-items:center;justify-content:space-between;height:32px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:#c4c4c8;font-size:13px;cursor:pointer;text-align:left;width:100%;transition:background .1s,color .1s}
+.search-pill-option:hover{background:rgba(255,255,255,0.08);color:#ffffff}
+.search-pill-option.selected{color:#ffffff;font-weight:600;background:rgba(255,255,255,0.06)}
+
+.sidebar{width:232px;height:100%;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;gap:16px;padding:14px 10px;overflow-y:auto;overflow-x:hidden;transition:width .2s cubic-bezier(0.4,0,0.2,1),padding .2s ease}
 .sidebar.collapsed{width:64px;padding:14px 8px;gap:12px;align-items:center}
 .sidebar-header{display:flex;align-items:center;gap:6px;width:100%}
 .sidebar-header.collapsed{flex-direction:column;gap:8px;width:100%;align-items:center}
