@@ -399,8 +399,36 @@ pub fn is_play_count(text: &str) -> bool {
         return false;
     }
     let lower = trimmed.to_lowercase();
-    if lower.contains("play")
-        || lower.contains("view")
+
+    // Чистые числа и счётчики вида "1.6M", "295K", "100"
+    let clean: String = lower
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '.' && *c != ',')
+        .collect();
+    if !clean.is_empty() && clean.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        let is_number_suffix = clean
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, 'k' | 'm' | 'b'));
+        if is_number_suffix {
+            return true;
+        }
+    }
+
+    // Счётчики обязательно содержат цифры (иначе это имя артиста, например Playboi Carti, Coldplay)
+    let has_digits = lower.chars().any(|c| c.is_ascii_digit());
+    if !has_digits {
+        return false;
+    }
+
+    lower.ends_with("play")
+        || lower.ends_with("plays")
+        || lower.ends_with("view")
+        || lower.ends_with("views")
+        || lower.contains(" play")
+        || lower.contains(" plays")
+        || lower.contains(" view")
+        || lower.contains(" views")
+        || lower.contains(" stream")
         || lower.contains("прослушиван")
         || lower.contains("воспроизведен")
         || lower.contains("просмотр")
@@ -416,22 +444,6 @@ pub fn is_play_count(text: &str) -> bool {
         || lower.contains("goruntuleme")
         || lower.contains("riproduzion")
         || lower.contains("visualizzazion")
-    {
-        return true;
-    }
-    let clean: String = lower
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != '.' && *c != ',')
-        .collect();
-    if !clean.is_empty() && clean.chars().next().map_or(false, |c| c.is_ascii_digit()) {
-        let is_number_suffix = clean
-            .chars()
-            .all(|c| c.is_ascii_digit() || matches!(c, 'k' | 'm' | 'b'));
-        if is_number_suffix {
-            return true;
-        }
-    }
-    false
 }
 
 fn is_play_count_column(column: &Value) -> bool {

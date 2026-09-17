@@ -144,8 +144,23 @@ export function isPlayCountString(text: string | null | undefined): boolean {
   if (!text) return false;
   const t = text.trim();
   if (!t) return false;
-  return /plays?|views?|прослушиван|просмотр|воспроизведен|reprodu|écoute|ecoute|lecture|wiedergabe|aufruf|odtworze/i.test(t)
-    || /^\s*[\d.,]+\s*[KMBkmb]?\s*$/i.test(t);
+
+  // Чистые счётчики вида "1.6M", "295K", "100"
+  if (/^[\d.,]+\s*[KMBkmb]?$/i.test(t)) {
+    return true;
+  }
+
+  // Счётчики обязательно содержат цифры
+  if (!/\d/.test(t)) {
+    return false;
+  }
+
+  // И слово прослушиваний/просмотров как отдельное слово/корень
+  return (
+    /\b(plays?|views?|streams?|played|listens?)\b/i.test(t) ||
+    /прослушиван|просмотр|воспроизведен|reproducci|reproduç|écoute|ecoute|lecture|wiedergabe|aufruf|odtworze/i.test(t) ||
+    /\b(thousand|million|billion|тыс|млн|млрд)\b/i.test(t)
+  );
 }
 
 export function filterValidArtists(artists: string[] | null | undefined): string[] {
