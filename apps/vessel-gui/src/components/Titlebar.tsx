@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { t } from "../i18n";
 import * as api from "../api/commands";
 
-const APP_VERSION = "1.3.15";
+const APP_VERSION = "1.3.16";
 
 export function Titlebar() {
   const { lang } = useApp();
