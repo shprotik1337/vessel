@@ -442,22 +442,28 @@ pub async fn download_track_to_cache(
     core: CoreState<'_>,
     track: TrackRef,
 ) -> Result<String, String> {
+    use std::time::Duration;
     use vessel_core::model::ProviderKind;
+
+    // Сначала проверяем, есть ли трек уже в кэше
+    if vessel_core::provider::cache::is_cached(&track) {
+        if let Some(path) = vessel_core::provider::cache::cached_track_path(&track) {
+            return Ok(path.display().to_string());
+        }
+    }
+
     let (key_track, source) = if track.provider == ProviderKind::Spotify {
         let resolver = {
             let core = lock(&core);
             core.runtime.playback_resolver()
         };
-        match resolver.playable_for(&track).await {
-            Ok(pair) => pair,
-            Err(error) => return Err(format!("{error:#}")),
+        let resolve_fut = resolver.playable_for(&track);
+        match tokio::time::timeout(Duration::from_secs(15), resolve_fut).await {
+            Ok(Ok(pair)) => pair,
+            Ok(Err(error)) => return Err(format!("{error:#}")),
+            Err(_) => return Err("Таймаут поиска источника аудио (15с)".to_string()),
         }
     } else {
-        if vessel_core::provider::cache::is_cached(&track) {
-            if let Some(path) = vessel_core::provider::cache::cached_track_path(&track) {
-                return Ok(path.display().to_string());
-            }
-        }
         let registry = {
             let core = lock(&core);
             core.runtime.provider_registry()
@@ -465,15 +471,25 @@ pub async fn download_track_to_cache(
         let Some(provider) = registry.get(track.provider) else {
             return Err("провайдер не подключён".to_string());
         };
-        let source = provider
-            .download_source(&track)
-            .await
-            .map_err(|e| format!("{e:#}"))?;
+        let source_fut = provider.download_source(&track);
+        let source = match tokio::time::timeout(Duration::from_secs(15), source_fut).await {
+            Ok(Ok(source)) => source,
+            Ok(Err(e)) => return Err(format!("{e:#}")),
+            Err(_) => return Err("Таймаут получения источника аудио (15с)".to_string()),
+        };
         (track.clone(), source)
     };
-    let path = vessel_core::provider::cache::download_track_to_cache(&key_track, &source)
-        .await
-        .map_err(|e| format!("{e:#}"))?;
+
+    let dl_fut = vessel_core::provider::cache::download_track_to_cache_with_alias(
+        &key_track,
+        Some(&track),
+        &source,
+    );
+    let path = match tokio::time::timeout(Duration::from_secs(45), dl_fut).await {
+        Ok(Ok(path)) => path,
+        Ok(Err(e)) => return Err(format!("{e:#}")),
+        Err(_) => return Err("Таймаут скачивания аудиофайла в кэш (45с)".to_string()),
+    };
     Ok(path.display().to_string())
 }
 
@@ -490,6 +506,7 @@ pub async fn download_all_to_cache(
     core: CoreState<'_>,
     tracks: Vec<TrackRef>,
 ) -> Result<DownloadBatchResult, String> {
+    use std::time::Duration;
     use vessel_core::model::ProviderKind;
     let resolver = {
         let core = lock(&core);
@@ -505,38 +522,50 @@ pub async fn download_all_to_cache(
         ..Default::default()
     };
     for track in tracks {
+        // Мгновенный пропуск, если трек уже закэширован (работает для Spotify и любых других)
+        if vessel_core::provider::cache::is_cached(&track) {
+            result.skipped += 1;
+            continue;
+        }
+
         let (key_track, source) = if track.provider == ProviderKind::Spotify {
-            match resolver.playable_for(&track).await {
-                Ok(pair) => pair,
-                Err(_) => {
+            let resolve_fut = resolver.playable_for(&track);
+            match tokio::time::timeout(Duration::from_secs(15), resolve_fut).await {
+                Ok(Ok(pair)) => pair,
+                _ => {
                     result.failed += 1;
                     continue;
                 }
             }
         } else {
-            if vessel_core::provider::cache::is_cached(&track) {
-                result.skipped += 1;
-                continue;
-            }
             let Some(provider) = registry.get(track.provider) else {
                 result.failed += 1;
                 continue;
             };
-            match provider.download_source(&track).await {
-                Ok(source) => (track.clone(), source),
-                Err(_) => {
+            let source_fut = provider.download_source(&track);
+            match tokio::time::timeout(Duration::from_secs(15), source_fut).await {
+                Ok(Ok(source)) => (track.clone(), source),
+                _ => {
                     result.failed += 1;
                     continue;
                 }
             }
         };
+
         if vessel_core::provider::cache::is_cached(&key_track) {
+            let _ = vessel_core::provider::cache::link_cache_alias(&track, &key_track);
             result.skipped += 1;
             continue;
         }
-        match vessel_core::provider::cache::download_track_to_cache(&key_track, &source).await {
-            Ok(_) => result.downloaded += 1,
-            Err(_) => result.failed += 1,
+
+        let dl_fut = vessel_core::provider::cache::download_track_to_cache_with_alias(
+            &key_track,
+            Some(&track),
+            &source,
+        );
+        match tokio::time::timeout(Duration::from_secs(45), dl_fut).await {
+            Ok(Ok(_)) => result.downloaded += 1,
+            _ => result.failed += 1,
         }
     }
     Ok(result)

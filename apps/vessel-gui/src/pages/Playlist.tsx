@@ -102,9 +102,25 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
     try {
       const res = await api.downloadAllToCache(visible);
       await refresh();
-      showToast(
-        `Downloaded: ${res.downloaded} · skipped: ${res.skipped} · failed: ${res.failed}`,
-      );
+      if (res.downloaded === 0 && res.failed === 0) {
+        showToast(
+          lang === "ru"
+            ? `Все треки уже в кэше (${res.skipped})`
+            : `All tracks are already cached (${res.skipped})`
+        );
+      } else {
+        const parts: string[] = [];
+        if (res.downloaded > 0) {
+          parts.push(lang === "ru" ? `Скачано в кэш: ${res.downloaded}` : `Downloaded: ${res.downloaded}`);
+        }
+        if (res.skipped > 0) {
+          parts.push(lang === "ru" ? `уже в кэше: ${res.skipped}` : `already cached: ${res.skipped}`);
+        }
+        if (res.failed > 0) {
+          parts.push(lang === "ru" ? `сбоев: ${res.failed}` : `failed: ${res.failed}`);
+        }
+        showToast(parts.join(" · "), res.failed > 0 && res.downloaded === 0);
+      }
     } catch (error) {
       showToast(String(error), true);
     } finally {
@@ -237,7 +253,9 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
                 onClick={downloadAll}
                 disabled={downloading}
               >
-                {downloading ? "..." : t(lang, "playlist.cache")}
+                {downloading
+                  ? (lang === "ru" ? "Кэширование..." : "Caching...")
+                  : t(lang, "playlist.cache")}
               </button>
               <button className="btn btn-danger btn-sm" onClick={() => setDeleteOpen(true)}>
                 {t(lang, "playlist.delete")}

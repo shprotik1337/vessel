@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
@@ -130,6 +130,47 @@ pub async fn download_track_to_cache(
     }
     download_playback_source(source, &dest).await?;
     validate_cached_file(track, &dest).map(|_| dest)
+}
+
+/// Привязать закэшированный файл к другому треку (алиас, например sp_{id} -> yt_{id}).
+/// Использует hard link (без дублирования места на диске), а при ошибке — копирование.
+pub fn link_cache_alias(alias_track: &TrackRef, target_track: &TrackRef) -> bool {
+    let Some(target_path) = cached_track_path(target_track) else {
+        return false;
+    };
+    link_path_to_track(alias_track, &target_path)
+}
+
+/// Привязать файл на диске к идентификатору трека в кэше.
+pub fn link_path_to_track(alias_track: &TrackRef, target_path: &Path) -> bool {
+    let Some(ext) = target_path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    let dir = track_cache_dir();
+    let alias_stem = cache_stem(alias_track);
+    let alias_path = dir.join(format!("{alias_stem}.{ext}"));
+    if alias_path.is_file() {
+        return true;
+    }
+    if std::fs::hard_link(target_path, &alias_path).is_ok() {
+        return true;
+    }
+    std::fs::copy(target_path, &alias_path).is_ok()
+}
+
+/// Скачивает трек в кэш и при необходимости связывает его с исходным треком (алиас).
+pub async fn download_track_to_cache_with_alias(
+    key_track: &TrackRef,
+    original_track: Option<&TrackRef>,
+    source: &PlaybackSource,
+) -> Result<PathBuf> {
+    let path = download_track_to_cache(key_track, source).await?;
+    if let Some(orig) = original_track {
+        if orig.provider != key_track.provider || orig.id != key_track.id {
+            let _ = link_path_to_track(orig, &path);
+        }
+    }
+    Ok(path)
 }
 
 /// Валидация скачанного файла: размер не нулевой, а если известна длительность
