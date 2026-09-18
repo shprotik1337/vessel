@@ -748,7 +748,8 @@ fn is_allowed_image_host(host: &str) -> bool {
         || host.ends_with(".yandex.ru") || host == "yandex.ru"
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
+#[serde(default)]
 struct LyricsQuery {
     track_name: Option<String>,
     artist_name: Option<String>,
