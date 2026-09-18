@@ -367,3 +367,56 @@ fn send_playback_activity(
     let _ = read_frame(stream);
     Ok(())
 }
+
+pub struct RpcMessage {
+    pub client_id: Option<String>,
+    pub enabled: bool,
+    pub status: PlaybackStatus,
+    pub now_playing: Option<TrackRef>,
+    pub position_ms: u64,
+    pub duration_ms: u64,
+}
+
+#[derive(Clone)]
+pub struct DiscordRpcHandle {
+    tx: std::sync::mpsc::SyncSender<RpcMessage>,
+}
+
+impl Default for DiscordRpcHandle {
+    fn default() -> Self {
+        Self::spawn()
+    }
+}
+
+impl DiscordRpcHandle {
+    pub fn spawn() -> Self {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<RpcMessage>(1);
+        std::thread::Builder::new()
+            .name("discord-rpc-worker".to_string())
+            .spawn(move || {
+                let mut rpc = DiscordRpc::default();
+                while let Ok(msg) = rx.recv() {
+                    let mut latest = msg;
+                    while let Ok(newer) = rx.try_recv() {
+                        latest = newer;
+                    }
+                    rpc.set_client_id(latest.client_id.as_deref());
+                    rpc.update(
+                        latest.enabled,
+                        latest.status,
+                        latest.now_playing.as_ref(),
+                        latest.position_ms,
+                        latest.duration_ms,
+                    );
+                }
+                rpc.disconnect();
+            })
+            .expect("spawn discord-rpc-worker thread");
+
+        Self { tx }
+    }
+
+    pub fn send_update(&self, msg: RpcMessage) {
+        let _ = self.tx.try_send(msg);
+    }
+}
