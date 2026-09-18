@@ -1,0 +1,26 @@
+From e13a5c702327953967a966ee6f37db791b09cbaf Mon Sep 17 00:00:00 2001
+From: shprotik1337 <184275457+shprotik1337@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 21:01:14 +0600
+Subject: [PATCH] fix(server): add serde default to LyricsQuery
+
+---
+ apps/vessel-server/src/main.rs | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/apps/vessel-server/src/main.rs b/apps/vessel-server/src/main.rs
+index f2f44d4..d8abb60 100644
+--- a/apps/vessel-server/src/main.rs
++++ b/apps/vessel-server/src/main.rs
+@@ -748,7 +748,8 @@ fn is_allowed_image_host(host: &str) -> bool {
+         || host.ends_with(".yandex.ru") || host == "yandex.ru"
+ }
+ 
+-#[derive(Deserialize)]
++#[derive(Deserialize, Default)]
++#[serde(default)]
+ struct LyricsQuery {
+     track_name: Option<String>,
+     artist_name: Option<String>,
+-- 
+2.54.0.windows.1
+

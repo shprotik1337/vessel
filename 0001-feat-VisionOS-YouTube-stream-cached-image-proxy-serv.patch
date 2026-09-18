@@ -1,0 +1,524 @@
+From 92f07316ff4f68beb79a6cae51908c22fc88dada Mon Sep 17 00:00:00 2001
+From: shprotik1337 <184275457+shprotik1337@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 20:57:36 +0600
+Subject: [PATCH] feat: VisionOS YouTube stream, cached image proxy, server
+ lyrics proxy and UI optimizations
+
+---
+ Cargo.lock                                    |   1 +
+ apps/vessel-gui/src/components/Artwork.tsx    |   2 +
+ .../src/components/PlaylistCover.tsx          |   4 +
+ apps/vessel-gui/src/components/Sidebar.tsx    |   4 +
+ apps/vessel-gui/src/components/TrackRow.tsx   |   2 +
+ apps/vessel-gui/src/lib/lyrics.ts             |  33 ++++-
+ apps/vessel-server/Cargo.toml                 |   1 +
+ apps/vessel-server/src/main.rs                | 133 ++++++++++++++++--
+ src/model.rs                                  |   2 +
+ src/provider/youtube/clients.rs               |  16 ++-
+ src/provider/youtube/innertube.rs             |   7 +-
+ src/provider/youtube/player.rs                |  47 ++++++-
+ 12 files changed, 232 insertions(+), 20 deletions(-)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index ee31bb2..99127c8 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -7046,6 +7046,7 @@ dependencies = [
+  "reqwest 0.13.4",
+  "serde",
+  "serde_json",
++ "sha2",
+  "tokio",
+  "tokio-util",
+  "toml 0.9.12+spec-1.1.0",
+diff --git a/apps/vessel-gui/src/components/Artwork.tsx b/apps/vessel-gui/src/components/Artwork.tsx
+index 4a04bb7..60c9d15 100644
+--- a/apps/vessel-gui/src/components/Artwork.tsx
++++ b/apps/vessel-gui/src/components/Artwork.tsx
+@@ -56,6 +56,8 @@ export function Artwork({
+     <img
+       src={resolvedUrl}
+       alt={alt}
++      loading="lazy"
++      decoding="async"
+       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+     />
+   ) : null;
+diff --git a/apps/vessel-gui/src/components/PlaylistCover.tsx b/apps/vessel-gui/src/components/PlaylistCover.tsx
+index 46de38d..e26c2d2 100644
+--- a/apps/vessel-gui/src/components/PlaylistCover.tsx
++++ b/apps/vessel-gui/src/components/PlaylistCover.tsx
+@@ -46,6 +46,8 @@ export function PlaylistCover({
+     <img
+       src={resolvedCover}
+       alt=""
++      loading="lazy"
++      decoding="async"
+       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+     />
+   ) : first.length === 0 ? (
+@@ -79,6 +81,8 @@ export function PlaylistCover({
+             <img
+               src={trackArt}
+               alt=""
++              loading="lazy"
++              decoding="async"
+               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+             />
+           ) : null}
+diff --git a/apps/vessel-gui/src/components/Sidebar.tsx b/apps/vessel-gui/src/components/Sidebar.tsx
+index 70271a9..9c5f46e 100644
+--- a/apps/vessel-gui/src/components/Sidebar.tsx
++++ b/apps/vessel-gui/src/components/Sidebar.tsx
+@@ -328,6 +328,8 @@ export function Sidebar() {
+                       <img
+                         src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
+                         alt=""
++                        loading="lazy"
++                        decoding="async"
+                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                       />
+                     </div>
+@@ -371,6 +373,8 @@ export function Sidebar() {
+                     <img
+                       src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
+                       alt=""
++                      loading="lazy"
++                      decoding="async"
+                       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                     />
+                   </div>
+diff --git a/apps/vessel-gui/src/components/TrackRow.tsx b/apps/vessel-gui/src/components/TrackRow.tsx
+index 7f6d8f3..9102fde 100644
+--- a/apps/vessel-gui/src/components/TrackRow.tsx
++++ b/apps/vessel-gui/src/components/TrackRow.tsx
+@@ -322,6 +322,8 @@ export function TrackRow({
+                       <img
+                         src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
+                         alt=""
++                        loading="lazy"
++                        decoding="async"
+                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                       />
+                     </div>
+diff --git a/apps/vessel-gui/src/lib/lyrics.ts b/apps/vessel-gui/src/lib/lyrics.ts
+index bd1501c..cc1126f 100644
+--- a/apps/vessel-gui/src/lib/lyrics.ts
++++ b/apps/vessel-gui/src/lib/lyrics.ts
+@@ -1,4 +1,4 @@
+-import { isPlayCountString } from "./utils";
++import { isPlayCountString, getActiveImageProxy } from "./utils";
+ 
+ export interface LyricLine {
+   time: number; // in seconds
+@@ -15,6 +15,22 @@ export interface LyricsData {
+ 
+ const lyricsCache = new Map<string, LyricsData | null>();
+ 
++function buildLyricsUrl(endpoint: "/api/get" | "/api/search", params: URLSearchParams): string {
++  const proxy = getActiveImageProxy();
++  if (proxy?.server_url) {
++    const base = proxy.server_url.replace(/\/+$/, "");
++    const proxyParams = new URLSearchParams(params);
++    if (endpoint === "/api/search") {
++      proxyParams.set("search", "true");
++    }
++    if (proxy.token) {
++      proxyParams.set("token", proxy.token);
++    }
++    return `${base}/api/v1/lyrics?${proxyParams.toString()}`;
++  }
++  return `https://lrclib.net${endpoint}?${params.toString()}`;
++}
++
+ /**
+  * Parse an LRC-formatted string into structured LyricLine array.
+  */
+@@ -97,10 +113,11 @@ export async function fetchLyrics(
+       params.append("duration", Math.round(durationSecs).toString());
+     }
+ 
+-    let res = await fetch(`https://lrclib.net/api/get?${params.toString()}`, {
++    let res = await fetch(buildLyricsUrl("/api/get", params), {
+       headers: {
+-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
++        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
+       },
++      signal: AbortSignal.timeout(4000),
+     });
+ 
+     if (res.ok) {
+@@ -119,10 +136,11 @@ export async function fetchLyrics(
+     if (primaryArtist || effectiveArtist) {
+       searchParams.append("artist_name", primaryArtist || effectiveArtist);
+     }
+-    res = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
++    res = await fetch(buildLyricsUrl("/api/search", searchParams), {
+       headers: {
+-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
++        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
+       },
++      signal: AbortSignal.timeout(4000),
+     });
+ 
+     if (res.ok) {
+@@ -147,10 +165,11 @@ export async function fetchLyrics(
+       ? `${primaryArtist || effectiveArtist} ${cleanedTitle}`.trim()
+       : cleanedTitle.trim();
+     const qParams = new URLSearchParams({ q: query });
+-    res = await fetch(`https://lrclib.net/api/search?${qParams.toString()}`, {
++    res = await fetch(buildLyricsUrl("/api/search", qParams), {
+       headers: {
+-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
++        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
+       },
++      signal: AbortSignal.timeout(4000),
+     });
+ 
+     if (res.ok) {
+diff --git a/apps/vessel-server/Cargo.toml b/apps/vessel-server/Cargo.toml
+index 9d5698f..421cc3d 100644
+--- a/apps/vessel-server/Cargo.toml
++++ b/apps/vessel-server/Cargo.toml
+@@ -20,5 +20,6 @@ serde_json = "1"
+ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "fs", "io-util"] }
+ tokio-util = { version = "0.7", features = ["io"] }
+ toml = "0.9"
++sha2 = "0.10"
+ url = "2"
+ uuid = { version = "1", features = ["v4"] }
+diff --git a/apps/vessel-server/src/main.rs b/apps/vessel-server/src/main.rs
+index b04e46b..f2f44d4 100644
+--- a/apps/vessel-server/src/main.rs
++++ b/apps/vessel-server/src/main.rs
+@@ -53,6 +53,7 @@ struct AppState {
+     http: reqwest::Client,
+     /// Кэш автообнаруженного публичного client_id SoundCloud (не аккаунт).
+     soundcloud_id: Arc<Mutex<Option<String>>>,
++    cache_dir: PathBuf,
+ }
+ 
+ impl AppState {
+@@ -234,6 +235,7 @@ async fn main() -> anyhow::Result<()> {
+             .timeout(std::time::Duration::from_secs(60))
+             .build()?,
+         soundcloud_id: Arc::new(Mutex::new(None)),
++        cache_dir: cfg.server.data_dir.join("cache"),
+     };
+ 
+     {
+@@ -261,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
+         .route("/api/v1/tracks/related", post(related))
+         .route("/api/v1/s/{token}", get(stream))
+         .route("/api/v1/image", get(image_proxy))
++        .route("/api/v1/lyrics", get(lyrics_proxy))
+         .layer(middleware::from_fn_with_state(state.clone(), require_token))
+         .with_state(state.clone());
+ 
+@@ -745,6 +748,79 @@ fn is_allowed_image_host(host: &str) -> bool {
+         || host.ends_with(".yandex.ru") || host == "yandex.ru"
+ }
+ 
++#[derive(Deserialize)]
++struct LyricsQuery {
++    track_name: Option<String>,
++    artist_name: Option<String>,
++    album_name: Option<String>,
++    duration: Option<f64>,
++    q: Option<String>,
++    search: Option<bool>,
++}
++
++async fn lyrics_proxy(
++    State(state): State<AppState>,
++    Query(query): Query<LyricsQuery>,
++) -> Response {
++    let is_search = query.search.unwrap_or(false) || query.q.is_some();
++    let target_base = if is_search {
++        "https://lrclib.net/api/search"
++    } else {
++        "https://lrclib.net/api/get"
++    };
++
++    let mut url = match Url::parse(target_base) {
++        Ok(u) => u,
++        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "bad url").into_response(),
++    };
++    {
++        let mut pairs = url.query_pairs_mut();
++        if let Some(q) = query.q.as_deref().filter(|s| !s.is_empty()) {
++            pairs.append_pair("q", q);
++        }
++        if let Some(t) = query.track_name.as_deref().filter(|s| !s.is_empty()) {
++            pairs.append_pair("track_name", t);
++        }
++        if let Some(a) = query.artist_name.as_deref().filter(|s| !s.is_empty()) {
++            pairs.append_pair("artist_name", a);
++        }
++        if let Some(al) = query.album_name.as_deref().filter(|s| !s.is_empty()) {
++            pairs.append_pair("album_name", al);
++        }
++        if let Some(d) = query.duration {
++            pairs.append_pair("duration", &d.to_string());
++        }
++    }
++
++    match state
++        .http
++        .get(url)
++        .timeout(std::time::Duration::from_secs(4))
++        .header(header::USER_AGENT, "vessel/1.3.16 (https://github.com/shprotik1337/vessel)")
++        .send()
++        .await
++    {
++        Ok(resp) => {
++            let status = resp.status();
++            let bytes = resp.bytes().await.unwrap_or_default();
++            let mut response = Response::new(Body::from(bytes));
++            *response.status_mut() = status;
++            response.headers_mut().insert(
++                header::CONTENT_TYPE,
++                HeaderValue::from_static("application/json"),
++            );
++            response
++        }
++        Err(err) => {
++            (
++                StatusCode::BAD_GATEWAY,
++                Json(json!({ "detail": format!("lrclib error: {err}") })),
++            )
++                .into_response()
++        }
++    }
++}
++
+ async fn image_proxy(
+     State(state): State<AppState>,
+     Query(query): Query<ImageQuery>,
+@@ -784,9 +860,33 @@ async fn image_proxy(
+             .into_response();
+     }
+ 
++    // 1. Проверяем локальный дисковый кэш (отдача за 1-2 мс)
++    use sha2::Digest;
++    let url_hash = format!("{:x}", sha2::Sha256::digest(query.url.trim().as_bytes()));
++    let img_cache_dir = state.cache_dir.join("images");
++    let file_path = img_cache_dir.join(format!("{url_hash}.bin"));
++    let meta_path = img_cache_dir.join(format!("{url_hash}.mime"));
++
++    if let Ok(bytes) = tokio::fs::read(&file_path).await {
++        let mime = tokio::fs::read_to_string(&meta_path)
++            .await
++            .unwrap_or_else(|_| "image/jpeg".to_string());
++        let content_type = HeaderValue::from_str(&mime).unwrap_or_else(|_| HeaderValue::from_static("image/jpeg"));
++        let mut response = Response::new(Body::from(bytes));
++        *response.status_mut() = StatusCode::OK;
++        response.headers_mut().insert(header::CONTENT_TYPE, content_type);
++        response.headers_mut().insert(
++            header::CACHE_CONTROL,
++            HeaderValue::from_static("public, max-age=2592000, immutable"),
++        );
++        return response;
++    }
++
++    // 2. Скачиваем с источника с жестким таймаутом 4 секунды (чтобы сокеты клиента никогда не зависали)
+     let upstream = match state
+         .http
+         .get(parsed_url.as_str())
++        .timeout(std::time::Duration::from_secs(4))
+         .header(
+             header::ACCEPT,
+             "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+@@ -819,21 +919,38 @@ async fn image_proxy(
+         .cloned()
+         .unwrap_or_else(|| HeaderValue::from_static("image/jpeg"));
+ 
+-    let content_length = upstream.headers().get(header::CONTENT_LENGTH).cloned();
++    let content_type_str = content_type
++        .to_str()
++        .unwrap_or("image/jpeg")
++        .to_string();
+ 
+-    use futures_util::StreamExt;
+-    let stream = upstream.bytes_stream().map(|res| res.map_err(axum::Error::new));
+-    let mut response = Response::new(Body::from_stream(stream));
++    let bytes = match upstream.bytes().await {
++        Ok(b) => b,
++        Err(err) => {
++            return (
++                StatusCode::BAD_GATEWAY,
++                Json(json!({ "detail": format!("ошибка чтения байт изображения: {err}") })),
++            )
++                .into_response();
++        }
++    };
+ 
++    // Сохраняем в кэш в фоне
++    let bytes_to_save = bytes.clone();
++    tokio::spawn(async move {
++        if tokio::fs::create_dir_all(&img_cache_dir).await.is_ok() {
++            let _ = tokio::fs::write(&file_path, &bytes_to_save).await;
++            let _ = tokio::fs::write(&meta_path, content_type_str).await;
++        }
++    });
++
++    let mut response = Response::new(Body::from(bytes));
+     *response.status_mut() = StatusCode::OK;
+     response.headers_mut().insert(header::CONTENT_TYPE, content_type);
+     response.headers_mut().insert(
+         header::CACHE_CONTROL,
+-        HeaderValue::from_static("public, max-age=604800, immutable"),
++        HeaderValue::from_static("public, max-age=2592000, immutable"),
+     );
+-    if let Some(len) = content_length {
+-        response.headers_mut().insert(header::CONTENT_LENGTH, len);
+-    }
+ 
+     response
+ }
+diff --git a/src/model.rs b/src/model.rs
+index d3ce64b..a92c6b9 100644
+--- a/src/model.rs
++++ b/src/model.rs
+@@ -124,7 +124,9 @@ pub struct TrackRef {
+     pub artwork_url: Option<Url>,
+     pub web_url: Url,
+     pub capability: PlaybackCapability,
++    #[serde(default)]
+     pub genres: Vec<String>,
++    #[serde(default)]
+     pub explicit: bool,
+     #[serde(default)]
+     pub drm: bool,
+diff --git a/src/provider/youtube/clients.rs b/src/provider/youtube/clients.rs
+index a761ce6..767137b 100644
+--- a/src/provider/youtube/clients.rs
++++ b/src/provider/youtube/clients.rs
+@@ -86,7 +86,21 @@ pub const ANDROID_VR_1_61_48: YouTubeClient = YouTubeClient {
+     use_signature_timestamp: false,
+ };
+ 
+-pub const STREAM_FALLBACK_CLIENTS: &[YouTubeClient] = &[ANDROID_VR_1_43_32, ANDROID_VR_1_61_48];
++pub const VISIONOS: YouTubeClient = YouTubeClient {
++    client_name: "VISIONOS",
++    client_version: "1.02",
++    client_id: "101",
++    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
++    os_name: "visionOS",
++    os_version: "26.5.23O471",
++    device_make: "Apple",
++    device_model: "RealityDevice17,1",
++    android_sdk_version: None,
++    login_supported: false,
++    use_signature_timestamp: false,
++};
++
++pub const STREAM_FALLBACK_CLIENTS: &[YouTubeClient] = &[VISIONOS, ANDROID_VR_1_43_32, ANDROID_VR_1_61_48];
+ 
+ /// Premium itag'и (256–270 kbps аудио). Free-аккаунт их не видит (Kopuz).
+ pub fn is_premium_itag(itag: u32) -> bool {
+diff --git a/src/provider/youtube/innertube.rs b/src/provider/youtube/innertube.rs
+index 6b8991f..29b8a5d 100644
+--- a/src/provider/youtube/innertube.rs
++++ b/src/provider/youtube/innertube.rs
+@@ -140,11 +140,16 @@ pub async fn player(
+         .header("X-Goog-Api-Format-Version", "1")
+         .header("X-YouTube-Client-Name", client.client_id)
+         .header("X-YouTube-Client-Version", client.client_version);
+-    if client.client_name.starts_with("WEB") {
++    if client.client_name == "VISIONOS" {
++        req = req.header("Origin", "https://www.youtube.com");
++    } else if client.client_name.starts_with("WEB") {
+         req = req
+             .header("X-Origin", ORIGIN_YOUTUBE_MUSIC)
+             .header("Referer", format!("{ORIGIN_YOUTUBE_MUSIC}/"));
+     }
++    if let Some(vd) = extras.visitor_data {
++        req = req.header("X-Goog-Visitor-Id", vd);
++    }
+     if let Some(c) = cookies.filter(|c| !c.is_empty()) {
+         // SAPISIDHASH только когда в cookie реально есть SAPISID; иначе (куки
+         // без логина, OAuth-сессия) — шлём cookie как есть, не роняя запрос.
+diff --git a/src/provider/youtube/player.rs b/src/provider/youtube/player.rs
+index 0b19993..8296140 100644
+--- a/src/provider/youtube/player.rs
++++ b/src/provider/youtube/player.rs
+@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
+ use crate::model::{PlaybackCapability, PlaybackSource};
+ 
+ use super::client::YoutubeClient;
+-use super::clients::{ANDROID_VR_1_61_48, WEB_REMIX, clients_http};
++use super::clients::{ANDROID_VR_1_61_48, VISIONOS, WEB_REMIX, clients_http};
+ use super::decipher;
+ use super::innertube::{self, PlayerExtras};
+ 
+@@ -152,7 +152,22 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
+         }
+     }
+ 
+-    // 2. Аноним / без cookies: ANDROID_VR + POT — основной полноскоростной путь (без троттлинга)
++    // 2. VISIONOS: чистый direct AAC stream без cipher и без 1 MiB cap.
++    // Прекрасно работает на любых IP (включая датацентры и VPS) без блокировок.
++    match try_visionos(client, cookie, video_id).await {
++        Ok(stream) => {
++            crate::dlog!(
++                "[Playback] VISIONOS ok: clen={} range_safe=true",
++                stream.content_length
++            );
++            return Ok(stream);
++        }
++        Err(error) => {
++            crate::dlog!("[Playback] VISIONOS путь не удался: {error:#}");
++        }
++    }
++
++    // 3. Аноним / без cookies: ANDROID_VR + POT — основной полноскоростной путь (без троттлинга)
+     match try_android_vr_pot(&http, client, cookie, video_id, super::clients::ANDROID_VR_1_61_48).await {
+         Ok(stream) => {
+             crate::dlog!(
+@@ -384,7 +399,33 @@ async fn try_android_vr_pot(
+     Ok(stream)
+ }
+ 
++async fn try_visionos(
++    client: &YoutubeClient,
++    cookie: Option<&str>,
++    video_id: &str,
++) -> Result<ResolvedStream> {
++    let visitor_data = client.get_visitor_data().await;
++    let player = innertube::player(
++        VISIONOS,
++        video_id,
++        cookie,
++        PlayerExtras {
++            visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
++            ..Default::default()
++        },
++    )
++    .await?;
++
++    let mut stream = stream_plain_client(player, VISIONOS.user_agent)?;
++    stream.range_safe = true;
++    Ok(stream)
++}
++
+ fn stream_android_vr(player: Value) -> Result<ResolvedStream> {
++    stream_plain_client(player, ANDROID_VR_1_61_48.user_agent)
++}
++
++fn stream_plain_client(player: Value, user_agent: &str) -> Result<ResolvedStream> {
+     let status = player
+         .pointer("/playabilityStatus/status")
+         .and_then(Value::as_str)
+@@ -450,7 +491,7 @@ fn stream_android_vr(player: Value) -> Result<ResolvedStream> {
+         AudioStream { url: url.to_string(), mime, bitrate: 0 },
+         None,
+     )?;
+-    source.headers.insert("User-Agent".to_string(), ANDROID_VR_1_61_48.user_agent.to_string());
++    source.headers.insert("User-Agent".to_string(), user_agent.to_string());
+     Ok(ResolvedStream { source, range_safe: false, content_length, duration_ms })
+ }
+ 
+-- 
+2.54.0.windows.1
+
