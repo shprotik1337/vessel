@@ -339,6 +339,15 @@ pub async fn download_track(
         let core = lock(&core);
         resolve_download_dir(&core)
     };
+    
+    let mut source = source;
+    if source.url.path().starts_with("/api/v1/s/") {
+        let mut url = source.url.clone();
+        url.query_pairs_mut().append_pair("format", "mp3");
+        source.url = url;
+        source.mime_type = Some("audio/mpeg".to_string());
+    }
+
     let file_name = vessel_core::provider::download::track_file_name(&key_track, &source);
     let dest = std::path::Path::new(&dir).join(file_name);
     if dest.exists() {

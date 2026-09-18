@@ -610,9 +610,15 @@ fn relay_headers(headers: &std::collections::BTreeMap<String, String>) -> Vec<(S
         .collect()
 }
 
+#[derive(Deserialize)]
+struct StreamQuery {
+    format: Option<String>,
+}
+
 async fn stream(
     State(state): State<AppState>,
     AxPath(token): AxPath<String>,
+    Query(query): Query<StreamQuery>,
     headers: HeaderMap,
 ) -> Response {
     let Some((target, content_type)) = state.relay.get(&token) else {
@@ -676,6 +682,62 @@ async fn stream(
                             keep.push((header::CONTENT_TYPE, value));
                         }
                     }
+                    let wants_mp3 = query.format.as_deref() == Some("mp3");
+                    if wants_mp3 {
+                        keep.retain(|(name, _)| name == header::CONTENT_TYPE.as_str());
+                        if let Some(idx) = keep.iter().position(|(name, _)| name == header::CONTENT_TYPE.as_str()) {
+                            keep[idx].1 = HeaderValue::from_static("audio/mpeg");
+                        } else {
+                            keep.push((header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg")));
+                        }
+                    }
+
+                    if wants_mp3 {
+                        use std::process::Stdio;
+                        use tokio::process::Command;
+                        use tokio::io::AsyncWriteExt;
+                        
+                        if let Ok(mut child) = Command::new("ffmpeg")
+                            .args(["-i", "pipe:0", "-f", "mp3", "pipe:1"])
+                            .stdin(Stdio::piped())
+                            .stdout(Stdio::piped())
+                            .stderr(Stdio::null())
+                            .spawn()
+                        {
+                            let mut stdin = child.stdin.take().unwrap();
+                            let stdout = child.stdout.take().unwrap();
+                            let mut upstream_chunks = upstream.bytes_stream();
+                            
+                            tokio::spawn(async move {
+                                use futures_util::StreamExt;
+                                while let Some(Ok(chunk)) = upstream_chunks.next().await {
+                                    if stdin.write_all(&chunk).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                drop(stdin);
+                                let _ = child.wait().await;
+                            });
+                            
+                            let chunks = tokio_util::io::ReaderStream::new(stdout);
+                            let body = Body::from_stream(futures_util::stream::unfold(
+                                (chunks, permit),
+                                |(mut chunks, guard)| async move {
+                                    use futures_util::StreamExt;
+                                    chunks.next().await.map(|item| {
+                                        (item.map_err(|e| axum::Error::new(e)), (chunks, guard))
+                                    })
+                                },
+                            ));
+                            let mut response = Response::new(body);
+                            *response.status_mut() = status;
+                            for (name, value) in keep {
+                                response.headers_mut().insert(name, value);
+                            }
+                            return response;
+                        }
+                    }
+
                     // Permit живёт внутри unfold-замыкания и освобождается
                     // только когда клиент доел/бросил поток.
                     let chunks = upstream.bytes_stream();

@@ -118,7 +118,7 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
             }
 
             let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(90))
+                .connect_timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
             let mut request = client.get(source.url.clone());
