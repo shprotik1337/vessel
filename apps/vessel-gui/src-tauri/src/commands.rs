@@ -1840,6 +1840,21 @@ pub async fn set_language(core: CoreState<'_>, language: String) -> Result<(), S
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_discord_rpc(core: CoreState<'_>) -> Result<bool, String> {
+    let core = lock(&core);
+    Ok(core.config.discord_rpc)
+}
+
+#[tauri::command]
+pub async fn set_discord_rpc(core: CoreState<'_>, enabled: bool) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.discord_rpc = enabled;
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+
 /// РРјРїРѕСЂС‚ Р»Р°Р№РєРѕРІ РёР· РїР»Р°С‚С„РѕСЂРјС‹.
 /// target: "favorites" | "playlist" (СЃРѕР·РґР°С‚СЊ РЅРѕРІС‹Р№ РїР»РµР№Р»РёСЃС‚)
 /// profile_url РЅСѓР¶РµРЅ РґР»СЏ SoundCloud (https://soundcloud.com/username).
@@ -2216,4 +2231,39 @@ pub fn vessel_route_set(
     core.runtime.sync_config(&config_clone);
     core.last_state_hash = 0;
     Ok(())
+}
+
+/// Свернуть окно
+#[tauri::command]
+pub fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+/// Переключить разворачивание окна на весь экран
+#[tauri::command]
+pub fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
+    let is_max = window.is_maximized().unwrap_or(false);
+    if is_max {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+/// Проверить, развернуто ли окно
+#[tauri::command]
+pub fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
+/// Закрыть окно (свернуть в системный трей)
+#[tauri::command]
+pub fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.hide().map_err(|e| e.to_string())
+}
+
+/// Начать перемещение окна (drag)
+#[tauri::command]
+pub fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
 }

@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { useApp } from "../store";
 import { TextInputModal } from "./Modal";
 import { t } from "../i18n";
+import { resolveArtworkUrl } from "../lib/utils";
 import * as api from "../api/commands";
 
 function IconCollapse() {
@@ -106,28 +107,21 @@ function IconSettings() {
 }
 
 export function Sidebar() {
-  const { state, view, playlistId, navigateTo, showToast, refresh, lang } = useApp();
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem("vessel_sidebar_collapsed") === "true";
-    } catch {
-      return false;
-    }
-  });
+  const {
+    state,
+    view,
+    playlistId,
+    navigateTo,
+    showToast,
+    refresh,
+    lang,
+    sidebarCollapsed: collapsed,
+    toggleSidebarCollapsed: toggleCollapsed,
+  } = useApp();
   const [plExpanded, setPlExpanded] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
-
-  const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem("vessel_sidebar_collapsed", String(next));
-      } catch {}
-      return next;
-    });
-  };
 
   const reorderPlaylists = async (from: number, to: number) => {
     if (!state) return;
@@ -332,8 +326,10 @@ export function Sidebar() {
                       }}
                     >
                       <img
-                        src={p.cover_url ?? p.tracks[0]?.artwork_url ?? ""}
+                        src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
                     </div>
@@ -375,8 +371,10 @@ export function Sidebar() {
                 {p.cover_url || p.tracks[0]?.artwork_url ? (
                   <div className="pl-mark-collapsed">
                     <img
-                      src={p.cover_url ?? p.tracks[0]?.artwork_url ?? ""}
+                      src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                     />
                   </div>

@@ -18,6 +18,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod commands;
+mod discord_rpc;
 mod webview_cookies;
 
 pub struct GuiCore {
@@ -32,7 +33,14 @@ pub struct GuiCore {
     pub last_progress_at: Instant,
 }
 
-/// Р СџР С•Р В»Р Р…Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ, Р С”Р С•РЎвЂљР С•РЎР‚Р С•Р Вµ РЎвЂћРЎР‚Р С•Р Р…РЎвЂљР ВµР Р…Р Т‘ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ Р Р…Р В°Р С—РЎР‚РЎРЏР СРЎС“РЎР‹ Р С—Р С• Р В·Р В°Р С—РЎР‚Р С•РЎРѓРЎС“.
+#[derive(Serialize, Clone)]
+pub struct ImageProxyConfig {
+    pub server_url: String,
+    pub token: String,
+    pub routed_providers: Vec<String>,
+}
+
+/// Р СџР С•Р В»Р Р…Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ, Р С”Р С•РЎвЂљР С•РЎР‚Р С•Р Вµ РЎвЂћРЎР‚Р С•Р Р…РЎвЂљР ВµР Р…Р Т‘ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ Р Р…Р В°Р С—РЎР‚РЎРЏР С˜РЎС“РЎР‹ Р С—Р С• Р В·Р В°Р С—РЎР‚Р С•РЎРѓРЎС“.
 #[derive(Serialize, Clone)]
 pub struct FullState {
     pub player: PlayerState,
@@ -54,6 +62,8 @@ pub struct FullState {
     pub needs_user_selection: bool,
     pub language: String,
     pub wave_source: String,
+    pub image_proxy: Option<ImageProxyConfig>,
+    pub discord_rpc: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -167,6 +177,47 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
 
 pub fn build_full_state(core: &GuiCore) -> FullState {
     let player = core.app.player.clone();
+    let image_proxy = {
+        // Проксируем изображения только для провайдеров, которые ЯВНО переключены на «Сервер».
+        // В чисто локальном режиме VPS не используется вообще (image_proxy = None).
+        let mut routed_providers = Vec::new();
+        let mut active_server_id = None;
+
+        for (provider_segment, target) in &core.config.provider_routing {
+            if let Some(server_id) = target.strip_prefix("server:") {
+                routed_providers.push(provider_segment.clone());
+                if active_server_id.is_none() {
+                    active_server_id = Some(server_id.to_string());
+                }
+            }
+        }
+
+        let server = active_server_id.and_then(|server_id| {
+            core.config.vessel_servers.iter().find(|s| s.id == server_id)
+        });
+
+        if let Some(server) = server {
+            if !routed_providers.is_empty() {
+                let secret_name = format!("vessel-server:{}", server.id);
+                let token = core
+                    .runtime
+                    .get_named_secret(&secret_name)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
+                Some(ImageProxyConfig {
+                    server_url: server.url.trim_end_matches('/').to_string(),
+                    token,
+                    routed_providers,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
     FullState {
         player,
         queue: core.app.queue.clone(),
@@ -191,6 +242,8 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
             .wave_source
             .clone()
             .unwrap_or_else(|| "favorites".to_string()),
+        image_proxy,
+        discord_rpc: core.config.discord_rpc,
     }
 }
 
@@ -218,6 +271,7 @@ pub struct ProgressPayload {
 
 /// Р С›РЎРѓР Р…Р С•Р Р†Р Р…Р С•Р в„– РЎвЂ Р С‘Р С”Р В»: Р С–Р С•Р Р…РЎРЏР ВµРЎвЂљ runtime, Р С—Р ВµРЎР‚РЎРѓР С‘РЎРѓРЎвЂљР С‘РЎвЂљ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ, РЎв‚¬Р В»РЎвЂРЎвЂљ РЎРѓР С•Р В±РЎвЂ№РЎвЂљР С‘РЎРЏ.
 fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
+    let discord = discord_rpc::DiscordRpcHandle::default();
     loop {
         let mut core = match core.lock() {
             Ok(guard) => guard,
@@ -238,7 +292,18 @@ fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
             core.last_progress_at = now;
             emit_progress(&app, &core);
         }
+
+        let rpc_msg = discord_rpc::RpcMessage {
+            client_id: core.config.discord_rpc_client_id.clone(),
+            enabled: core.config.discord_rpc,
+            status: core.app.player.status,
+            now_playing: core.app.now_playing.clone(),
+            position_ms: core.app.player.position_ms,
+            duration_ms: core.app.player.duration_ms,
+        };
+
         drop(core);
+        discord.send_update(rpc_msg);
         std::thread::sleep(Duration::from_millis(50));
     }
 }
@@ -481,6 +546,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::delete_user,
             commands::get_language,
             commands::set_language,
+            commands::get_discord_rpc,
+            commands::set_discord_rpc,
             commands::pick_folder,
             commands::pick_file,
             commands::save_file_as,
@@ -492,7 +559,18 @@ pub fn run() -> anyhow::Result<()> {
             commands::vessel_server_add,
             commands::vessel_server_remove,
             commands::vessel_route_set,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_is_maximized,
+            commands::window_close,
+            commands::window_start_dragging,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             let app_handle = app.handle().clone();
             let core_state = app.state::<Arc<Mutex<GuiCore>>>().inner();
@@ -511,6 +589,50 @@ pub fn run() -> anyhow::Result<()> {
                 let _guard = runtime.enter();
                 driver_loop(core, app_handle);
             });
+
+            let show_item = tauri::menu::MenuItem::with_id(app, "show", "Показать", true, None::<&str>)?;
+            let quit_item = tauri::menu::MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
+            let tray_menu = tauri::menu::Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let mut tray_builder = tauri::tray::TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder.build(app)?;
 
             Ok(())
         })
