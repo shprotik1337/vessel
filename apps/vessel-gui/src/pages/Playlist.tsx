@@ -66,10 +66,11 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
           return a.title.localeCompare(b.title) * mult;
         case "artist":
           return artistLabel(a.artists).localeCompare(artistLabel(b.artists)) * mult;
-        case "added":
-          return (
-            ((addedTimes.get(trackKey(b)) ?? 0) - (addedTimes.get(trackKey(a)) ?? 0)) * mult
-          );
+        case "added": {
+          const diff = (addedTimes.get(trackKey(b)) ?? 0) - (addedTimes.get(trackKey(a)) ?? 0);
+          if (diff !== 0) return diff * mult;
+          return tracks.indexOf(a) - tracks.indexOf(b);
+        }
         default:
           return 0;
       }
