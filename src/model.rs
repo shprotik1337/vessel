@@ -124,7 +124,9 @@ pub struct TrackRef {
     pub artwork_url: Option<Url>,
     pub web_url: Url,
     pub capability: PlaybackCapability,
+    #[serde(default)]
     pub genres: Vec<String>,
+    #[serde(default)]
     pub explicit: bool,
     #[serde(default)]
     pub drm: bool,

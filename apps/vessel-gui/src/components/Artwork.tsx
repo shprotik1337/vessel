@@ -56,6 +56,8 @@ export function Artwork({
     <img
       src={resolvedUrl}
       alt={alt}
+      loading="lazy"
+      decoding="async"
       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
     />
   ) : null;
