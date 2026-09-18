@@ -121,33 +121,101 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                 .connect_timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new());
-            let mut request = client.get(source.url.clone());
-            for (key, value) in &source.headers {
-                request = request.header(key, value);
-            }
-            let mut response = request
-                .send()
-                .await
-                .context("сервер не ответил на запрос скачивания")?
-                .error_for_status()
-                .context("сервер отказал в скачивании трека")?;
+
             let write_result: Result<()> = async {
                 use tokio::io::AsyncWriteExt;
                 let mut file = tokio::fs::File::create(&temporary)
                     .await
                     .with_context(|| format!("не удалось создать {}", temporary.display()))?;
-                let mut total_bytes = 0usize;
-                while let Some(chunk) = response.chunk().await.context("сбой при загрузке аудиоданных")? {
-                    total_bytes += chunk.len();
-                    file.write_all(&chunk)
+
+                if source.supports_range {
+                    let chunk_size = 512 * 1024u64; // 512 KB
+                    let mut start = 0u64;
+                    let mut total_expected: Option<u64> = None;
+                    let mut downloaded = 0usize;
+
+                    loop {
+                        let end = if let Some(tot) = total_expected {
+                            let next = start + chunk_size - 1;
+                            if next >= tot { tot - 1 } else { next }
+                        } else {
+                            start + chunk_size - 1
+                        };
+
+                        let mut req = client.get(source.url.clone());
+                        for (key, value) in &source.headers {
+                            req = req.header(key, value);
+                        }
+                        req = req.header("Range", format!("bytes={start}-{end}"));
+
+                        let resp = req.send().await.context("сбой сетевого запроса чанка")?;
+                        let status = resp.status();
+
+                        if status == reqwest::StatusCode::PARTIAL_CONTENT {
+                            if total_expected.is_none() {
+                                if let Some(cr) = resp.headers().get("content-range").and_then(|v| v.to_str().ok()) {
+                                    if let Some(pos) = cr.rfind('/') {
+                                        if let Ok(tot) = cr[pos + 1..].trim().parse::<u64>() {
+                                            total_expected = Some(tot);
+                                        }
+                                    }
+                                }
+                            }
+                            let bytes = resp.bytes().await.context("сбой чтения чанка")?;
+                            if bytes.is_empty() {
+                                break;
+                            }
+                            file.write_all(&bytes).await.context("сбой записи чанка")?;
+                            downloaded += bytes.len();
+                            start += bytes.len() as u64;
+
+                            if let Some(tot) = total_expected {
+                                if start >= tot {
+                                    break;
+                                }
+                            }
+                        } else if status == reqwest::StatusCode::OK {
+                            let mut stream = resp;
+                            while let Some(chunk) = stream.chunk().await.context("сбой при загрузке аудиоданных")? {
+                                downloaded += chunk.len();
+                                file.write_all(&chunk).await.context("ошибка записи")?;
+                            }
+                            break;
+                        } else if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+                            break;
+                        } else {
+                            bail!("сервер вернул статус {status}");
+                        }
+                    }
+                    file.flush().await.context("не удалось сбросить буфер записи")?;
+                    if downloaded == 0 {
+                        bail!("сервер отдал пустой файл");
+                    }
+                    Ok(())
+                } else {
+                    let mut request = client.get(source.url.clone());
+                    for (key, value) in &source.headers {
+                        request = request.header(key, value);
+                    }
+                    let mut response = request
+                        .send()
                         .await
-                        .with_context(|| format!("ошибка записи в {}", temporary.display()))?;
+                        .context("сервер не ответил на запрос скачивания")?
+                        .error_for_status()
+                        .context("сервер отказал в скачивании трека")?;
+                    let mut total_bytes = 0usize;
+                    while let Some(chunk) = response.chunk().await.context("сбой при загрузке аудиоданных")? {
+                        total_bytes += chunk.len();
+                        file.write_all(&chunk)
+                            .await
+                            .with_context(|| format!("ошибка записи в {}", temporary.display()))?;
+                    }
+                    file.flush().await.context("не удалось сбросить буфер записи")?;
+                    if total_bytes == 0 {
+                        bail!("сервер отдал пустой файл");
+                    }
+                    Ok(())
                 }
-                file.flush().await.context("не удалось сбросить буфер записи")?;
-                if total_bytes == 0 {
-                    bail!("сервер отдал пустой файл");
-                }
-                Ok(())
             }
             .await;
 
