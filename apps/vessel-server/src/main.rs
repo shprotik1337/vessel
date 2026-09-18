@@ -53,6 +53,7 @@ struct AppState {
     http: reqwest::Client,
     /// Кэш автообнаруженного публичного client_id SoundCloud (не аккаунт).
     soundcloud_id: Arc<Mutex<Option<String>>>,
+    cache_dir: PathBuf,
 }
 
 impl AppState {
@@ -234,6 +235,7 @@ async fn main() -> anyhow::Result<()> {
             .timeout(std::time::Duration::from_secs(60))
             .build()?,
         soundcloud_id: Arc::new(Mutex::new(None)),
+        cache_dir: cfg.server.data_dir.join("cache"),
     };
 
     {
@@ -261,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/tracks/related", post(related))
         .route("/api/v1/s/{token}", get(stream))
         .route("/api/v1/image", get(image_proxy))
+        .route("/api/v1/lyrics", get(lyrics_proxy))
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .with_state(state.clone());
 
@@ -745,6 +748,79 @@ fn is_allowed_image_host(host: &str) -> bool {
         || host.ends_with(".yandex.ru") || host == "yandex.ru"
 }
 
+#[derive(Deserialize)]
+struct LyricsQuery {
+    track_name: Option<String>,
+    artist_name: Option<String>,
+    album_name: Option<String>,
+    duration: Option<f64>,
+    q: Option<String>,
+    search: Option<bool>,
+}
+
+async fn lyrics_proxy(
+    State(state): State<AppState>,
+    Query(query): Query<LyricsQuery>,
+) -> Response {
+    let is_search = query.search.unwrap_or(false) || query.q.is_some();
+    let target_base = if is_search {
+        "https://lrclib.net/api/search"
+    } else {
+        "https://lrclib.net/api/get"
+    };
+
+    let mut url = match Url::parse(target_base) {
+        Ok(u) => u,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "bad url").into_response(),
+    };
+    {
+        let mut pairs = url.query_pairs_mut();
+        if let Some(q) = query.q.as_deref().filter(|s| !s.is_empty()) {
+            pairs.append_pair("q", q);
+        }
+        if let Some(t) = query.track_name.as_deref().filter(|s| !s.is_empty()) {
+            pairs.append_pair("track_name", t);
+        }
+        if let Some(a) = query.artist_name.as_deref().filter(|s| !s.is_empty()) {
+            pairs.append_pair("artist_name", a);
+        }
+        if let Some(al) = query.album_name.as_deref().filter(|s| !s.is_empty()) {
+            pairs.append_pair("album_name", al);
+        }
+        if let Some(d) = query.duration {
+            pairs.append_pair("duration", &d.to_string());
+        }
+    }
+
+    match state
+        .http
+        .get(url)
+        .timeout(std::time::Duration::from_secs(4))
+        .header(header::USER_AGENT, "vessel/1.3.16 (https://github.com/shprotik1337/vessel)")
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let status = resp.status();
+            let bytes = resp.bytes().await.unwrap_or_default();
+            let mut response = Response::new(Body::from(bytes));
+            *response.status_mut() = status;
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            response
+        }
+        Err(err) => {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "detail": format!("lrclib error: {err}") })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn image_proxy(
     State(state): State<AppState>,
     Query(query): Query<ImageQuery>,
@@ -784,9 +860,33 @@ async fn image_proxy(
             .into_response();
     }
 
+    // 1. Проверяем локальный дисковый кэш (отдача за 1-2 мс)
+    use sha2::Digest;
+    let url_hash = format!("{:x}", sha2::Sha256::digest(query.url.trim().as_bytes()));
+    let img_cache_dir = state.cache_dir.join("images");
+    let file_path = img_cache_dir.join(format!("{url_hash}.bin"));
+    let meta_path = img_cache_dir.join(format!("{url_hash}.mime"));
+
+    if let Ok(bytes) = tokio::fs::read(&file_path).await {
+        let mime = tokio::fs::read_to_string(&meta_path)
+            .await
+            .unwrap_or_else(|_| "image/jpeg".to_string());
+        let content_type = HeaderValue::from_str(&mime).unwrap_or_else(|_| HeaderValue::from_static("image/jpeg"));
+        let mut response = Response::new(Body::from(bytes));
+        *response.status_mut() = StatusCode::OK;
+        response.headers_mut().insert(header::CONTENT_TYPE, content_type);
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=2592000, immutable"),
+        );
+        return response;
+    }
+
+    // 2. Скачиваем с источника с жестким таймаутом 4 секунды (чтобы сокеты клиента никогда не зависали)
     let upstream = match state
         .http
         .get(parsed_url.as_str())
+        .timeout(std::time::Duration::from_secs(4))
         .header(
             header::ACCEPT,
             "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
@@ -819,21 +919,38 @@ async fn image_proxy(
         .cloned()
         .unwrap_or_else(|| HeaderValue::from_static("image/jpeg"));
 
-    let content_length = upstream.headers().get(header::CONTENT_LENGTH).cloned();
+    let content_type_str = content_type
+        .to_str()
+        .unwrap_or("image/jpeg")
+        .to_string();
 
-    use futures_util::StreamExt;
-    let stream = upstream.bytes_stream().map(|res| res.map_err(axum::Error::new));
-    let mut response = Response::new(Body::from_stream(stream));
+    let bytes = match upstream.bytes().await {
+        Ok(b) => b,
+        Err(err) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "detail": format!("ошибка чтения байт изображения: {err}") })),
+            )
+                .into_response();
+        }
+    };
 
+    // Сохраняем в кэш в фоне
+    let bytes_to_save = bytes.clone();
+    tokio::spawn(async move {
+        if tokio::fs::create_dir_all(&img_cache_dir).await.is_ok() {
+            let _ = tokio::fs::write(&file_path, &bytes_to_save).await;
+            let _ = tokio::fs::write(&meta_path, content_type_str).await;
+        }
+    });
+
+    let mut response = Response::new(Body::from(bytes));
     *response.status_mut() = StatusCode::OK;
     response.headers_mut().insert(header::CONTENT_TYPE, content_type);
     response.headers_mut().insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=604800, immutable"),
+        HeaderValue::from_static("public, max-age=2592000, immutable"),
     );
-    if let Some(len) = content_length {
-        response.headers_mut().insert(header::CONTENT_LENGTH, len);
-    }
 
     response
 }

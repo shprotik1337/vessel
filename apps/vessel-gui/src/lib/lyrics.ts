@@ -1,4 +1,4 @@
-import { isPlayCountString } from "./utils";
+import { isPlayCountString, getActiveImageProxy } from "./utils";
 
 export interface LyricLine {
   time: number; // in seconds
@@ -14,6 +14,22 @@ export interface LyricsData {
 }
 
 const lyricsCache = new Map<string, LyricsData | null>();
+
+function buildLyricsUrl(endpoint: "/api/get" | "/api/search", params: URLSearchParams): string {
+  const proxy = getActiveImageProxy();
+  if (proxy?.server_url) {
+    const base = proxy.server_url.replace(/\/+$/, "");
+    const proxyParams = new URLSearchParams(params);
+    if (endpoint === "/api/search") {
+      proxyParams.set("search", "true");
+    }
+    if (proxy.token) {
+      proxyParams.set("token", proxy.token);
+    }
+    return `${base}/api/v1/lyrics?${proxyParams.toString()}`;
+  }
+  return `https://lrclib.net${endpoint}?${params.toString()}`;
+}
 
 /**
  * Parse an LRC-formatted string into structured LyricLine array.
@@ -97,10 +113,11 @@ export async function fetchLyrics(
       params.append("duration", Math.round(durationSecs).toString());
     }
 
-    let res = await fetch(`https://lrclib.net/api/get?${params.toString()}`, {
+    let res = await fetch(buildLyricsUrl("/api/get", params), {
       headers: {
-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
+        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
       },
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {
@@ -119,10 +136,11 @@ export async function fetchLyrics(
     if (primaryArtist || effectiveArtist) {
       searchParams.append("artist_name", primaryArtist || effectiveArtist);
     }
-    res = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
+    res = await fetch(buildLyricsUrl("/api/search", searchParams), {
       headers: {
-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
+        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
       },
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {
@@ -147,10 +165,11 @@ export async function fetchLyrics(
       ? `${primaryArtist || effectiveArtist} ${cleanedTitle}`.trim()
       : cleanedTitle.trim();
     const qParams = new URLSearchParams({ q: query });
-    res = await fetch(`https://lrclib.net/api/search?${qParams.toString()}`, {
+    res = await fetch(buildLyricsUrl("/api/search", qParams), {
       headers: {
-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
+        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
       },
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {

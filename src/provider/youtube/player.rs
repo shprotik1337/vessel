@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use crate::model::{PlaybackCapability, PlaybackSource};
 
 use super::client::YoutubeClient;
-use super::clients::{ANDROID_VR_1_61_48, WEB_REMIX, clients_http};
+use super::clients::{ANDROID_VR_1_61_48, VISIONOS, WEB_REMIX, clients_http};
 use super::decipher;
 use super::innertube::{self, PlayerExtras};
 
@@ -152,7 +152,22 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
         }
     }
 
-    // 2. Аноним / без cookies: ANDROID_VR + POT — основной полноскоростной путь (без троттлинга)
+    // 2. VISIONOS: чистый direct AAC stream без cipher и без 1 MiB cap.
+    // Прекрасно работает на любых IP (включая датацентры и VPS) без блокировок.
+    match try_visionos(client, cookie, video_id).await {
+        Ok(stream) => {
+            crate::dlog!(
+                "[Playback] VISIONOS ok: clen={} range_safe=true",
+                stream.content_length
+            );
+            return Ok(stream);
+        }
+        Err(error) => {
+            crate::dlog!("[Playback] VISIONOS путь не удался: {error:#}");
+        }
+    }
+
+    // 3. Аноним / без cookies: ANDROID_VR + POT — основной полноскоростной путь (без троттлинга)
     match try_android_vr_pot(&http, client, cookie, video_id, super::clients::ANDROID_VR_1_61_48).await {
         Ok(stream) => {
             crate::dlog!(
@@ -384,7 +399,33 @@ async fn try_android_vr_pot(
     Ok(stream)
 }
 
+async fn try_visionos(
+    client: &YoutubeClient,
+    cookie: Option<&str>,
+    video_id: &str,
+) -> Result<ResolvedStream> {
+    let visitor_data = client.get_visitor_data().await;
+    let player = innertube::player(
+        VISIONOS,
+        video_id,
+        cookie,
+        PlayerExtras {
+            visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    let mut stream = stream_plain_client(player, VISIONOS.user_agent)?;
+    stream.range_safe = true;
+    Ok(stream)
+}
+
 fn stream_android_vr(player: Value) -> Result<ResolvedStream> {
+    stream_plain_client(player, ANDROID_VR_1_61_48.user_agent)
+}
+
+fn stream_plain_client(player: Value, user_agent: &str) -> Result<ResolvedStream> {
     let status = player
         .pointer("/playabilityStatus/status")
         .and_then(Value::as_str)
@@ -450,7 +491,7 @@ fn stream_android_vr(player: Value) -> Result<ResolvedStream> {
         AudioStream { url: url.to_string(), mime, bitrate: 0 },
         None,
     )?;
-    source.headers.insert("User-Agent".to_string(), ANDROID_VR_1_61_48.user_agent.to_string());
+    source.headers.insert("User-Agent".to_string(), user_agent.to_string());
     Ok(ResolvedStream { source, range_safe: false, content_length, duration_ms })
 }
 

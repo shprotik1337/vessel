@@ -46,6 +46,8 @@ export function PlaylistCover({
     <img
       src={resolvedCover}
       alt=""
+      loading="lazy"
+      decoding="async"
       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
     />
   ) : first.length === 0 ? (
@@ -79,6 +81,8 @@ export function PlaylistCover({
             <img
               src={trackArt}
               alt=""
+              loading="lazy"
+              decoding="async"
               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
             />
           ) : null}
