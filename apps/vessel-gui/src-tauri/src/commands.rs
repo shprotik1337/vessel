@@ -532,7 +532,9 @@ pub async fn download_all_to_cache(
     };
     let total = tracks.len();
     if total == 0 {
-        return Ok(DownloadBatchResult::default());
+        let empty = DownloadBatchResult::default();
+        let _ = app.emit("cache-complete", &empty);
+        return Ok(empty);
     }
 
     let downloaded = Arc::new(AtomicUsize::new(0));
@@ -565,7 +567,7 @@ pub async fn download_all_to_cache(
                         CacheProgressPayload {
                             completed: c,
                             total,
-                            title: track.title.clone(),
+                            title: format!("В кэше: {}", track.title),
                             downloaded: d,
                             skipped: s,
                             failed: f,
@@ -573,6 +575,23 @@ pub async fn download_all_to_cache(
                     );
                     return;
                 }
+
+                // Эмитим статус начала обработки трека ДО ожидания резолва и скачивания!
+                let cur_c = completed.load(Ordering::SeqCst);
+                let cur_d = downloaded.load(Ordering::SeqCst);
+                let cur_s = skipped.load(Ordering::SeqCst);
+                let cur_f = failed.load(Ordering::SeqCst);
+                let _ = app.emit(
+                    "cache-progress",
+                    CacheProgressPayload {
+                        completed: cur_c,
+                        total,
+                        title: format!("Скачивание: {}", track.title),
+                        downloaded: cur_d,
+                        skipped: cur_s,
+                        failed: cur_f,
+                    },
+                );
 
                 // 2. Поиск источника аудио
                 let resolved = if track.provider == ProviderKind::Spotify {
@@ -603,7 +622,7 @@ pub async fn download_all_to_cache(
                         CacheProgressPayload {
                             completed: c,
                             total,
-                            title: track.title.clone(),
+                            title: format!("Ошибка: {}", track.title),
                             downloaded: d,
                             skipped: s,
                             failed: f,
@@ -624,7 +643,7 @@ pub async fn download_all_to_cache(
                         CacheProgressPayload {
                             completed: c,
                             total,
-                            title: track.title.clone(),
+                            title: format!("В кэше: {}", track.title),
                             downloaded: d,
                             skipped: s,
                             failed: f,
@@ -639,7 +658,7 @@ pub async fn download_all_to_cache(
                     Some(&track),
                     &source,
                 );
-                match tokio::time::timeout(Duration::from_secs(45), dl_fut).await {
+                match tokio::time::timeout(Duration::from_secs(25), dl_fut).await {
                     Ok(Ok(_)) => {
                         let d = downloaded.fetch_add(1, Ordering::SeqCst) + 1;
                         let c = completed.fetch_add(1, Ordering::SeqCst) + 1;
@@ -650,7 +669,7 @@ pub async fn download_all_to_cache(
                             CacheProgressPayload {
                                 completed: c,
                                 total,
-                                title: track.title.clone(),
+                                title: format!("Готово: {}", track.title),
                                 downloaded: d,
                                 skipped: s,
                                 failed: f,
@@ -667,7 +686,7 @@ pub async fn download_all_to_cache(
                             CacheProgressPayload {
                                 completed: c,
                                 total,
-                                title: track.title.clone(),
+                                title: format!("Сбой: {}", track.title),
                                 downloaded: d,
                                 skipped: s,
                                 failed: f,

@@ -1053,7 +1053,7 @@ button{font-family:inherit}
   border-color: var(--accent, #6366f1) !important;
   background: var(--panel, #1e1e24);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  max-width: 480px;
+  max-width: 600px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
