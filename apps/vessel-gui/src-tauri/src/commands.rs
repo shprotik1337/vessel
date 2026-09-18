@@ -7,7 +7,7 @@ use vessel_core::{
     storage::HistoryEntry,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use crate::GuiCore;
 
@@ -493,7 +493,17 @@ pub async fn download_track_to_cache(
     Ok(path.display().to_string())
 }
 
-#[derive(Serialize, Default)]
+#[derive(Clone, Serialize)]
+pub struct CacheProgressPayload {
+    pub completed: usize,
+    pub total: usize,
+    pub title: String,
+    pub downloaded: usize,
+    pub skipped: usize,
+    pub failed: usize,
+}
+
+#[derive(Clone, Serialize, Default)]
 pub struct DownloadBatchResult {
     pub downloaded: usize,
     pub skipped: usize,
@@ -503,11 +513,15 @@ pub struct DownloadBatchResult {
 
 #[tauri::command]
 pub async fn download_all_to_cache(
+    app: AppHandle,
     core: CoreState<'_>,
     tracks: Vec<TrackRef>,
 ) -> Result<DownloadBatchResult, String> {
+    use futures_util::StreamExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
     use vessel_core::model::ProviderKind;
+
     let resolver = {
         let core = lock(&core);
         core.runtime.playback_resolver()
@@ -517,58 +531,165 @@ pub async fn download_all_to_cache(
         core.runtime.provider_registry()
     };
     let total = tracks.len();
-    let mut result = DownloadBatchResult {
-        total,
-        ..Default::default()
-    };
-    for track in tracks {
-        // Мгновенный пропуск, если трек уже закэширован (работает для Spotify и любых других)
-        if vessel_core::provider::cache::is_cached(&track) {
-            result.skipped += 1;
-            continue;
-        }
-
-        let (key_track, source) = if track.provider == ProviderKind::Spotify {
-            let resolve_fut = resolver.playable_for(&track);
-            match tokio::time::timeout(Duration::from_secs(15), resolve_fut).await {
-                Ok(Ok(pair)) => pair,
-                _ => {
-                    result.failed += 1;
-                    continue;
-                }
-            }
-        } else {
-            let Some(provider) = registry.get(track.provider) else {
-                result.failed += 1;
-                continue;
-            };
-            let source_fut = provider.download_source(&track);
-            match tokio::time::timeout(Duration::from_secs(15), source_fut).await {
-                Ok(Ok(source)) => (track.clone(), source),
-                _ => {
-                    result.failed += 1;
-                    continue;
-                }
-            }
-        };
-
-        if vessel_core::provider::cache::is_cached(&key_track) {
-            let _ = vessel_core::provider::cache::link_cache_alias(&track, &key_track);
-            result.skipped += 1;
-            continue;
-        }
-
-        let dl_fut = vessel_core::provider::cache::download_track_to_cache_with_alias(
-            &key_track,
-            Some(&track),
-            &source,
-        );
-        match tokio::time::timeout(Duration::from_secs(45), dl_fut).await {
-            Ok(Ok(_)) => result.downloaded += 1,
-            _ => result.failed += 1,
-        }
+    if total == 0 {
+        return Ok(DownloadBatchResult::default());
     }
-    Ok(result)
+
+    let downloaded = Arc::new(AtomicUsize::new(0));
+    let skipped = Arc::new(AtomicUsize::new(0));
+    let failed = Arc::new(AtomicUsize::new(0));
+    let completed = Arc::new(AtomicUsize::new(0));
+
+    // Скачиваем до 3 треков одновременно для максимальной скорости без блокировок
+    const CONCURRENCY: usize = 3;
+
+    futures_util::stream::iter(tracks)
+        .map(|track| {
+            let app = app.clone();
+            let resolver = resolver.clone();
+            let registry = registry.clone();
+            let downloaded = downloaded.clone();
+            let skipped = skipped.clone();
+            let failed = failed.clone();
+            let completed = completed.clone();
+
+            async move {
+                // 1. Мгновенный пропуск, если трек уже закэширован
+                if vessel_core::provider::cache::is_cached(&track) {
+                    let s = skipped.fetch_add(1, Ordering::SeqCst) + 1;
+                    let c = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    let d = downloaded.load(Ordering::SeqCst);
+                    let f = failed.load(Ordering::SeqCst);
+                    let _ = app.emit(
+                        "cache-progress",
+                        CacheProgressPayload {
+                            completed: c,
+                            total,
+                            title: track.title.clone(),
+                            downloaded: d,
+                            skipped: s,
+                            failed: f,
+                        },
+                    );
+                    return;
+                }
+
+                // 2. Поиск источника аудио
+                let resolved = if track.provider == ProviderKind::Spotify {
+                    let resolve_fut = resolver.playable_for(&track);
+                    match tokio::time::timeout(Duration::from_secs(15), resolve_fut).await {
+                        Ok(Ok(pair)) => Some(pair),
+                        _ => None,
+                    }
+                } else {
+                    if let Some(provider) = registry.get(track.provider) {
+                        let source_fut = provider.download_source(&track);
+                        match tokio::time::timeout(Duration::from_secs(15), source_fut).await {
+                            Ok(Ok(source)) => Some((track.clone(), source)),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                let Some((key_track, source)) = resolved else {
+                    let f = failed.fetch_add(1, Ordering::SeqCst) + 1;
+                    let c = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    let d = downloaded.load(Ordering::SeqCst);
+                    let s = skipped.load(Ordering::SeqCst);
+                    let _ = app.emit(
+                        "cache-progress",
+                        CacheProgressPayload {
+                            completed: c,
+                            total,
+                            title: track.title.clone(),
+                            downloaded: d,
+                            skipped: s,
+                            failed: f,
+                        },
+                    );
+                    return;
+                };
+
+                // 3. Проверка алиаса (если yt_... уже скачан для Spotify)
+                if vessel_core::provider::cache::is_cached(&key_track) {
+                    let _ = vessel_core::provider::cache::link_cache_alias(&track, &key_track);
+                    let s = skipped.fetch_add(1, Ordering::SeqCst) + 1;
+                    let c = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    let d = downloaded.load(Ordering::SeqCst);
+                    let f = failed.load(Ordering::SeqCst);
+                    let _ = app.emit(
+                        "cache-progress",
+                        CacheProgressPayload {
+                            completed: c,
+                            total,
+                            title: track.title.clone(),
+                            downloaded: d,
+                            skipped: s,
+                            failed: f,
+                        },
+                    );
+                    return;
+                }
+
+                // 4. Скачивание аудиофайла в кэш
+                let dl_fut = vessel_core::provider::cache::download_track_to_cache_with_alias(
+                    &key_track,
+                    Some(&track),
+                    &source,
+                );
+                match tokio::time::timeout(Duration::from_secs(45), dl_fut).await {
+                    Ok(Ok(_)) => {
+                        let d = downloaded.fetch_add(1, Ordering::SeqCst) + 1;
+                        let c = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                        let s = skipped.load(Ordering::SeqCst);
+                        let f = failed.load(Ordering::SeqCst);
+                        let _ = app.emit(
+                            "cache-progress",
+                            CacheProgressPayload {
+                                completed: c,
+                                total,
+                                title: track.title.clone(),
+                                downloaded: d,
+                                skipped: s,
+                                failed: f,
+                            },
+                        );
+                    }
+                    _ => {
+                        let f = failed.fetch_add(1, Ordering::SeqCst) + 1;
+                        let c = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                        let d = downloaded.load(Ordering::SeqCst);
+                        let s = skipped.load(Ordering::SeqCst);
+                        let _ = app.emit(
+                            "cache-progress",
+                            CacheProgressPayload {
+                                completed: c,
+                                total,
+                                title: track.title.clone(),
+                                downloaded: d,
+                                skipped: s,
+                                failed: f,
+                            },
+                        );
+                    }
+                }
+            }
+        })
+        .buffer_unordered(CONCURRENCY)
+        .collect::<Vec<()>>()
+        .await;
+
+    let final_res = DownloadBatchResult {
+        total,
+        downloaded: downloaded.load(Ordering::SeqCst),
+        skipped: skipped.load(Ordering::SeqCst),
+        failed: failed.load(Ordering::SeqCst),
+    };
+
+    let _ = app.emit("cache-complete", &final_res);
+    Ok(final_res)
 }
 
 #[tauri::command]

@@ -58,6 +58,19 @@ pub fn track_file_name(track: &TrackRef, source: &PlaybackSource) -> String {
     format!("{name}.{}", track_file_extension(source))
 }
 
+/// Глобальный HTTP-клиент для скачивания с пулом соединений и keep-alive.
+fn shared_download_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
 /// Скачивает источник воспроизведения в файл: локальный кэш копируется,
 /// HTTP-поток (SoundCloud progressive / Yandex mp3) забирается целиком.
 pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> Result<()> {
@@ -117,10 +130,7 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                 return Ok(());
             }
 
-            let client = reqwest::Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(30))
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new());
+            let client = shared_download_client();
 
             let write_result: Result<()> = async {
                 use tokio::io::AsyncWriteExt;
@@ -129,7 +139,7 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                     .with_context(|| format!("не удалось создать {}", temporary.display()))?;
 
                 if source.supports_range {
-                    let chunk_size = 512 * 1024u64; // 512 KB
+                    let chunk_size = 2 * 1024 * 1024u64; // 2 MB (быстрая загрузка без оверхеда множества чанков)
                     let mut start = 0u64;
                     let mut total_expected: Option<u64> = None;
                     let mut downloaded = 0usize;

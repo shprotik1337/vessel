@@ -17,7 +17,19 @@ import { FullscreenPlayer } from "./components/FullscreenPlayer";
 import { Titlebar } from "./components/Titlebar";
 
 function AppContent() {
-  const { state, view, playlistId, artist, artistProvider, artistId, toast, toastError, fullscreenOpen } = useApp();
+  const {
+    state,
+    view,
+    playlistId,
+    artist,
+    artistProvider,
+    artistId,
+    toast,
+    toastError,
+    fullscreenOpen,
+    cacheProgress,
+    lang,
+  } = useApp();
 
   const renderPage = () => {
     switch (view) {
@@ -89,6 +101,18 @@ function AppContent() {
       </div>
       {fullscreenOpen && <FullscreenPlayer />}
       {state?.needs_user_selection && <UserSelector />}
+      {cacheProgress && (
+        <div className="toast-wrap" style={{ bottom: toast ? "154px" : "104px", transition: "bottom 0.2s ease" }}>
+          <div className="toast cache-toast">
+            <span className="cache-spinner" />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {lang === "ru"
+                ? `Кэширование [${cacheProgress.completed}/${cacheProgress.total}]: ${cacheProgress.title}`
+                : `Caching [${cacheProgress.completed}/${cacheProgress.total}]: ${cacheProgress.title}`}
+            </span>
+          </div>
+        </div>
+      )}
       {toast && (
         <div className="toast-wrap">
           <div className={`toast ${toastError ? "error" : ""}`}>

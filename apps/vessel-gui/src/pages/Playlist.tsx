@@ -17,7 +17,7 @@ type SortMode = "custom" | "title" | "artist" | "added";
 type SortDir = "asc" | "desc";
 
 export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
-  const { state, playTracks, showToast, refresh, navigateTo, goBack, lang } = useApp();
+  const { state, playTracks, showToast, refresh, navigateTo, goBack, lang, cacheProgress } = useApp();
   const [sort, setSort] = useState<SortMode>("custom");
   const [dir, setDir] = useState<SortDir>("desc");
   const [addedTimes, setAddedTimes] = useState<Map<string, number>>(new Map());
@@ -94,37 +94,13 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
     }
   };
 
-  const [downloading, setDownloading] = useState(false);
-
   const downloadAll = async () => {
-    if (visible.length === 0) return;
-    setDownloading(true);
+    if (visible.length === 0 || cacheProgress) return;
     try {
-      const res = await api.downloadAllToCache(visible);
-      await refresh();
-      if (res.downloaded === 0 && res.failed === 0) {
-        showToast(
-          lang === "ru"
-            ? `Все треки уже в кэше (${res.skipped})`
-            : `All tracks are already cached (${res.skipped})`
-        );
-      } else {
-        const parts: string[] = [];
-        if (res.downloaded > 0) {
-          parts.push(lang === "ru" ? `Скачано в кэш: ${res.downloaded}` : `Downloaded: ${res.downloaded}`);
-        }
-        if (res.skipped > 0) {
-          parts.push(lang === "ru" ? `уже в кэше: ${res.skipped}` : `already cached: ${res.skipped}`);
-        }
-        if (res.failed > 0) {
-          parts.push(lang === "ru" ? `сбоев: ${res.failed}` : `failed: ${res.failed}`);
-        }
-        showToast(parts.join(" · "), res.failed > 0 && res.downloaded === 0);
-      }
+      showToast(lang === "ru" ? "Запуск кэширования…" : "Starting caching…");
+      await api.downloadAllToCache(visible);
     } catch (error) {
       showToast(String(error), true);
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -251,10 +227,12 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
               <button
                 className="btn btn-outline btn-sm"
                 onClick={downloadAll}
-                disabled={downloading}
+                disabled={Boolean(cacheProgress)}
               >
-                {downloading
-                  ? (lang === "ru" ? "Кэширование..." : "Caching...")
+                {cacheProgress
+                  ? (lang === "ru"
+                      ? `Кэширование ${cacheProgress.completed}/${cacheProgress.total}…`
+                      : `Caching ${cacheProgress.completed}/${cacheProgress.total}…`)
                   : t(lang, "playlist.cache")}
               </button>
               <button className="btn btn-danger btn-sm" onClick={() => setDeleteOpen(true)}>

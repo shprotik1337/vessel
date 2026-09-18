@@ -1033,4 +1033,28 @@ button{font-family:inherit}
     -webkit-mask-image: none;
     padding-bottom: 60px;
   }
+}
+
+.cache-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--accent, #6366f1);
+  border-radius: 50%;
+  animation: fsSpin 0.8s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.cache-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-color: var(--accent, #6366f1) !important;
+  background: var(--panel, #1e1e24);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  max-width: 480px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

@@ -51,6 +51,7 @@ export function TrackRow({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [plPicker, setPlPicker] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [caching, setCaching] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
@@ -115,6 +116,20 @@ export function TrackRow({
       showToast(`${t(lang, "trackrow.playNextToast")} ${track.title}`);
     } catch (error) {
       showToast(String(error), true);
+    }
+  };
+
+  const handleCache = async () => {
+    closeAll();
+    setCaching(true);
+    showToast(lang === "ru" ? `Кэширование: ${track.title}…` : `Caching: ${track.title}…`);
+    try {
+      await api.downloadTrackToCache(track);
+      showToast(lang === "ru" ? `Сохранено в кэш: ${track.title}` : `Cached: ${track.title}`);
+    } catch (error) {
+      showToast(String(error), true);
+    } finally {
+      setCaching(false);
     }
   };
 
@@ -274,6 +289,11 @@ export function TrackRow({
           <div className="ctx-item" onClick={handleAddQueue}>{t(lang, "trackrow.addToQueue")}</div>
           <div className="ctx-item" onClick={() => { setMenu(null); setPlPicker(true); }}>
             {t(lang, "trackrow.addToPlaylistCtx")}
+          </div>
+          <div className="ctx-item" onClick={handleCache} style={caching ? { opacity: 0.5 } : undefined}>
+            {caching
+              ? (lang === "ru" ? "Кэшируется…" : "Caching…")
+              : (lang === "ru" ? "Сохранить в кэш" : "Save to cache")}
           </div>
           <div className="ctx-item" onClick={handleDownload} style={downloading ? { opacity: 0.5 } : undefined}>
             {downloading ? t(lang, "trackrow.downloading") : t(lang, "trackrow.download")}

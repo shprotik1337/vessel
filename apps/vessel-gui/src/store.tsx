@@ -19,9 +19,26 @@ import { normalizeLang, type Lang } from "./i18n";
 import { setActiveImageProxy } from "./lib/utils";
 import * as api from "./api/commands";
 
+export interface CacheProgressPayload {
+  completed: number;
+  total: number;
+  title: string;
+  downloaded: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface CacheCompletePayload {
+  total: number;
+  downloaded: number;
+  skipped: number;
+  failed: number;
+}
+
 export interface AppStore {
   state: FullState | null;
   progress: ProgressPayload | null;
+  cacheProgress: CacheProgressPayload | null;
   toast: string | null;
   toastError: boolean;
   playlists: Playlist[];
@@ -54,7 +71,7 @@ export interface AppStore {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebarCollapsed: () => void;
-  showToast: (message: string, error?: boolean) => void;
+  showToast: (message: string, error?: boolean, durationMs?: number) => void;
   playTracks: (tracks: TrackRef[], start?: number) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -74,6 +91,7 @@ interface NavEntry {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<FullState | null>(null);
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
+  const [cacheProgress, setCacheProgress] = useState<CacheProgressPayload | null>(null);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [toastError, setToastError] = useState(false);
@@ -152,11 +170,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const showToast = useCallback((message: string, error = false) => {
+  const showToast = useCallback((message: string, error = false, durationMs = 3500) => {
     setToast(message);
     setToastError(error);
     if (toastTimer) window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => setToast(null), 3500);
+    toastTimer = window.setTimeout(() => setToast(null), durationMs);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -197,6 +215,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const unlistenProgress = listen<ProgressPayload>("progress", (event) => {
       setProgress(event.payload);
     });
+    const unlistenCacheProgress = listen<CacheProgressPayload>("cache-progress", (event) => {
+      setCacheProgress(event.payload);
+    });
+    const unlistenCacheComplete = listen<CacheCompletePayload>("cache-complete", (event) => {
+      setCacheProgress(null);
+      void refresh();
+      const res = event.payload;
+      if (res.downloaded === 0 && res.failed === 0) {
+        showToast(
+          lang === "ru"
+            ? `Все треки уже в кэше (${res.skipped})`
+            : `All tracks are already cached (${res.skipped})`,
+          false,
+          5000,
+        );
+      } else {
+        const parts: string[] = [];
+        if (res.downloaded > 0) {
+          parts.push(lang === "ru" ? `Скачано в кэш: ${res.downloaded}` : `Downloaded: ${res.downloaded}`);
+        }
+        if (res.skipped > 0) {
+          parts.push(lang === "ru" ? `уже в кэше: ${res.skipped}` : `already cached: ${res.skipped}`);
+        }
+        if (res.failed > 0) {
+          parts.push(lang === "ru" ? `сбоев: ${res.failed}` : `failed: ${res.failed}`);
+        }
+        showToast(parts.join(" · "), res.failed > 0 && res.downloaded === 0, 5500);
+      }
+    });
 
     const poll = window.setInterval(() => {
       void (async () => {
@@ -214,8 +261,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.clearInterval(poll);
       void unlistenState.then((fn) => fn());
       void unlistenProgress.then((fn) => fn());
+      void unlistenCacheProgress.then((fn) => fn());
+      void unlistenCacheComplete.then((fn) => fn());
     };
-  }, [refresh]);
+  }, [refresh, lang, showToast]);
 
   const lastErrorRef = useRef<string | null>(null);
   useEffect(() => {
@@ -234,6 +283,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         state,
         progress,
+        cacheProgress,
         toast,
         toastError,
         playlists,
