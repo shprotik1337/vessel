@@ -656,8 +656,9 @@ async fn stream(
             {
                 builder = builder.header(header::RANGE, value);
             }
-            match builder.timeout(std::time::Duration::from_secs(3)).send().await {
-                Ok(upstream) => {
+            let send_res = tokio::time::timeout(std::time::Duration::from_secs(15), builder.send()).await;
+            match send_res {
+                Ok(Ok(upstream)) => {
                     let status = upstream.status();
                     if !status.is_success() {
                         let err_text = upstream.text().await.unwrap_or_default();
@@ -730,7 +731,7 @@ async fn stream(
                                 },
                             ));
                             let mut response = Response::new(body);
-                            *response.status_mut() = status;
+                            *response.status_mut() = StatusCode::OK;
                             for (name, value) in keep {
                                 response.headers_mut().insert(name, value);
                             }
@@ -757,8 +758,11 @@ async fn stream(
                     }
                     response
                 }
-                Err(error) => {
+                Ok(Err(error)) => {
                     ApiError::from(anyhow!("relay-запрос к источнику не удался: {error}")).into_response()
+                }
+                Err(_) => {
+                    ApiError::from(anyhow!("таймаут подключения к источнику")).into_response()
                 }
             }
         }

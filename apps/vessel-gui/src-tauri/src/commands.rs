@@ -409,16 +409,23 @@ async fn transcode_to_mp3_locally(input: &std::path::Path) -> Result<std::path::
         return Err("FFmpeg не найден на устройстве".to_string());
     };
     let output = input.with_extension("mp3");
-    let status = tokio::process::Command::new(ffmpeg)
-        .args([
-            "-y",
-            "-i",
-            input.to_str().unwrap_or_default(),
-            "-vn",
-            "-b:a",
-            "320k",
-            output.to_str().unwrap_or_default(),
-        ])
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    cmd.args([
+        "-y",
+        "-i",
+        input.to_str().unwrap_or_default(),
+        "-vn",
+        "-b:a",
+        "320k",
+        output.to_str().unwrap_or_default(),
+    ]);
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let status = cmd
         .status()
         .await
         .map_err(|e| format!("Не удалось запустить FFmpeg: {e}"))?;
