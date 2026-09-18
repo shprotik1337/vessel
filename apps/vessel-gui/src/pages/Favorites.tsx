@@ -11,7 +11,7 @@ type SortMode = "custom" | "title" | "artist" | "added";
 type SortDir = "asc" | "desc";
 
 export function Favorites() {
-  const { state, playTracks, showToast, navigateTo, refresh, goBack, lang } = useApp();
+  const { state, playTracks, showToast, navigateTo, refresh, goBack, lang, cacheProgress } = useApp();
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [sort, setSort] = useState<SortMode>("custom");
@@ -81,37 +81,13 @@ export function Favorites() {
     }
   };
 
-  const [downloading, setDownloading] = useState(false);
-
   const downloadAll = async () => {
-    if (favTracks.length === 0) return;
-    setDownloading(true);
+    if (favTracks.length === 0 || cacheProgress) return;
     try {
-      const res = await api.downloadAllToCache(favTracks);
-      await refresh();
-      if (res.downloaded === 0 && res.failed === 0) {
-        showToast(
-          lang === "ru"
-            ? `Все треки уже в кэше (${res.skipped})`
-            : `All tracks are already cached (${res.skipped})`
-        );
-      } else {
-        const parts: string[] = [];
-        if (res.downloaded > 0) {
-          parts.push(lang === "ru" ? `Скачано в кэш: ${res.downloaded}` : `Downloaded: ${res.downloaded}`);
-        }
-        if (res.skipped > 0) {
-          parts.push(lang === "ru" ? `уже в кэше: ${res.skipped}` : `already cached: ${res.skipped}`);
-        }
-        if (res.failed > 0) {
-          parts.push(lang === "ru" ? `сбоев: ${res.failed}` : `failed: ${res.failed}`);
-        }
-        showToast(parts.join(" · "), res.failed > 0 && res.downloaded === 0);
-      }
+      showToast(lang === "ru" ? "Запуск кэширования…" : "Starting caching…");
+      await api.downloadAllToCache(favTracks);
     } catch (error) {
       showToast(String(error), true);
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -201,11 +177,13 @@ export function Favorites() {
               <button
                 className="btn btn-outline btn-sm"
                 onClick={downloadAll}
-                disabled={downloading}
+                disabled={Boolean(cacheProgress)}
                 title={t(lang, "favorites.cacheTitle")}
               >
-                {downloading
-                  ? (lang === "ru" ? "Кэширование..." : "Caching...")
+                {cacheProgress
+                  ? (lang === "ru"
+                      ? `Кэширование ${cacheProgress.completed}/${cacheProgress.total}…`
+                      : `Caching ${cacheProgress.completed}/${cacheProgress.total}…`)
                   : t(lang, "favorites.cache")}
               </button>
             </div>
