@@ -576,6 +576,30 @@ impl Runtime {
         // Deezer → YouTube Music → YouTube (каждый следующий только если
         // предыдущий не смог).
         if track.provider == crate::model::ProviderKind::Spotify {
+            // Мгновенный офлайн-старт из локального кэша, если трек уже скачан
+            if let Some(cached_source) = crate::provider::cache::cached_source(&track) {
+                crate::dlog!(
+                    "[Playback][{session}] Spotify-трек «{}» уже в кэше — играем напрямую",
+                    track.title
+                );
+                if let Some(audio) = &self.audio {
+                    audio.reset();
+                }
+                self.current_track = Some(track.clone());
+                self.current_track_started = false;
+                actions.push(Action::Audio(crate::audio::AudioEvent::Buffering));
+                let sender = self.sender.clone();
+                let generation = self.playback_generation;
+                self.playback_task = Some(tokio::spawn(async move {
+                    let _ = sender.send(RuntimeMessage::PlaybackReady {
+                        generation,
+                        source: cached_source,
+                        video_only_notice: None,
+                    });
+                }));
+                return;
+            }
+
             let requested_source = self.playback_resolver.source();
             let has_deezer_arl = self
                 .secrets

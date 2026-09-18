@@ -202,11 +202,10 @@ impl App {
                                 })
                         })
                     });
-                let _ = is_local_file;
-
                 // Обрезанный кэш-файл: декодерная длительность сильно меньше
-                // метаданных — удаляем битый кэш и перезапускаем трек
-                if let Some(track) = self.now_playing.clone()
+                // метаданных — удаляем битый кэш и перезапускаем трек (только для локальных файлов)
+                if is_local_file
+                    && let Some(track) = self.now_playing.clone()
                     && let Some(meta) = track.duration_ms
                     && duration_ms > 0
                     && duration_ms + 10_000 < meta
