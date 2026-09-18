@@ -262,8 +262,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/providers/{provider}/playback/resolve", post(resolve))
         .route("/api/v1/tracks/related", post(related))
         .route("/api/v1/s/{token}", get(stream))
-        .route("/api/v1/image", get(image_proxy))
-        .route("/api/v1/lyrics", get(lyrics_proxy))
+        .route("/api/v1/image", get(image_proxy).options(cors_options))
+        .route("/api/v1/lyrics", get(lyrics_proxy).options(cors_options))
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .with_state(state.clone());
 
@@ -285,12 +285,35 @@ async fn shutdown_signal() {
     println!("[vessel-server] сигнал остановки…");
 }
 
-/// Bearer-проверка; /api/v1/health открыт для пинга.
+/// Bearer-проверка; /api/v1/health открыт для пинга; OPTIONS отвечает 204 с CORS.
 async fn require_token(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
+
+    if method == Method::OPTIONS {
+        let mut res = StatusCode::NO_CONTENT.into_response();
+        res.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            HeaderValue::from_static("*"),
+        );
+        res.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_METHODS,
+            HeaderValue::from_static("GET, POST, OPTIONS, PUT, DELETE"),
+        );
+        res.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_HEADERS,
+            HeaderValue::from_static("*"),
+        );
+        return res;
+    }
+
     if method == Method::GET && path == "/api/v1/health" {
-        return next.run(request).await;
+        let mut res = next.run(request).await;
+        res.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            HeaderValue::from_static("*"),
+        );
+        return res;
     }
 
     let bearer = request
@@ -321,7 +344,7 @@ async fn require_token(State(state): State<AppState>, request: Request, next: Ne
         );
     }
 
-    let response = match token {
+    let mut response = match token {
         Some(token) if state.tokens.iter().any(|allowed| allowed == &token) => next.run(request).await,
         _ => (
             StatusCode::UNAUTHORIZED,
@@ -329,6 +352,18 @@ async fn require_token(State(state): State<AppState>, request: Request, next: Ne
         )
             .into_response(),
     };
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("*"),
+    );
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, OPTIONS, PUT, DELETE"),
+    );
     // однопоточный лог запроса: видно ВСЁ, что шло через сервер (без секретов)
     println!("[api] {method} {path} -> {}", response.status().as_u16());
     response
@@ -336,6 +371,23 @@ async fn require_token(State(state): State<AppState>, request: Request, next: Ne
 
 async fn health() -> Json<serde_json::Value> {
     Json(json!({ "ok": true, "name": "vessel-server", "version": VERSION }))
+}
+
+async fn cors_options() -> Response {
+    let mut res = StatusCode::NO_CONTENT.into_response();
+    res.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    res.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, OPTIONS, PUT, DELETE"),
+    );
+    res.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("*"),
+    );
+    res
 }
 
 async fn capabilities(State(state): State<AppState>) -> Json<ServerInfo> {
@@ -598,7 +650,7 @@ async fn stream(
             {
                 builder = builder.header(header::RANGE, value);
             }
-            match builder.send().await {
+            match builder.timeout(std::time::Duration::from_secs(3)).send().await {
                 Ok(upstream) => {
                     let status = upstream.status();
                     if !status.is_success() {
@@ -793,11 +845,11 @@ async fn lyrics_proxy(
         }
     }
 
-    match state
+    let mut response = match state
         .http
         .get(url)
         .timeout(std::time::Duration::from_secs(4))
-        .header(header::USER_AGENT, "vessel/1.3.16 (https://github.com/shprotik1337/vessel)")
+        .header(header::USER_AGENT, "vessel/1.3.17 (https://github.com/shprotik1337/vessel)")
         .send()
         .await
     {
@@ -819,7 +871,16 @@ async fn lyrics_proxy(
             )
                 .into_response()
         }
-    }
+    };
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    response.headers_mut().insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("*"),
+    );
+    response
 }
 
 async fn image_proxy(

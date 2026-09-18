@@ -19,18 +19,43 @@ pub mod wave;
 pub const APP_NAME: &str = "vessel";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Диагностический вывод включается переменной окружения VESSEL_DEBUG=1.
-/// По умолчанию приложение полностью тихое: GUI-логам не место в консоли.
 #[macro_export]
 macro_rules! dlog {
-    ($($arg:tt)*) => {
-        if $crate::debug_logging_enabled() {
-            eprintln!($($arg)*);
-        }
-    };
+    ($($arg:tt)*) => {{
+        $crate::log_message(&format!($($arg)*));
+    }};
 }
 
-/// Включён ли диагностический вывод (проверяется один раз за запуск).
+pub fn log_message(msg: &str) {
+    if debug_logging_enabled() {
+        eprintln!("{msg}");
+    }
+    use std::io::Write;
+    static LOG_FILE: std::sync::OnceLock<std::sync::Mutex<Option<std::fs::File>>> = std::sync::OnceLock::new();
+    let file_lock = LOG_FILE.get_or_init(|| {
+        let path = crate::config::AppPaths::discover()
+            .map(|p| p.data_dir.join("vessel.log"))
+            .unwrap_or_else(|_| std::env::temp_dir().join("vessel.log"));
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .ok();
+        std::sync::Mutex::new(file)
+    });
+
+    if let Ok(mut guard) = file_lock.lock() {
+        if let Some(file) = guard.as_mut() {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+            let _ = writeln!(file, "[{now}] {msg}");
+        }
+    }
+}
+
+/// Включён ли диагностический вывод в stderr (VESSEL_DEBUG=1).
 pub fn debug_logging_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {

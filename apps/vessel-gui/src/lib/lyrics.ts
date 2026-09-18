@@ -114,9 +114,6 @@ export async function fetchLyrics(
     }
 
     let res = await fetch(buildLyricsUrl("/api/get", params), {
-      headers: {
-        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
-      },
       signal: AbortSignal.timeout(4000),
     });
 
@@ -137,9 +134,6 @@ export async function fetchLyrics(
       searchParams.append("artist_name", primaryArtist || effectiveArtist);
     }
     res = await fetch(buildLyricsUrl("/api/search", searchParams), {
-      headers: {
-        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
-      },
       signal: AbortSignal.timeout(4000),
     });
 
@@ -167,7 +161,7 @@ export async function fetchLyrics(
     const qParams = new URLSearchParams({ q: query });
     res = await fetch(buildLyricsUrl("/api/search", qParams), {
       headers: {
-        "User-Agent": "Vessel Music Player v1.3.16 (https://github.com/smilingknight)",
+        "User-Agent": "Vessel Music Player v1.3.17 (https://github.com/smilingknight)",
       },
       signal: AbortSignal.timeout(4000),
     });

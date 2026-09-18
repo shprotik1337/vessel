@@ -64,7 +64,7 @@ pub(crate) fn is_hls(source: &PlaybackSource) -> bool {
 }
 
 fn extension_from_url(source: &PlaybackSource) -> Option<String> {
-    source
+    if let Some(ext) = source
         .url
         .path_segments()
         .and_then(|mut segments| segments.next_back())
@@ -72,6 +72,16 @@ fn extension_from_url(source: &PlaybackSource) -> Option<String> {
             name.rsplit_once('.')
                 .map(|(_, extension)| extension.to_string())
         })
+    {
+        return Some(ext);
+    }
+    match source.mime_type.as_deref()? {
+        m if m.contains("mp4") || m.contains("m4a") || m.contains("aac") => Some("m4a".to_string()),
+        m if m.contains("mpeg") || m.contains("mp3") => Some("mp3".to_string()),
+        m if m.contains("ogg") || m.contains("opus") || m.contains("vorbis") => Some("ogg".to_string()),
+        m if m.contains("flac") => Some("flac".to_string()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

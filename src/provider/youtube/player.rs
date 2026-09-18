@@ -154,7 +154,7 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
 
     // 2. VISIONOS: чистый direct AAC stream без cipher и без 1 MiB cap.
     // Прекрасно работает на любых IP (включая датацентры и VPS) без блокировок.
-    match try_visionos(client, cookie, video_id).await {
+    match try_visionos(&http, client, cookie, video_id).await {
         Ok(stream) => {
             crate::dlog!(
                 "[Playback] VISIONOS ok: clen={} range_safe=true",
@@ -396,29 +396,64 @@ async fn try_android_vr_pot(
     }
     stream.source.headers.insert("User-Agent".to_string(), target_client.user_agent.to_string());
     stream.range_safe = true;
+    if !is_stream_url_alive(_http, &stream.source.url, &stream.source.headers).await {
+        bail!("ANDROID_VR+POT: CDN узел недоступен");
+    }
     Ok(stream)
 }
 
+async fn is_stream_url_alive(
+    http: &reqwest::Client,
+    url: &url::Url,
+    headers: &BTreeMap<String, String>,
+) -> bool {
+    let mut builder = http
+        .get(url.clone())
+        .timeout(std::time::Duration::from_millis(1500))
+        .header(reqwest::header::RANGE, "bytes=0-0");
+    for (k, v) in headers {
+        builder = builder.header(k, v);
+    }
+    match builder.send().await {
+        Ok(resp) => {
+            resp.status().is_success()
+                || resp.status() == reqwest::StatusCode::PARTIAL_CONTENT
+        }
+        Err(_) => false,
+    }
+}
+
 async fn try_visionos(
+    http: &reqwest::Client,
     client: &YoutubeClient,
     cookie: Option<&str>,
     video_id: &str,
 ) -> Result<ResolvedStream> {
-    let visitor_data = client.get_visitor_data().await;
-    let player = innertube::player(
-        VISIONOS,
-        video_id,
-        cookie,
-        PlayerExtras {
-            visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
-            ..Default::default()
-        },
-    )
-    .await?;
+    for attempt in 0..3 {
+        let visitor_data = client.get_visitor_data().await;
+        let player = innertube::player(
+            VISIONOS,
+            video_id,
+            cookie,
+            PlayerExtras {
+                visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
+                ..Default::default()
+            },
+        )
+        .await?;
 
-    let mut stream = stream_plain_client(player, VISIONOS.user_agent)?;
-    stream.range_safe = true;
-    Ok(stream)
+        let mut stream = stream_plain_client(player, VISIONOS.user_agent)?;
+        stream.range_safe = true;
+        if is_stream_url_alive(http, &stream.source.url, &stream.source.headers).await {
+            crate::dlog!("[Playback] VISIONOS stream probe OK (попытка {})", attempt + 1);
+            return Ok(stream);
+        }
+        crate::dlog!(
+            "[Playback] VISIONOS узел недоступен/таймаут ({}), повтор попытки...",
+            stream.source.url.host_str().unwrap_or("")
+        );
+    }
+    bail!("VISIONOS: все попытки вернули недоступные CDN узлы")
 }
 
 fn stream_android_vr(player: Value) -> Result<ResolvedStream> {
@@ -712,6 +747,7 @@ mod tests {
         }).await.unwrap();
     }
 }
+
 
 
 
