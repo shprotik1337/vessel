@@ -63,7 +63,8 @@ fn shared_download_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(20))
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .read_timeout(std::time::Duration::from_secs(20))
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_keepalive(std::time::Duration::from_secs(60))
             .build()
@@ -139,26 +140,21 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                     .with_context(|| format!("не удалось создать {}", temporary.display()))?;
 
                 if source.supports_range {
-                    let chunk_size = 2 * 1024 * 1024u64; // 2 MB (быстрая загрузка без оверхеда множества чанков)
                     let mut start = 0u64;
                     let mut total_expected: Option<u64> = None;
                     let mut downloaded = 0usize;
+                    let mut retries = 0;
 
                     loop {
-                        let end = if let Some(tot) = total_expected {
-                            let next = start + chunk_size - 1;
-                            if next >= tot { tot - 1 } else { next }
-                        } else {
-                            start + chunk_size - 1
-                        };
-
                         let mut req = client.get(source.url.clone());
                         for (key, value) in &source.headers {
                             req = req.header(key, value);
                         }
-                        req = req.header("Range", format!("bytes={start}-{end}"));
+                        // Открытый диапазон bytes={start}- позволяет серверу (и VPS-relay)
+                        // отдавать файл на полной скорости потоком без дробления на искусственные чанки
+                        req = req.header("Range", format!("bytes={start}-"));
 
-                        let resp = req.send().await.context("сбой сетевого запроса чанка")?;
+                        let resp = req.send().await.context("сбой сетевого запроса потока")?;
                         let status = resp.status();
 
                         if status == reqwest::StatusCode::PARTIAL_CONTENT {
@@ -171,18 +167,34 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                                     }
                                 }
                             }
-                            let bytes = resp.bytes().await.context("сбой чтения чанка")?;
-                            if bytes.is_empty() {
-                                break;
+                            let mut stream = resp;
+                            let mut read_in_stream = 0usize;
+                            while let Some(chunk) = stream.chunk().await.context("сбой чтения потока")? {
+                                if chunk.is_empty() {
+                                    break;
+                                }
+                                file.write_all(&chunk).await.context("сбой записи чанка")?;
+                                downloaded += chunk.len();
+                                start += chunk.len() as u64;
+                                read_in_stream += chunk.len();
                             }
-                            file.write_all(&bytes).await.context("сбой записи чанка")?;
-                            downloaded += bytes.len();
-                            start += bytes.len() as u64;
 
                             if let Some(tot) = total_expected {
                                 if start >= tot {
                                     break;
                                 }
+                            } else if downloaded > 0 {
+                                break;
+                            }
+
+                            if read_in_stream == 0 {
+                                retries += 1;
+                                if retries > 3 {
+                                    bail!("сервер закрыл соединение без передачи данных");
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            } else {
+                                retries = 0;
                             }
                         } else if status == reqwest::StatusCode::OK {
                             let mut stream = resp;

@@ -98,7 +98,28 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
     if (visible.length === 0 || cacheProgress) return;
     try {
       showToast(lang === "ru" ? "Запуск кэширования…" : "Starting caching…");
-      await api.downloadAllToCache(visible);
+      const res = await api.downloadAllToCache(visible);
+      if (res.downloaded === 0 && res.failed === 0) {
+        showToast(
+          lang === "ru"
+            ? `Все треки уже в кэше (${res.skipped})`
+            : `All tracks are already cached (${res.skipped})`,
+          false,
+          5000,
+        );
+      } else {
+        const parts: string[] = [];
+        if (res.downloaded > 0) {
+          parts.push(lang === "ru" ? `Скачано: ${res.downloaded}` : `Downloaded: ${res.downloaded}`);
+        }
+        if (res.skipped > 0) {
+          parts.push(lang === "ru" ? `в кэше: ${res.skipped}` : `already cached: ${res.skipped}`);
+        }
+        if (res.failed > 0) {
+          parts.push(lang === "ru" ? `сбоев: ${res.failed}` : `failed: ${res.failed}`);
+        }
+        showToast(parts.join(" · "), res.failed > 0 && res.downloaded === 0, 5500);
+      }
     } catch (error) {
       showToast(String(error), true);
     }

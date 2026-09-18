@@ -107,8 +107,8 @@ function AppContent() {
             <span className="cache-spinner" />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {lang === "ru"
-                ? `Кэширование [${cacheProgress.completed}/${cacheProgress.total}]: ${cacheProgress.title}`
-                : `Caching [${cacheProgress.completed}/${cacheProgress.total}]: ${cacheProgress.title}`}
+                ? `[${cacheProgress.completed}/${cacheProgress.total}] ${cacheProgress.title} (скачано: ${cacheProgress.downloaded}, в кэше: ${cacheProgress.skipped}${cacheProgress.failed > 0 ? `, сбоев: ${cacheProgress.failed}` : ""})`
+                : `[${cacheProgress.completed}/${cacheProgress.total}] ${cacheProgress.title} (downloaded: ${cacheProgress.downloaded}, cached: ${cacheProgress.skipped}${cacheProgress.failed > 0 ? `, failed: ${cacheProgress.failed}` : ""})`}
             </span>
           </div>
         </div>
