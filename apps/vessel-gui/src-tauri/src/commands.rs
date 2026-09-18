@@ -340,8 +340,9 @@ pub async fn download_track(
         resolve_download_dir(&core)
     };
     
+    let is_relayed = source.url.path().starts_with("/api/v1/s/");
     let mut source = source;
-    if source.url.path().starts_with("/api/v1/s/") {
+    if is_relayed {
         let mut url = source.url.clone();
         url.query_pairs_mut().append_pair("format", "mp3");
         source.url = url;
@@ -350,13 +351,83 @@ pub async fn download_track(
 
     let file_name = vessel_core::provider::download::track_file_name(&key_track, &source);
     let dest = std::path::Path::new(&dir).join(file_name);
-    if dest.exists() {
+    let final_mp3_dest = dest.with_extension("mp3");
+    if final_mp3_dest.exists() {
+        return Ok(final_mp3_dest.display().to_string());
+    }
+    if dest.exists() && dest != final_mp3_dest {
+        if let Ok(mp3) = transcode_to_mp3_locally(&dest).await {
+            return Ok(mp3.display().to_string());
+        }
         return Ok(dest.display().to_string());
     }
     vessel_core::provider::download::download_playback_source(&source, &dest)
         .await
         .map_err(|e| format!("{e:#}"))?;
+
+    if !is_relayed && dest.extension().and_then(|e| e.to_str()) != Some("mp3") {
+        if let Ok(mp3) = transcode_to_mp3_locally(&dest).await {
+            return Ok(mp3.display().to_string());
+        }
+    }
     Ok(dest.display().to_string())
+}
+
+fn resolve_ffmpeg_path() -> Option<std::path::PathBuf> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidates = [
+                dir.join("ffmpeg.exe"),
+                dir.join("resources").join("ffmpeg.exe"),
+                dir.join("resources").join("resources").join("ffmpeg.exe"),
+            ];
+            for candidate in candidates {
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    let cwd_candidate = std::path::PathBuf::from("ffmpeg.exe");
+    if cwd_candidate.is_file() {
+        return Some(cwd_candidate);
+    }
+    let res_candidate = std::path::PathBuf::from("resources/ffmpeg.exe");
+    if res_candidate.is_file() {
+        return Some(res_candidate);
+    }
+    if let Ok(output) = std::process::Command::new("ffmpeg").arg("-version").output() {
+        if output.status.success() {
+            return Some(std::path::PathBuf::from("ffmpeg"));
+        }
+    }
+    None
+}
+
+async fn transcode_to_mp3_locally(input: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let Some(ffmpeg) = resolve_ffmpeg_path() else {
+        return Err("FFmpeg не найден на устройстве".to_string());
+    };
+    let output = input.with_extension("mp3");
+    let status = tokio::process::Command::new(ffmpeg)
+        .args([
+            "-y",
+            "-i",
+            input.to_str().unwrap_or_default(),
+            "-vn",
+            "-b:a",
+            "320k",
+            output.to_str().unwrap_or_default(),
+        ])
+        .status()
+        .await
+        .map_err(|e| format!("Не удалось запустить FFmpeg: {e}"))?;
+
+    if !status.success() {
+        return Err(format!("FFmpeg завершился с кодом: {:?}", status.code()));
+    }
+    let _ = tokio::fs::remove_file(input).await;
+    Ok(output)
 }
 
 #[tauri::command]
