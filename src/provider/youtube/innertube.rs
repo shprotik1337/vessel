@@ -140,10 +140,15 @@ pub async fn player(
         .header("X-Goog-Api-Format-Version", "1")
         .header("X-YouTube-Client-Name", client.client_id)
         .header("X-YouTube-Client-Version", client.client_version);
-    if client.client_name.starts_with("WEB") {
+    if client.client_name == "VISIONOS" {
+        req = req.header("Origin", "https://www.youtube.com");
+    } else if client.client_name.starts_with("WEB") {
         req = req
             .header("X-Origin", ORIGIN_YOUTUBE_MUSIC)
             .header("Referer", format!("{ORIGIN_YOUTUBE_MUSIC}/"));
+    }
+    if let Some(vd) = extras.visitor_data {
+        req = req.header("X-Goog-Visitor-Id", vd);
     }
     if let Some(c) = cookies.filter(|c| !c.is_empty()) {
         // SAPISIDHASH только когда в cookie реально есть SAPISID; иначе (куки

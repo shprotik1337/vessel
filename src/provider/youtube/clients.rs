@@ -86,7 +86,21 @@ pub const ANDROID_VR_1_61_48: YouTubeClient = YouTubeClient {
     use_signature_timestamp: false,
 };
 
-pub const STREAM_FALLBACK_CLIENTS: &[YouTubeClient] = &[ANDROID_VR_1_43_32, ANDROID_VR_1_61_48];
+pub const VISIONOS: YouTubeClient = YouTubeClient {
+    client_name: "VISIONOS",
+    client_version: "1.02",
+    client_id: "101",
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+    os_name: "visionOS",
+    os_version: "26.5.23O471",
+    device_make: "Apple",
+    device_model: "RealityDevice17,1",
+    android_sdk_version: None,
+    login_supported: false,
+    use_signature_timestamp: false,
+};
+
+pub const STREAM_FALLBACK_CLIENTS: &[YouTubeClient] = &[VISIONOS, ANDROID_VR_1_43_32, ANDROID_VR_1_61_48];
 
 /// Premium itag'и (256–270 kbps аудио). Free-аккаунт их не видит (Kopuz).
 pub fn is_premium_itag(itag: u32) -> bool {

@@ -9,10 +9,12 @@ use uuid::Uuid;
 pub enum SearchProvider {
     #[default]
     All,
+    #[serde(rename = "soundcloud", alias = "sound_cloud")]
     SoundCloud,
     YandexMusic,
     Deezer,
     Spotify,
+    #[serde(rename = "youtube_music", alias = "you_tube_music")]
     YouTubeMusic,
 }
 
@@ -55,10 +57,12 @@ impl SearchProvider {
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     #[default]
+    #[serde(rename = "soundcloud", alias = "sound_cloud")]
     SoundCloud,
     YandexMusic,
     Deezer,
     Spotify,
+    #[serde(rename = "youtube_music", alias = "you_tube_music")]
     YouTubeMusic,
 }
 
@@ -124,7 +128,9 @@ pub struct TrackRef {
     pub artwork_url: Option<Url>,
     pub web_url: Url,
     pub capability: PlaybackCapability,
+    #[serde(default)]
     pub genres: Vec<String>,
+    #[serde(default)]
     pub explicit: bool,
     #[serde(default)]
     pub drm: bool,

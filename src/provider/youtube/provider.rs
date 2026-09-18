@@ -85,6 +85,12 @@ impl YouTubeMusicProvider {
 
         // Как у других платформ: 10 популярных треков
         popular.truncate(10);
+        for track in &mut popular {
+            track.artists.retain(|a| !is_play_count(a));
+            if track.artists.is_empty() {
+                track.artists = vec![name.clone()];
+            }
+        }
 
         Ok(ArtistProfile {
             name,
@@ -386,11 +392,204 @@ fn extract_playlist_browse_id(url: &Url) -> Option<String> {
     None
 }
 
+/// Проверяет, является ли строка количеством прослушиваний (например, "34K plays", "347 тыс. прослушиваний").
+pub fn is_play_count(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+
+    // Чистые числа и счётчики вида "1.6M", "295K", "100"
+    let clean: String = lower
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '.' && *c != ',')
+        .collect();
+    if !clean.is_empty() && clean.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        let is_number_suffix = clean
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, 'k' | 'm' | 'b'));
+        if is_number_suffix {
+            return true;
+        }
+    }
+
+    // Счётчики обязательно содержат цифры (иначе это имя артиста, например Playboi Carti, Coldplay)
+    let has_digits = lower.chars().any(|c| c.is_ascii_digit());
+    if !has_digits {
+        return false;
+    }
+
+    lower.ends_with("play")
+        || lower.ends_with("plays")
+        || lower.ends_with("view")
+        || lower.ends_with("views")
+        || lower.contains(" play")
+        || lower.contains(" plays")
+        || lower.contains(" view")
+        || lower.contains(" views")
+        || lower.contains(" stream")
+        || lower.contains("прослушиван")
+        || lower.contains("воспроизведен")
+        || lower.contains("просмотр")
+        || lower.contains("reprodu")
+        || lower.contains("écoute")
+        || lower.contains("ecoute")
+        || lower.contains("lecture")
+        || lower.contains("wiedergabe")
+        || lower.contains("aufruf")
+        || lower.contains("odtworze")
+        || lower.contains("oynatma")
+        || lower.contains("görüntüleme")
+        || lower.contains("goruntuleme")
+        || lower.contains("riproduzion")
+        || lower.contains("visualizzazion")
+}
+
+fn is_play_count_column(column: &Value) -> bool {
+    if let Some(label) = column
+        .pointer("/musicResponsiveListItemFlexColumnRenderer/text/accessibility/accessibilityData/label")
+        .and_then(Value::as_str)
+    {
+        if is_play_count(label) {
+            return true;
+        }
+    }
+    if let Some(runs) = column
+        .pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .and_then(Value::as_array)
+    {
+        for run in runs {
+            if let Some(text) = run.get("text").and_then(Value::as_str) {
+                if is_play_count(text) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Извлекает артиста альбома/плейлиста из шапки browse-ответа.
+pub fn extract_album_artist(value: &Value) -> Option<String> {
+    // 1. Шапка альбома в twoColumnBrowseResultsRenderer
+    let responsive_header = value
+        .pointer("/contents/twoColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/musicResponsiveHeaderRenderer")
+        .or_else(|| value.pointer("/header/musicResponsiveHeaderRenderer"));
+
+    if let Some(h) = responsive_header {
+        // straplineTextOne: стандартное поле для артиста альбома в YouTube Music
+        if let Some(runs) = h.pointer("/straplineTextOne/runs").and_then(Value::as_array) {
+            let names: Vec<String> = runs
+                .iter()
+                .filter_map(|r| r.get("text").and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && *s != "," && *s != "•" && *s != "&" && *s != "+" && *s != "and")
+                .filter(|s| !is_play_count(s))
+                .map(str::to_string)
+                .collect();
+            if !names.is_empty() {
+                return Some(names.join(", "));
+            }
+        }
+        // subtitle runs с MUSIC_PAGE_TYPE_ARTIST
+        if let Some(runs) = h.pointer("/subtitle/runs").and_then(Value::as_array) {
+            for run in runs {
+                let page_type = run
+                    .pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
+                    .and_then(Value::as_str);
+                if page_type == Some("MUSIC_PAGE_TYPE_ARTIST")
+                    && let Some(text) = run.get("text").and_then(Value::as_str)
+                {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() && !is_play_count(trimmed) {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Шапка плейлиста: author
+    let author = value
+        .pointer("/header/musicEditablePlaylistDetailHeaderRenderer/author/runs/0/text")
+        .or_else(|| value.pointer("/header/musicPlaylistHeaderRenderer/author/runs/0/text"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !is_play_count(s));
+    if let Some(author) = author {
+        return Some(author.to_string());
+    }
+
+    // 3. Fallback: поиск артиста в заголовках
+    if let Some(header) = value.get("header") {
+        if let Some(artist) = find_artist_in_runs(header) {
+            return Some(artist);
+        }
+    }
+
+    None
+}
+
+fn find_artist_in_runs(value: &Value) -> Option<String> {
+    match value {
+        Value::Object(map) => {
+            if let Some(runs) = map.get("runs").and_then(Value::as_array) {
+                for run in runs {
+                    let page_type = run
+                        .pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
+                        .and_then(Value::as_str);
+                    if page_type == Some("MUSIC_PAGE_TYPE_ARTIST")
+                        && let Some(text) = run.get("text").and_then(Value::as_str)
+                    {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() && !is_play_count(trimmed) {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+            for val in map.values() {
+                if let Some(found) = find_artist_in_runs(val) {
+                    return Some(found);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                if let Some(found) = find_artist_in_runs(item) {
+                    return Some(found);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
 /// Собирает треки из playlistPanelRenderer / sectionListRenderer.
 fn collect_playlist_tracks(value: &Value) -> Vec<TrackRef> {
     let mut tracks = Vec::new();
     collect_tracks_recursive(value, &mut tracks);
     tracks.dedup_by(|a, b| a.id == b.id);
+    let album_artist = extract_album_artist(value);
+    let fallback_artists: Vec<String> = album_artist
+        .as_deref()
+        .map(|a| {
+            a.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && !is_play_count(s))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for track in &mut tracks {
+        track.artists.retain(|a| !is_play_count(a));
+        if track.artists.is_empty() && !fallback_artists.is_empty() {
+            track.artists = fallback_artists.clone();
+        }
+    }
     tracks
 }
 
@@ -433,14 +632,76 @@ fn map_playlist_track(renderer: &Value) -> Option<TrackRef> {
 
     if let Some(columns) = renderer.get("flexColumns").and_then(Value::as_array) {
         for column in columns {
-            let text = column
-                .pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text")
-                .and_then(Value::as_str);
-            if let Some(text) = text {
+            if is_play_count_column(column) {
+                continue;
+            }
+
+            let runs = column
+                .pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs")
+                .and_then(Value::as_array);
+
+            if let Some(runs) = runs {
+                if runs.is_empty() {
+                    continue;
+                }
+
                 if title.is_empty() {
-                    title = text.to_string();
+                    let full_title: String = runs
+                        .iter()
+                        .filter_map(|r| r.get("text").and_then(Value::as_str))
+                        .collect();
+                    let trimmed = full_title.trim();
+                    if !trimmed.is_empty() {
+                        title = trimmed.to_string();
+                    }
                 } else if artists.is_empty() {
-                    artists = text.split(',').map(str::trim).map(str::to_string).collect();
+                    // Проверяем явные ссылки на артистов
+                    let mut found_artists = Vec::new();
+                    for run in runs {
+                        let page_type = run
+                            .pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
+                            .and_then(Value::as_str);
+                        if (page_type == Some("MUSIC_PAGE_TYPE_ARTIST")
+                            || page_type == Some("MUSIC_PAGE_TYPE_USER_CHANNEL"))
+                            && let Some(text) = run.get("text").and_then(Value::as_str)
+                        {
+                            let t = text.trim();
+                            if !t.is_empty() && t != "," && t != "•" && !is_play_count(t) {
+                                found_artists.push(t.to_string());
+                            }
+                        }
+                    }
+
+                    if !found_artists.is_empty() {
+                        artists = found_artists;
+                    } else {
+                        // Текст до разделителя " • "
+                        let full_text: String = runs
+                            .iter()
+                            .filter_map(|r| r.get("text").and_then(Value::as_str))
+                            .collect();
+                        let text_before_dot = full_text
+                            .split_once(" • ")
+                            .map(|(a, _)| a)
+                            .unwrap_or(&full_text)
+                            .trim();
+
+                        if !text_before_dot.is_empty() && !is_play_count(text_before_dot) {
+                            let is_duration = text_before_dot.contains(':')
+                                && text_before_dot.chars().all(|c| c.is_ascii_digit() || c == ':' || c == ' ');
+                            if !is_duration {
+                                let parsed: Vec<String> = text_before_dot
+                                    .split(',')
+                                    .map(str::trim)
+                                    .filter(|s| !s.is_empty() && !is_play_count(s))
+                                    .map(str::to_string)
+                                    .collect();
+                                if !parsed.is_empty() {
+                                    artists = parsed;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -456,6 +717,8 @@ fn map_playlist_track(renderer: &Value) -> Option<TrackRef> {
     thumbnail = renderer
         .pointer("/thumbnail/musicThumbnailRenderer/thumbnail")
         .cloned();
+
+    artists.retain(|a| !is_play_count(a));
 
     Some(normalize_track(
         &video_id,
@@ -489,6 +752,9 @@ fn collect_artist_tracks(value: &Value) -> Vec<TrackRef> {
                 }
             }
         }
+    }
+    for track in &mut tracks {
+        track.artists.retain(|a| !is_play_count(a));
     }
     tracks
 }
@@ -652,14 +918,8 @@ fn collect_artist_songs(value: &Value) -> Vec<TrackRef> {
     let mut tracks = Vec::new();
     collect_tracks_recursive(value, &mut tracks);
     tracks.dedup_by(|a, b| a.id == b.id);
+    for track in &mut tracks {
+        track.artists.retain(|a| !is_play_count(a));
+    }
     tracks
 }
-
-pub(crate) fn check_playlist_empty(tracks: &[TrackRef]) -> Result<()> {
-    if tracks.is_empty() {
-        bail!("в плейлисте YouTube Music не найдено треков")
-    }
-    Ok(())
-}
-
-

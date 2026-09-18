@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useApp } from "../store";
-import { formatTime, providerLabel, isFavorite } from "../lib/utils";
+import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import * as api from "../api/commands";
@@ -84,6 +84,7 @@ export function FullscreenPlayer() {
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
   const [loadingLyrics, setLoadingLyrics] = useState(false);
   const [userScrolled, setUserScrolled] = useState(false);
+  const [scrolledTop, setScrolledTop] = useState(false);
   const userScrollTimeoutRef = useRef<number | null>(null);
 
   const activeLineRef = useRef<HTMLDivElement | null>(null);
@@ -142,8 +143,10 @@ export function FullscreenPlayer() {
     let cancelled = false;
     setLoadingLyrics(true);
     setUserScrolled(false);
+    setScrolledTop(false);
 
-    const primaryArtist = track.artists.length > 0 ? track.artists.join(", ") : "";
+    const validArtists = filterValidArtists(track.artists);
+    const primaryArtist = validArtists.join(", ");
     const durSecs = track.duration_ms
       ? track.duration_ms / 1000
       : player?.duration_ms
@@ -212,6 +215,10 @@ export function FullscreenPlayer() {
     userScrollTimeoutRef.current = window.setTimeout(() => {
       setUserScrolled(false);
     }, 4500);
+  };
+
+  const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setScrolledTop(e.currentTarget.scrollTop > 8);
   };
 
   // Keyboard shortcut listener (Esc to close, Space to toggle, etc.)
@@ -446,7 +453,7 @@ export function FullscreenPlayer() {
               </button>
             </div>
             <div className="fs-track-artists">
-              {track.artists.map((artist, idx) => (
+              {filterValidArtists(track.artists).map((artist, idx, arr) => (
                 <span key={`${artist}-${idx}`}>
                   <span
                     className="fs-artist-link"
@@ -457,7 +464,7 @@ export function FullscreenPlayer() {
                   >
                     {artist}
                   </span>
-                  {idx < track.artists.length - 1 ? ", " : ""}
+                  {idx < arr.length - 1 ? ", " : ""}
                 </span>
               ))}
             </div>
@@ -564,7 +571,8 @@ export function FullscreenPlayer() {
 
           <div
             ref={lyricsContainerRef}
-            className="fs-lyrics-container"
+            className={`fs-lyrics-container ${scrolledTop ? "scrolled-top" : ""}`}
+            onScroll={handleContainerScroll}
             onWheel={handleUserScrollInteraction}
             onTouchMove={handleUserScrollInteraction}
             onPointerDown={handleUserScrollInteraction}

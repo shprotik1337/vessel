@@ -1,3 +1,5 @@
+import { isPlayCountString, getActiveImageProxy } from "./utils";
+
 export interface LyricLine {
   time: number; // in seconds
   text: string;
@@ -12,6 +14,22 @@ export interface LyricsData {
 }
 
 const lyricsCache = new Map<string, LyricsData | null>();
+
+function buildLyricsUrl(endpoint: "/api/get" | "/api/search", params: URLSearchParams): string {
+  const proxy = getActiveImageProxy();
+  if (proxy?.server_url) {
+    const base = proxy.server_url.replace(/\/+$/, "");
+    const proxyParams = new URLSearchParams(params);
+    if (endpoint === "/api/search") {
+      proxyParams.set("search", "true");
+    }
+    if (proxy.token) {
+      proxyParams.set("token", proxy.token);
+    }
+    return `${base}/api/v1/lyrics?${proxyParams.toString()}`;
+  }
+  return `https://lrclib.net${endpoint}?${params.toString()}`;
+}
 
 /**
  * Parse an LRC-formatted string into structured LyricLine array.
@@ -71,29 +89,32 @@ export async function fetchLyrics(
   durationSecs?: number,
   album?: string
 ): Promise<LyricsData | null> {
-  const cacheKey = `${artist.toLowerCase()} - ${title.toLowerCase()}`;
+  const effectiveArtist = isPlayCountString(artist) ? "" : artist.trim();
+  const rawPrimary = effectiveArtist.split(/[,&/]|feat\.|ft\./i)[0].trim();
+  const primaryArtist = isPlayCountString(rawPrimary) ? "" : rawPrimary;
+
+  const cacheKey = `${(primaryArtist || effectiveArtist).toLowerCase()} - ${title.toLowerCase()}`;
   if (lyricsCache.has(cacheKey)) {
     return lyricsCache.get(cacheKey) ?? null;
   }
 
   const cleanedTitle = cleanTitle(title);
-  const primaryArtist = artist.split(/[,&/]|feat\.|ft\./i)[0].trim();
 
   try {
     // 1. Try exact match with duration
     const params = new URLSearchParams({
       track_name: cleanedTitle || title,
-      artist_name: primaryArtist || artist,
     });
+    if (primaryArtist || effectiveArtist) {
+      params.append("artist_name", primaryArtist || effectiveArtist);
+    }
     if (album) params.append("album_name", album);
     if (durationSecs && durationSecs > 0) {
       params.append("duration", Math.round(durationSecs).toString());
     }
 
-    let res = await fetch(`https://lrclib.net/api/get?${params.toString()}`, {
-      headers: {
-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
-      },
+    let res = await fetch(buildLyricsUrl("/api/get", params), {
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {
@@ -108,12 +129,12 @@ export async function fetchLyrics(
     // 2. Fallback: search query
     const searchParams = new URLSearchParams({
       track_name: cleanedTitle || title,
-      artist_name: primaryArtist || artist,
     });
-    res = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
-      headers: {
-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
-      },
+    if (primaryArtist || effectiveArtist) {
+      searchParams.append("artist_name", primaryArtist || effectiveArtist);
+    }
+    res = await fetch(buildLyricsUrl("/api/search", searchParams), {
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {
@@ -134,12 +155,15 @@ export async function fetchLyrics(
     }
 
     // 3. Fallback: general query string search
-    const query = `${primaryArtist} ${cleanedTitle}`.trim();
+    const query = primaryArtist || effectiveArtist
+      ? `${primaryArtist || effectiveArtist} ${cleanedTitle}`.trim()
+      : cleanedTitle.trim();
     const qParams = new URLSearchParams({ q: query });
-    res = await fetch(`https://lrclib.net/api/search?${qParams.toString()}`, {
+    res = await fetch(buildLyricsUrl("/api/search", qParams), {
       headers: {
-        "User-Agent": "Vessel Music Player v1.3.5 (https://github.com/smilingknight)",
+        "User-Agent": "Vessel Music Player v1.3.17 (https://github.com/smilingknight)",
       },
+      signal: AbortSignal.timeout(4000),
     });
 
     if (res.ok) {

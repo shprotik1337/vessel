@@ -418,6 +418,14 @@ export async function setLanguage(language: string): Promise<void> {
   return invoke("set_language", { language });
 }
 
+export async function getDiscordRpc(): Promise<boolean> {
+  return invoke<boolean>("get_discord_rpc");
+}
+
+export async function setDiscordRpc(enabled: boolean): Promise<void> {
+  return invoke("set_discord_rpc", { enabled });
+}
+
 export async function pickFolder(): Promise<string | null> {
   return invoke<string | null>("pick_folder");
 }
@@ -484,3 +492,23 @@ export const PROVIDER_SEGMENT: Record<string, string> = {
   spotify: "spotify",
   youtube_music: "youtube_music",
 };
+
+export async function windowMinimize(): Promise<void> {
+  return invoke("window_minimize");
+}
+
+export async function windowToggleMaximize(): Promise<void> {
+  return invoke("window_toggle_maximize");
+}
+
+export async function windowIsMaximized(): Promise<boolean> {
+  return invoke<boolean>("window_is_maximized");
+}
+
+export async function windowClose(): Promise<void> {
+  return invoke("window_close");
+}
+
+export async function windowStartDragging(): Promise<void> {
+  return invoke("window_start_dragging");
+}

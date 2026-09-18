@@ -36,10 +36,32 @@ interface PreviewState {
 }
 
 export function Search() {
-  const { state, playTracks, navigateTo, showToast, refresh, lang } = useApp();
-  const [query, setQuery] = useState("");
-  const [provider, setProvider] = useState("all");
+  const {
+    state,
+    playTracks,
+    navigateTo,
+    showToast,
+    refresh,
+    lang,
+    searchQuery: query,
+    setSearchQuery: setQuery,
+    searchProvider: provider,
+    setSearchProvider: setProvider,
+  } = useApp();
   const [category, setCategory] = useState("tracks");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownOpen]);
   const [results, setResults] = useState<TrackRef[]>([]);
   const [collections, setCollections] = useState<CollectionItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -370,22 +392,102 @@ export function Search() {
     );
   };
 
+  const currentProviderObj = PROVIDERS.find((p) => p.key === provider) || PROVIDERS[0];
+  const currentProviderLabel =
+    currentProviderObj.key === "all" ? t(lang, "titlebar.all") : currentProviderObj.label;
+
   return (
     <div className="view">
-      <div className="search-big">
-        <span style={{ color: "var(--text3)" }}>⌕</span>
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder={t(lang, "search.placeholder")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-        />
+      <div className="search-pill-container">
+        <div className="search-pill">
+          <svg
+            className="search-pill-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+
+          <input
+            ref={inputRef}
+            type="text"
+            className="search-pill-input"
+            placeholder={t(lang, "titlebar.searchPlaceholder")}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+
+          <div className="search-pill-provider" ref={dropdownRef}>
+            <button
+              className="search-pill-provider-badge"
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              type="button"
+            >
+              <span className="search-pill-provider-text">{currentProviderLabel}</span>
+              <svg
+                className={`search-pill-chevron ${dropdownOpen ? "open" : ""}`}
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {dropdownOpen && (
+              <div className="search-pill-dropdown">
+                {PROVIDERS.map((p) => {
+                  const label = p.key === "all" ? t(lang, "titlebar.all") : p.label;
+                  const selected = p.key === provider;
+                  return (
+                    <button
+                      key={p.key}
+                      className={`search-pill-option ${selected ? "selected" : ""}`}
+                      onClick={() => {
+                        setProvider(p.key);
+                        setDropdownOpen(false);
+                      }}
+                      type="button"
+                    >
+                      <span>{label}</span>
+                      {selected && (
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="tabs">
+      <div className="tabs" style={{ marginTop: 18, marginBottom: 20 }}>
         {TABS.map((tab) => (
           <button
             key={tab}
@@ -399,23 +501,6 @@ export function Search() {
                 : tab === "albums"
                   ? t(lang, "search.albums")
                   : t(lang, "search.artists")}
-          </button>
-        ))}
-      </div>
-
-      <div className="chips" style={{ margin: "16px 0 18px" }}>
-        {PROVIDERS.map((p) => (
-          <button
-            key={p.key}
-            className="chip"
-            style={
-              provider === p.key
-                ? { borderColor: "var(--border3)", color: "var(--text)" }
-                : undefined
-            }
-            onClick={() => setProvider(p.key)}
-          >
-            {p.label}
           </button>
         ))}
       </div>

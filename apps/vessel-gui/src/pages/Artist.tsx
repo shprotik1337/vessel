@@ -4,7 +4,7 @@ import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
 import { Artwork } from "../components/Artwork";
 import { PlaylistCover } from "../components/PlaylistCover";
-import { trackKey, providerLabel, formatDuration, artistLabel } from "../lib/utils";
+import { trackKey, providerLabel, formatDuration, artistLabel, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import type { ArtistProfile, CollectionItem, Playlist, TrackRef } from "../api/types";
 import * as api from "../api/commands";
@@ -79,6 +79,12 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
         if (!target) return;
         const profile = await api.artistProfile(target.provider, target.id);
         if (cancelled) return;
+        if (profile?.popular_tracks) {
+          for (const t of profile.popular_tracks) {
+            const valid = filterValidArtists(t.artists);
+            t.artists = valid.length > 0 ? valid : (profile.name ? [profile.name] : []);
+          }
+        }
         setProfile(profile);
         // Профиль показываем сразу, треки грузим в фоне (могут быть десятки
         // browse-запросов — не блокируем карточку артиста).
@@ -531,10 +537,24 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
     </div>
   );
 
+  function sanitizeTracks(tracks: TrackRef[], fallbackArtist?: string): TrackRef[] {
+    const fallback = fallbackArtist?.trim() || profile?.name?.trim() || "";
+    for (const t of tracks) {
+      const valid = filterValidArtists(t.artists);
+      if (valid.length > 0) {
+        t.artists = valid;
+      } else if (fallback) {
+        t.artists = [fallback];
+      }
+    }
+    return tracks;
+  }
+
   async function openReleasePreview(release: CollectionItem) {
     setPreview({ playlist: null, loading: true, provider: release.provider });
     try {
       const pl = await api.previewPlaylistUrl(release.web_url);
+      sanitizeTracks(pl.tracks, profile?.name);
       setPreview({ playlist: pl, loading: false, provider: release.provider });
     } catch (err) {
       showToast(String(err), true);
@@ -545,6 +565,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
   async function playRelease(release: CollectionItem) {
     try {
       const pl = await api.previewPlaylistUrl(release.web_url);
+      sanitizeTracks(pl.tracks, profile?.name);
       if (pl.tracks.length === 0) return;
       await playTracks(pl.tracks, 0);
     } catch (err) {

@@ -159,7 +159,7 @@ fn map_song(renderer: &Value) -> Option<TrackRef> {
                 artists = artist_raw
                     .split(',')
                     .map(str::trim)
-                    .filter(|a| !a.is_empty())
+                    .filter(|a| !a.is_empty() && !super::provider::is_play_count(a))
                     .map(str::to_string)
                     .collect();
                 // Video-результаты: "Название • Длительность" — артиста нет
@@ -217,6 +217,8 @@ fn map_song(renderer: &Value) -> Option<TrackRef> {
         "https://music.youtube.com/watch?v={video_id}"
     ))
     .ok()?;
+
+    artists.retain(|a| !super::provider::is_play_count(a));
 
     Some(TrackRef {
         provider: ProviderKind::YouTubeMusic,
