@@ -148,7 +148,7 @@ export function CustomizationTab() {
             <span className="live-preview-pulse" /> Живой предпросмотр (Live Preview)
           </span>
           <span className="live-preview-coords">
-            Сайдбар: {sidebar.position === "left" ? "Слева" : sidebar.position === "right" ? "Справа" : sidebar.position === "top" ? "Сверху" : "Снизу"} ({sidebar.style === "floating" ? "Островок" : "Док"}) · Плеер: {player.position === "bottom" ? "Снизу" : "Сверху"} ({player.style === "floating" ? "Островок" : "Док"})
+            Сайдбар: {sidebar.position === "left" ? "Слева" : sidebar.position === "right" ? "Справа" : sidebar.position === "top" ? "Сверху" : "Снизу"} ({sidebar.style === "floating" ? "Островок" : "Док"}) · Плеер: {player.position === "bottom" ? "Снизу" : player.position === "top" ? "Сверху" : player.position === "left" ? "Слева" : "Справа"} ({player.style === "floating" ? "Островок" : "Док"})
           </span>
         </div>
 

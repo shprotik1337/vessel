@@ -123,8 +123,10 @@ export function Sidebar() {
     isEditMode,
     config,
     setSidebarPosition,
-    setSidebarStyle,
     setSidebarWidth,
+    setSidebarHeight,
+    setActiveDragTarget,
+    setActiveDropZone,
   } = useCustomization();
   const [plExpanded, setPlExpanded] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -137,6 +139,64 @@ export function Sidebar() {
   const isHorizontal = isSidebarTop || isSidebarBottom;
   const isFloating = config.sidebar?.style === "floating";
 
+  const onDragSidebarPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const handleEl = e.currentTarget as HTMLElement;
+    handleEl.setPointerCapture(e.pointerId);
+    setActiveDragTarget("sidebar");
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const x = ev.clientX;
+      const y = ev.clientY;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      const distLeft = x;
+      const distRight = w - x;
+      const distTop = y;
+      const distBottom = h - y;
+
+      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
+      let targetZone: "left" | "right" | "top" | "bottom" = "left";
+      if (minDist === distLeft) targetZone = "left";
+      else if (minDist === distRight) targetZone = "right";
+      else if (minDist === distTop) targetZone = "top";
+      else targetZone = "bottom";
+
+      setActiveDropZone(targetZone);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+
+      const x = ev.clientX;
+      const y = ev.clientY;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const distLeft = x;
+      const distRight = w - x;
+      const distTop = y;
+      const distBottom = h - y;
+      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
+      let targetZone: "left" | "right" | "top" | "bottom" = "left";
+      if (minDist === distLeft) targetZone = "left";
+      else if (minDist === distRight) targetZone = "right";
+      else if (minDist === distTop) targetZone = "top";
+      else targetZone = "bottom";
+
+      setSidebarPosition(targetZone);
+      setActiveDragTarget(null);
+      setActiveDropZone(null);
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+  };
+
   const onResizePointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     const handleEl = e.currentTarget as HTMLElement;
@@ -147,6 +207,30 @@ export function Sidebar() {
     const onPointerMove = (ev: PointerEvent) => {
       const delta = isSidebarRight ? startX - ev.clientX : ev.clientX - startX;
       setSidebarWidth(startW + delta);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+  };
+
+  const onResizeHeightPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const handleEl = e.currentTarget as HTMLElement;
+    handleEl.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = config.sidebar?.height || 64;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const delta = isSidebarBottom ? startY - ev.clientY : ev.clientY - startY;
+      setSidebarHeight(startH + delta);
     };
 
     const onPointerUp = (ev: PointerEvent) => {
@@ -268,48 +352,27 @@ export function Sidebar() {
         className={`sidebar ${isSidebarBottom ? "dock-bottom" : "dock-top"} ${
           isFloating ? "floating-island" : "full-dock"
         }`}
-        style={{ position: "relative" }}
+        style={{
+          position: "relative",
+          height: `${config.sidebar?.height || 64}px`,
+        }}
       >
         {isEditMode && (
-          <div className="sidebar-floating-control" onClick={(e) => e.stopPropagation()}>
-            <div className="sidebar-control-btns">
-              <button
-                type="button"
-                className={`pos-pill-btn ${config.sidebar?.position === "left" ? "active" : ""}`}
-                onClick={() => setSidebarPosition("left")}
-              >
-                Слева
-              </button>
-              <button
-                type="button"
-                className={`pos-pill-btn ${config.sidebar?.position === "right" ? "active" : ""}`}
-                onClick={() => setSidebarPosition("right")}
-              >
-                Справа
-              </button>
-              <button
-                type="button"
-                className={`pos-pill-btn ${config.sidebar?.position === "top" ? "active" : ""}`}
-                onClick={() => setSidebarPosition("top")}
-              >
-                Сверху
-              </button>
-              <button
-                type="button"
-                className={`pos-pill-btn ${config.sidebar?.position === "bottom" ? "active" : ""}`}
-                onClick={() => setSidebarPosition("bottom")}
-              >
-                Снизу
-              </button>
-              <button
-                type="button"
-                className={`pos-pill-btn style-toggle ${isFloating ? "active" : ""}`}
-                onClick={() => setSidebarStyle(isFloating ? "dock" : "floating")}
-              >
-                {isFloating ? "Островок" : "Док"}
-              </button>
+          <>
+            <div
+              className={`sidebar-resize-handle-horiz ${isSidebarBottom ? "resize-top" : "resize-bottom"}`}
+              onPointerDown={onResizeHeightPointerDown}
+              title="Потяните мышкой для изменения высоты меню"
+            />
+            <div
+              className="sidebar-drag-grip horizontal"
+              onPointerDown={onDragSidebarPointerDown}
+              title="Зажмите мышкой и перетащите меню к любому краю экрана"
+            >
+              <span className="grip-icon">⠿</span>
+              <span className="grip-label">Перетащить панель</span>
             </div>
-          </div>
+          </>
         )}
         <div className="top-nav-bar">
           <div className="top-nav-items">
@@ -363,44 +426,13 @@ export function Sidebar() {
       )}
 
       {isEditMode && (
-        <div className="sidebar-floating-control vertical" onClick={(e) => e.stopPropagation()}>
-          <div className="sidebar-control-btns">
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.sidebar?.position === "left" ? "active" : ""}`}
-              onClick={() => setSidebarPosition("left")}
-            >
-              Слева
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.sidebar?.position === "right" ? "active" : ""}`}
-              onClick={() => setSidebarPosition("right")}
-            >
-              Справа
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.sidebar?.position === "top" ? "active" : ""}`}
-              onClick={() => setSidebarPosition("top")}
-            >
-              Сверху
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.sidebar?.position === "bottom" ? "active" : ""}`}
-              onClick={() => setSidebarPosition("bottom")}
-            >
-              Снизу
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn style-toggle ${isFloating ? "active" : ""}`}
-              onClick={() => setSidebarStyle(isFloating ? "dock" : "floating")}
-            >
-              {isFloating ? "Островок" : "Док"}
-            </button>
-          </div>
+        <div
+          className="sidebar-drag-grip vertical"
+          onPointerDown={onDragSidebarPointerDown}
+          title="Зажмите мышкой и перетащите меню к любому краю экрана"
+        >
+          <span className="grip-icon">⠿</span>
+          {!collapsed && <span className="grip-label">Перетащить меню</span>}
         </div>
       )}
       {/* Top section: search and sidebar toggle */}

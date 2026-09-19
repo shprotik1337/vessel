@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "../store";
 import { Waveform } from "./Waveform";
 import { PlatformIcon } from "./PlatformIcon";
+import { useBlockWidth } from "../customization/EditableBlock";
 import { t } from "../i18n";
 import { trackKey } from "../lib/utils";
 import * as api from "../api/commands";
@@ -140,121 +141,169 @@ export function WaveSection() {
     }
   };
 
+  const blockWidth = useBlockWidth();
+  const isMini = blockWidth === "third" || blockWidth === "half";
+
   return (
     <div className="section">
       <div className="sec-head">
         <span className="sec-title">Моя волна</span>
       </div>
 
-      <div
-        className="wave-panel"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          height: 150,
-          background: "var(--panel)",
-          borderRadius: 8,
-          border: "1px solid var(--border)",
-          overflow: "hidden",
-          cursor: "pointer",
-          transition: "border-color .12s",
-        }}
-        onClick={() => navigateTo("wave")}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border2)";
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)";
-        }}
-      >
-        <div style={{ flex: 1, minHeight: 0 }} />
+      {isMini ? (
         <div
+          className="wave-mini-widget"
+          onClick={() => navigateTo("wave")}
+          title="Перейти к Моей волне"
+        >
+          <div className="wave-mini-left">
+            <div className={`wave-mini-badge ${playing ? "playing" : ""}`}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M2 12h2" />
+                <path d="M6 8v8" />
+                <path d="M10 4v16" />
+                <path d="M14 7v10" />
+                <path d="M18 10v4" />
+                <path d="M22 12h-2" />
+              </svg>
+            </div>
+            <div className="wave-mini-info">
+              <div className="wave-mini-title">Моя волна</div>
+              <div className="wave-mini-sub">
+                {building ? "Генерация…" : playing ? "Играет сейчас" : "Бесконечный поток"}
+              </div>
+            </div>
+          </div>
+          <div className="wave-mini-controls" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="btn btn-ghost btn-mini-tool"
+              onClick={() => setSettingsOpen(true)}
+              title={t(lang, "wave.settings")}
+            >
+              ⚙
+            </button>
+            <button
+              className="btn btn-primary btn-mini-play"
+              onClick={(e) => {
+                e.stopPropagation();
+                playWave();
+              }}
+              disabled={building}
+              title={playing ? "Пауза" : "Играть"}
+            >
+              {building ? "…" : playing ? "⏸" : "▶"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="wave-panel"
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            padding: "0 20px 2px",
-            marginBottom: -4,
-            pointerEvents: "auto",
+            flexDirection: "column",
+            height: 150,
+            background: "var(--panel)",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            overflow: "hidden",
+            cursor: "pointer",
+            transition: "border-color .12s",
           }}
-          onClick={(e) => e.stopPropagation()}
+          onClick={() => navigateTo("wave")}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border2)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)";
+          }}
         >
-          <button
-            className="btn btn-ghost"
+          <div style={{ flex: 1, minHeight: 0 }} />
+          <div
             style={{
-              width: 36,
-              height: 36,
-              padding: 0,
-              borderRadius: 18,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              gap: 12,
+              padding: "8px 20px",
             }}
-            onClick={() => setSettingsOpen(true)}
-            title={t(lang, "wave.settings")}
+            onClick={(e) => e.stopPropagation()}
           >
-            ⚙
-          </button>
-          <button
-            className="btn btn-primary"
-            style={{
-              width: 40,
-              height: 40,
-              padding: 0,
-              borderRadius: 20,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              playWave();
-            }}
-            disabled={building}
-          >
-            {building ? "…" : playing ? "⏸" : "▶"}
-          </button>
-          <button
-            className="btn btn-ghost"
-            style={{
-              width: 36,
-              height: 36,
-              padding: 0,
-              borderRadius: 18,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (waveTracks.length > 0) {
-                void (async () => {
-                  setBuilding(true);
-                  try {
-                    const tracks = await api.getWaveRecommendations("favorites", 50, null, providerFilter());
-                    setWaveTracks(tracks);
-                    if (tracks.length > 0) playTracks(tracks, 0);
-                  } catch (err) {
-                    showToast(String(err), true);
-                  } finally {
-                    setBuilding(false);
-                  }
-                })();
-              } else {
-                openSourcePicker();
-              }
-            }}
-            disabled={building}
-            title={t(lang, "wave.refresh")}
-          >
-            ↻
-          </button>
+            <button
+              className="btn btn-ghost"
+              style={{
+                width: 36,
+                height: 36,
+                padding: 0,
+                borderRadius: 18,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              onClick={() => setSettingsOpen(true)}
+              title={t(lang, "wave.settings")}
+            >
+              ⚙
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{
+                width: 40,
+                height: 40,
+                padding: 0,
+                borderRadius: 20,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                playWave();
+              }}
+              disabled={building}
+            >
+              {building ? "…" : playing ? "⏸" : "▶"}
+            </button>
+            <button
+              className="btn btn-ghost"
+              style={{
+                width: 36,
+                height: 36,
+                padding: 0,
+                borderRadius: 18,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (waveTracks.length > 0) {
+                  void (async () => {
+                    setBuilding(true);
+                    try {
+                      const tracks = await api.getWaveRecommendations("favorites", 50, null, providerFilter());
+                      setWaveTracks(tracks);
+                      if (tracks.length > 0) playTracks(tracks, 0);
+                    } catch (err) {
+                      showToast(String(err), true);
+                    } finally {
+                      setBuilding(false);
+                    }
+                  })();
+                } else {
+                  openSourcePicker();
+                }
+              }}
+              disabled={building}
+              title={t(lang, "wave.refresh")}
+            >
+              ↻
+            </button>
+          </div>
+          <div style={{ height: 60, padding: "0 20px 4px" }}>
+            <Waveform state={wfState} barCount={80} height={56} />
+          </div>
         </div>
-        <div style={{ height: 60, padding: "0 20px 4px" }}>
-          <Waveform state={wfState} barCount={80} height={56} />
-        </div>
-      </div>
+      )}
 
       {sourcePicker && (
         <div className="ov show" onClick={() => setSourcePicker(false)}>

@@ -58,15 +58,76 @@ export function BottomPlayer() {
     isEditMode,
     config,
     setPlayerPosition,
-    setPlayerStyle,
     setPlayerHeight,
-    setPlayerOptions,
+    setPlayerWidthPercent,
+    setActiveDragTarget,
+    setActiveDropZone,
   } = useCustomization();
   const seekBarRef = useRef<HTMLDivElement>(null);
   const volBarRef = useRef<HTMLDivElement>(null);
   const [dragPercent, setDragPercent] = useState<number | null>(null);
   // Мут: запоминаем последнюю громкость, чтобы вернуть её при размуте
   const lastVolumeRef = useRef<number | null>(null);
+
+  const isVertical = config.player?.position === "left" || config.player?.position === "right";
+
+  const onDragPlayerPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const handleEl = e.currentTarget as HTMLElement;
+    handleEl.setPointerCapture(e.pointerId);
+    setActiveDragTarget("player");
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const x = ev.clientX;
+      const y = ev.clientY;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      const distLeft = x;
+      const distRight = w - x;
+      const distTop = y;
+      const distBottom = h - y;
+
+      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
+      let targetZone: "left" | "right" | "top" | "bottom" = "bottom";
+      if (minDist === distLeft) targetZone = "left";
+      else if (minDist === distRight) targetZone = "right";
+      else if (minDist === distTop) targetZone = "top";
+      else targetZone = "bottom";
+
+      setActiveDropZone(targetZone);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+
+      const x = ev.clientX;
+      const y = ev.clientY;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const distLeft = x;
+      const distRight = w - x;
+      const distTop = y;
+      const distBottom = h - y;
+      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
+      let targetZone: "left" | "right" | "top" | "bottom" = "bottom";
+      if (minDist === distLeft) targetZone = "left";
+      else if (minDist === distRight) targetZone = "right";
+      else if (minDist === distTop) targetZone = "top";
+      else targetZone = "bottom";
+
+      setPlayerPosition(targetZone);
+      setActiveDragTarget(null);
+      setActiveDropZone(null);
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+  };
 
   const onResizeHeightPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -79,6 +140,31 @@ export function BottomPlayer() {
     const onPointerMove = (ev: PointerEvent) => {
       const delta = isTop ? ev.clientY - startY : startY - ev.clientY;
       setPlayerHeight(startH + delta);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+  };
+
+  const onResizeWidthPointerDown = (e: React.PointerEvent, side: "left" | "right") => {
+    e.preventDefault();
+    const handleEl = e.currentTarget as HTMLElement;
+    handleEl.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = config.player?.widthPercent || 100;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const deltaPx = side === "left" ? startX - ev.clientX : ev.clientX - startX;
+      const deltaPct = (deltaPx / window.innerWidth) * 160;
+      setPlayerWidthPercent(startW + deltaPct);
     };
 
     const onPointerUp = (ev: PointerEvent) => {
@@ -254,65 +340,70 @@ export function BottomPlayer() {
   return (
     <footer
       className={`player ${failed ? "playback-error" : ""} ${
-        config.player?.position === "top" ? "dock-top" : "dock-bottom"
+        config.player?.position === "top"
+          ? "dock-top"
+          : config.player?.position === "left"
+          ? "dock-left player-vertical"
+          : config.player?.position === "right"
+          ? "dock-right player-vertical"
+          : "dock-bottom"
       } ${
         config.player?.style === "floating" ? "floating-island" : "full-dock"
       } ${
         config.player?.largeIcons ? "large-icons" : ""
       } ${config.player?.hideDetails ? "hide-details" : ""}`}
-      style={{
-        height: `${config.player?.height || 82}px`,
-        minHeight: `${config.player?.height || 82}px`,
-        maxHeight: `${config.player?.height || 82}px`,
-      }}
+      style={
+        isVertical
+          ? {
+              width: `${config.player?.height ? config.player.height * 2.8 : 240}px`,
+              minWidth: `${config.player?.height ? config.player.height * 2.8 : 240}px`,
+            }
+          : {
+              height: `${config.player?.height || 82}px`,
+              minHeight: `${config.player?.height || 82}px`,
+              maxHeight: `${config.player?.height || 82}px`,
+              width: config.player?.widthPercent && config.player.widthPercent < 100
+                ? `${config.player.widthPercent}%`
+                : undefined,
+            }
+      }
     >
-      {isEditMode && (
+      {isEditMode && !isVertical && (
+        <>
+          <div
+            className={`player-resize-handle ${config.player?.position === "top" ? "resize-bottom" : "resize-top"}`}
+            onPointerDown={onResizeHeightPointerDown}
+            title="Потяните мышкой для изменения высоты плеера"
+          />
+          <div
+            className="player-resize-handle-width resize-left"
+            onPointerDown={(e) => onResizeWidthPointerDown(e, "left")}
+            title="Потяните мышкой для изменения ширины плеера"
+          />
+          <div
+            className="player-resize-handle-width resize-right"
+            onPointerDown={(e) => onResizeWidthPointerDown(e, "right")}
+            title="Потяните мышкой для изменения ширины плеера"
+          />
+        </>
+      )}
+
+      {isEditMode && isVertical && (
         <div
-          className={`player-resize-handle ${config.player?.position === "top" ? "resize-bottom" : "resize-top"}`}
+          className={`player-resize-handle-vert ${config.player?.position === "left" ? "resize-right" : "resize-left"}`}
           onPointerDown={onResizeHeightPointerDown}
-          title="Потяните мышкой для изменения высоты плеера"
+          title="Потяните мышкой для изменения ширины вертикального плеера"
         />
       )}
 
       {isEditMode && (
-        <div className="player-floating-control" onClick={(e) => e.stopPropagation()}>
-          <div className="player-control-btns">
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.player?.position === "bottom" ? "active" : ""}`}
-              onClick={() => setPlayerPosition("bottom")}
-            >
-              Снизу
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.player?.position === "top" ? "active" : ""}`}
-              onClick={() => setPlayerPosition("top")}
-            >
-              Сверху
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn style-toggle ${config.player?.style === "floating" ? "active" : ""}`}
-              onClick={() => setPlayerStyle(config.player?.style === "floating" ? "dock" : "floating")}
-            >
-              {config.player?.style === "floating" ? "Островок" : "Док"}
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.player?.largeIcons ? "active" : ""}`}
-              onClick={() => setPlayerOptions({ largeIcons: !config.player?.largeIcons })}
-            >
-              {config.player?.largeIcons ? "Крупные" : "Обычные"}
-            </button>
-            <button
-              type="button"
-              className={`pos-pill-btn ${config.player?.hideDetails ? "active" : ""}`}
-              onClick={() => setPlayerOptions({ hideDetails: !config.player?.hideDetails })}
-            >
-              {config.player?.hideDetails ? "Компакт" : "Инфо"}
-            </button>
-          </div>
+        <div
+          className="player-drag-grip"
+          onPointerDown={onDragPlayerPointerDown}
+          title="Зажмите мышкой и перетащите плеер к любому краю экрана"
+        >
+          <span className="grip-icon">⠿</span>
+          <span className="grip-label">Перетащить плеер</span>
         </div>
       )}
 
