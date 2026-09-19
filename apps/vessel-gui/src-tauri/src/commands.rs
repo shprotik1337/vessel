@@ -2523,3 +2523,30 @@ pub fn window_close(window: tauri::Window) -> Result<(), String> {
 pub fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
     window.start_dragging().map_err(|e| e.to_string())
 }
+
+/// Прочитать изображение с диска и вернуть data URL base64
+#[tauri::command]
+pub async fn load_image_as_data_url(path: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| format!("Не удалось прочитать файл изображения: {e}"))?;
+
+    let path_lower = path.to_lowercase();
+    let mime = if path_lower.ends_with(".png") {
+        "image/png"
+    } else if path_lower.ends_with(".webp") {
+        "image/webp"
+    } else if path_lower.ends_with(".gif") {
+        "image/gif"
+    } else if path_lower.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path_lower.ends_with(".bmp") {
+        "image/bmp"
+    } else {
+        "image/jpeg"
+    };
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
+}

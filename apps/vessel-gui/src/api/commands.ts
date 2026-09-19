@@ -512,3 +512,7 @@ export async function windowClose(): Promise<void> {
 export async function windowStartDragging(): Promise<void> {
   return invoke("window_start_dragging");
 }
+
+export async function loadImageAsDataUrl(path: string): Promise<string> {
+  return invoke<string>("load_image_as_data_url", { path });
+}

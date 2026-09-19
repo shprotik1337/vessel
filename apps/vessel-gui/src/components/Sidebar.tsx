@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 
 import { useApp } from "../store";
+import { useCustomization } from "../customization";
 import { TextInputModal } from "./Modal";
 import { t } from "../i18n";
 import { resolveArtworkUrl } from "../lib/utils";
@@ -118,6 +119,7 @@ export function Sidebar() {
     sidebarCollapsed: collapsed,
     toggleSidebarCollapsed: toggleCollapsed,
   } = useApp();
+  const { isEditMode, config, toggleSidebarPosition } = useCustomization();
   const [plExpanded, setPlExpanded] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const dragRef = useRef<{ from: number } | null>(null);
@@ -225,7 +227,41 @@ export function Sidebar() {
   };
 
   return (
-    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+    <aside
+      className={`sidebar ${collapsed ? "collapsed" : ""} ${
+        config.sidebar.position === "right" ? "dock-right" : "dock-left"
+      }`}
+      style={{ position: "relative" }}
+    >
+      {isEditMode && (
+        <button
+          className="sidebar-flip-handle"
+          onClick={toggleSidebarPosition}
+          title={
+            config.sidebar.position === "left"
+              ? "Перенести сайдбар направо"
+              : "Перенести сайдбар налево"
+          }
+          style={
+            config.sidebar.position === "left"
+              ? { right: "-12px" }
+              : { left: "-12px" }
+          }
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M7 16l-4-4m0 0l4-4m-4 4h18m-4 4l4-4m0 0l-4-4" />
+          </svg>
+        </button>
+      )}
       {/* Top section: search and sidebar toggle */}
       {!collapsed ? (
         <div className="sidebar-header">

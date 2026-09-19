@@ -6973,6 +6973,7 @@ name = "vessel"
 version = "1.4.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "futures-util",
  "hex",
  "serde",
