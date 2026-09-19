@@ -1,38 +1,144 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
+export interface ThemeColors {
+  accentColor: string;
+  appBgColor: string;
+  sidebarBgColor: string;
+  playerBgColor: string;
+  cardBgColor: string;
+  textColor: string;
+  wallpaperData: string | null;
+  wallpaperBlur: number; // 0..40 px
+  wallpaperDim: number; // 0..90 %
+  glassMode: boolean;
+  glassOpacity: number; // 0.1..0.95
+}
+
 export interface CustomizationConfig {
   sidebar: {
-    position: "left" | "right";
+    position: "left" | "right" | "top";
     collapsed: boolean;
+  };
+  player: {
+    position: "bottom" | "top";
+    largeIcons: boolean;
+    hideDetails: boolean;
   };
   home: {
     blockOrder: string[];
     hiddenBlocks: string[];
     gridColumns: Record<string, number>;
   };
-  player: {
-    largeIcons: boolean;
-    verticalVolume: boolean;
-    hideDetails: boolean;
-    miniQueue: boolean;
-  };
-  theme: {
-    accentColor: string;
-    wallpaperData: string | null;
-    wallpaperBlur: number; // 0..40 px
-    wallpaperDim: number; // 0..90 %
-    glassMode: boolean;
-    glassOpacity: number; // 0.1..0.9
-  };
+  theme: ThemeColors;
 }
+
+export interface ThemePreset {
+  id: string;
+  name: string;
+  desc: string;
+  accentColor: string;
+  appBgColor: string;
+  sidebarBgColor: string;
+  playerBgColor: string;
+  cardBgColor: string;
+  textColor: string;
+  glassMode: boolean;
+  glassOpacity: number;
+}
+
+export const BUILTIN_THEMES: ThemePreset[] = [
+  {
+    id: "classic",
+    name: "Classic Dark",
+    desc: "Стандартная сбалансированная тёмная тема",
+    accentColor: "#3b82f6",
+    appBgColor: "#0B0B0C",
+    sidebarBgColor: "#141416",
+    playerBgColor: "#141416",
+    cardBgColor: "#1C1C1F",
+    textColor: "#F4F4F5",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "cyberpunk",
+    name: "Cyberpunk Neon",
+    desc: "Яркий неоновый контраст в стиле ночного города",
+    accentColor: "#f43f5e",
+    appBgColor: "#0b0914",
+    sidebarBgColor: "#120e24",
+    playerBgColor: "#120e24",
+    cardBgColor: "#1c1438",
+    textColor: "#fdf2f8",
+    glassMode: true,
+    glassOpacity: 0.68,
+  },
+  {
+    id: "midnight",
+    name: "Midnight Ocean",
+    desc: "Глубокий тёмно-синий океан с лазурным акцентом",
+    accentColor: "#06b6d4",
+    appBgColor: "#060e17",
+    sidebarBgColor: "#0a1626",
+    playerBgColor: "#0a1626",
+    cardBgColor: "#112238",
+    textColor: "#ecfeff",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "emerald",
+    name: "Emerald Forest",
+    desc: "Спокойный лесной изумрудный стиль",
+    accentColor: "#10b981",
+    appBgColor: "#06120b",
+    sidebarBgColor: "#0d1f14",
+    playerBgColor: "#0d1f14",
+    cardBgColor: "#152e1f",
+    textColor: "#ecfdf5",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "amethyst",
+    name: "Purple Velvet",
+    desc: "Мистический фиолетовый бархат",
+    accentColor: "#a855f7",
+    appBgColor: "#0e0717",
+    sidebarBgColor: "#170c26",
+    playerBgColor: "#170c26",
+    cardBgColor: "#24143b",
+    textColor: "#faf5ff",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "obsidian",
+    name: "OLED Pure Black",
+    desc: "Максимально глубокий чёрный для OLED-экранов",
+    accentColor: "#ffffff",
+    appBgColor: "#000000",
+    sidebarBgColor: "#090909",
+    playerBgColor: "#090909",
+    cardBgColor: "#141414",
+    textColor: "#ffffff",
+    glassMode: false,
+    glassOpacity: 0.95,
+  },
+];
 
 export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
   sidebar: {
     position: "left",
     collapsed: false,
   },
+  player: {
+    position: "bottom",
+    largeIcons: false,
+    hideDetails: false,
+  },
   home: {
-    blockOrder: ["wave", "recent", "playlists", "library"],
+    blockOrder: ["header", "wave", "recent", "playlists", "library"],
     hiddenBlocks: [],
     gridColumns: {
       recent: 4,
@@ -40,14 +146,13 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
       library: 4,
     },
   },
-  player: {
-    largeIcons: false,
-    verticalVolume: false,
-    hideDetails: false,
-    miniQueue: false,
-  },
   theme: {
     accentColor: "#3b82f6",
+    appBgColor: "#0B0B0C",
+    sidebarBgColor: "#141416",
+    playerBgColor: "#141416",
+    cardBgColor: "#1C1C1F",
+    textColor: "#F4F4F5",
     wallpaperData: null,
     wallpaperBlur: 14,
     wallpaperDim: 45,
@@ -56,39 +161,38 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
   },
 };
 
-const STORAGE_KEY = "vessel_customization_v1";
+const STORAGE_KEY = "vessel_customization_v2";
+const USER_PRESETS_KEY = "vessel_customization_user_presets_v2";
 
-interface CustomizationContextType {
-  config: CustomizationConfig;
-  isEditMode: boolean;
-  enterEditMode: () => void;
-  saveEditMode: () => void;
-  cancelEditMode: () => void;
-  updateDraft: (updater: (prev: CustomizationConfig) => CustomizationConfig) => void;
-  updateThemeDirectly: (updater: (prev: CustomizationConfig["theme"]) => CustomizationConfig["theme"]) => void;
-  isThemeModalOpen: boolean;
-  openThemeModal: () => void;
-  closeThemeModal: () => void;
-  activeBlockSettings: string | null;
-  setActiveBlockSettings: (id: string | null) => void;
-  moveBlock: (id: string, direction: "up" | "down") => void;
-  toggleBlockVisibility: (id: string) => void;
-  setBlockGridColumns: (id: string, cols: number) => void;
-  toggleSidebarPosition: () => void;
-  resetToDefaults: () => void;
+export function hexToRgba(hex: string, alpha: number): string {
+  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) return hex;
+  let c = hex.substring(1);
+  if (c.length === 3) c = c.split("").map((x) => x + x).join("");
+  if (c.length === 6) {
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return hex;
 }
-
-const CustomizationContext = createContext<CustomizationContextType | null>(null);
 
 export function sanitizeConfig(raw: any): CustomizationConfig {
   if (!raw || typeof raw !== "object") {
     return JSON.parse(JSON.stringify(DEFAULT_CUSTOMIZATION));
   }
 
-  const sidebarPos = raw.sidebar?.position === "right" ? "right" : "left";
+  const sidebarPos =
+    raw.sidebar?.position === "right" || raw.sidebar?.position === "top"
+      ? raw.sidebar.position
+      : "left";
   const sidebarCollapsed = Boolean(raw.sidebar?.collapsed);
 
-  const defaultOrder = ["wave", "recent", "playlists", "library"];
+  const playerPos = raw.player?.position === "top" ? "top" : "bottom";
+  const playerLargeIcons = Boolean(raw.player?.largeIcons);
+  const playerHideDetails = Boolean(raw.player?.hideDetails);
+
+  const defaultOrder = ["header", "wave", "recent", "playlists", "library"];
   let blockOrder: string[] = [];
   if (Array.isArray(raw.home?.blockOrder) && raw.home.blockOrder.length > 0) {
     blockOrder = raw.home.blockOrder.filter((b: any) => typeof b === "string");
@@ -113,15 +217,13 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     ...(typeof raw.home?.gridColumns === "object" && raw.home?.gridColumns !== null ? raw.home.gridColumns : {}),
   };
 
-  const player = {
-    largeIcons: Boolean(raw.player?.largeIcons),
-    verticalVolume: Boolean(raw.player?.verticalVolume),
-    hideDetails: Boolean(raw.player?.hideDetails),
-    miniQueue: Boolean(raw.player?.miniQueue),
-  };
-
-  const theme = {
+  const theme: ThemeColors = {
     accentColor: typeof raw.theme?.accentColor === "string" ? raw.theme.accentColor : "#3b82f6",
+    appBgColor: typeof raw.theme?.appBgColor === "string" ? raw.theme.appBgColor : "#0B0B0C",
+    sidebarBgColor: typeof raw.theme?.sidebarBgColor === "string" ? raw.theme.sidebarBgColor : "#141416",
+    playerBgColor: typeof raw.theme?.playerBgColor === "string" ? raw.theme.playerBgColor : "#141416",
+    cardBgColor: typeof raw.theme?.cardBgColor === "string" ? raw.theme.cardBgColor : "#1C1C1F",
+    textColor: typeof raw.theme?.textColor === "string" ? raw.theme.textColor : "#F4F4F5",
     wallpaperData: typeof raw.theme?.wallpaperData === "string" ? raw.theme.wallpaperData : null,
     wallpaperBlur: typeof raw.theme?.wallpaperBlur === "number" ? raw.theme.wallpaperBlur : 14,
     wallpaperDim: typeof raw.theme?.wallpaperDim === "number" ? raw.theme.wallpaperDim : 45,
@@ -134,20 +236,48 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       position: sidebarPos,
       collapsed: sidebarCollapsed,
     },
+    player: {
+      position: playerPos,
+      largeIcons: playerLargeIcons,
+      hideDetails: playerHideDetails,
+    },
     home: {
       blockOrder,
       hiddenBlocks,
       gridColumns,
     },
-    player,
     theme,
   };
 }
 
+interface CustomizationContextType {
+  config: CustomizationConfig;
+  isEditMode: boolean;
+  enterEditMode: () => void;
+  saveEditMode: () => void;
+  cancelEditMode: () => void;
+  updateDraft: (updater: (prev: CustomizationConfig) => CustomizationConfig) => void;
+  updateThemeDirectly: (partial: Partial<ThemeColors>) => void;
+  setSidebarPosition: (pos: "left" | "right" | "top") => void;
+  setPlayerPosition: (pos: "bottom" | "top") => void;
+  toggleSidebarPosition: () => void;
+  moveBlock: (id: string, direction: "up" | "down") => void;
+  reorderBlocks: (sourceId: string, targetId: string) => void;
+  toggleBlockVisibility: (id: string) => void;
+  setBlockGridColumns: (id: string, cols: number) => void;
+  applyPreset: (preset: ThemePreset) => void;
+  userPresets: (ThemePreset | null)[];
+  saveToUserSlot: (slotIndex: number, customName?: string) => void;
+  loadFromUserSlot: (slotIndex: number) => void;
+  resetToDefaults: () => void;
+}
+
+const CustomizationContext = createContext<CustomizationContextType | null>(null);
+
 export function CustomizationProvider({ children }: { children: ReactNode }) {
   const [savedConfig, setSavedConfig] = useState<CustomizationConfig>(() => {
     try {
-      const item = localStorage.getItem(STORAGE_KEY);
+      const item = localStorage.getItem(STORAGE_KEY) || localStorage.getItem("vessel_customization_v1");
       if (item) {
         return sanitizeConfig(JSON.parse(item));
       }
@@ -159,31 +289,56 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
 
   const [draftConfig, setDraftConfig] = useState<CustomizationConfig>(() => sanitizeConfig(savedConfig));
   const [isEditMode, setIsEditMode] = useState(false);
-  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
-  const [activeBlockSettings, setActiveBlockSettings] = useState<string | null>(null);
+
+  // User preset slots (up to 3 slots)
+  const [userPresets, setUserPresets] = useState<(ThemePreset | null)[]>(() => {
+    try {
+      const item = localStorage.getItem(USER_PRESETS_KEY);
+      if (item) {
+        const parsed = JSON.parse(item);
+        if (Array.isArray(parsed)) return parsed.slice(0, 3);
+      }
+    } catch {}
+    return [null, null, null];
+  });
 
   const activeConfig = sanitizeConfig(isEditMode ? draftConfig : savedConfig);
 
-  // Apply CSS custom variables whenever activeConfig changes
+  // Dynamically inject CSS variables into document.documentElement
   useEffect(() => {
     const root = document.documentElement;
     const { theme } = activeConfig;
 
-    root.style.setProperty("--accent-custom", theme.accentColor);
+    root.style.setProperty("--accent", theme.accentColor);
+    root.style.setProperty("--accent-hover", hexToRgba(theme.accentColor, 0.85));
+    root.style.setProperty("--accent-glow", hexToRgba(theme.accentColor, 0.35));
+    root.style.setProperty("--text", theme.textColor);
     root.style.setProperty("--wp-blur", `${theme.wallpaperBlur}px`);
     root.style.setProperty("--wp-dim", `${theme.wallpaperDim / 100}`);
 
     if (theme.wallpaperData && theme.glassMode) {
       const alpha = Math.max(0.1, Math.min(0.95, theme.glassOpacity));
-      root.style.setProperty("--panel-bg-glass", `rgba(18, 18, 22, ${alpha})`);
-      root.style.setProperty("--card-bg-glass", `rgba(28, 28, 34, ${alpha + 0.05})`);
-      root.style.setProperty("--glass-border", `rgba(255, 255, 255, 0.09)`);
-      root.style.setProperty("--glass-blur-val", "16px");
+      root.style.setProperty("--bg", "transparent");
+      root.style.setProperty("--panel", hexToRgba(theme.sidebarBgColor, alpha));
+      root.style.setProperty("--sidebar-bg", hexToRgba(theme.sidebarBgColor, alpha));
+      root.style.setProperty("--player-bg", hexToRgba(theme.playerBgColor, alpha));
+      root.style.setProperty("--card-bg", hexToRgba(theme.cardBgColor, alpha + 0.05));
+      root.style.setProperty("--elev", hexToRgba(theme.cardBgColor, alpha + 0.05));
+      root.style.setProperty("--elev2", hexToRgba(theme.cardBgColor, alpha + 0.12));
+      root.style.setProperty("--border", "rgba(255, 255, 255, 0.09)");
+      root.style.setProperty("--border2", "rgba(255, 255, 255, 0.15)");
+      root.style.setProperty("--glass-blur", "16px");
     } else {
-      root.style.setProperty("--panel-bg-glass", "var(--panel)");
-      root.style.setProperty("--card-bg-glass", "var(--elev)");
-      root.style.setProperty("--glass-border", "var(--border)");
-      root.style.setProperty("--glass-blur-val", "0px");
+      root.style.setProperty("--bg", theme.appBgColor);
+      root.style.setProperty("--panel", theme.sidebarBgColor);
+      root.style.setProperty("--sidebar-bg", theme.sidebarBgColor);
+      root.style.setProperty("--player-bg", theme.playerBgColor);
+      root.style.setProperty("--card-bg", theme.cardBgColor);
+      root.style.setProperty("--elev", theme.cardBgColor);
+      root.style.setProperty("--elev2", hexToRgba(theme.cardBgColor, 0.9));
+      root.style.setProperty("--border", "rgba(255, 255, 255, 0.08)");
+      root.style.setProperty("--border2", "rgba(255, 255, 255, 0.14)");
+      root.style.setProperty("--glass-blur", "0px");
     }
   }, [activeConfig]);
 
@@ -200,33 +355,76 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       console.error("Failed to save customization config to localStorage", e);
     }
     setIsEditMode(false);
-    setActiveBlockSettings(null);
   };
 
   const cancelEditMode = () => {
     setDraftConfig(JSON.parse(JSON.stringify(savedConfig)));
     setIsEditMode(false);
-    setActiveBlockSettings(null);
   };
 
   const updateDraft = (updater: (prev: CustomizationConfig) => CustomizationConfig) => {
-    setDraftConfig((prev) => updater(prev));
+    setDraftConfig((prev) => sanitizeConfig(updater(prev)));
   };
 
-  const updateThemeDirectly = (updater: (prev: CustomizationConfig["theme"]) => CustomizationConfig["theme"]) => {
-    const newTheme = updater(activeConfig.theme);
+  const updateThemeDirectly = (partial: Partial<ThemeColors>) => {
+    const updater = (prev: CustomizationConfig): CustomizationConfig => ({
+      ...prev,
+      theme: {
+        ...prev.theme,
+        ...partial,
+      },
+    });
+
     if (isEditMode) {
-      setDraftConfig((prev) => ({ ...prev, theme: newTheme }));
+      setDraftConfig((prev) => updater(prev));
     } else {
-      const nextConfig = { ...savedConfig, theme: newTheme };
-      setSavedConfig(nextConfig);
-      setDraftConfig(nextConfig);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextConfig));
-      } catch (e) {
-        console.error("Failed to save theme update", e);
-      }
+      setSavedConfig((prev) => {
+        const next = updater(prev);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      setDraftConfig((prev) => updater(prev));
     }
+  };
+
+  const setSidebarPosition = (pos: "left" | "right" | "top") => {
+    const updater = (prev: CustomizationConfig) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, position: pos },
+    });
+    if (isEditMode) updateDraft(updater);
+    else {
+      setSavedConfig((prev) => {
+        const next = updater(prev);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setDraftConfig(updater);
+    }
+  };
+
+  const setPlayerPosition = (pos: "bottom" | "top") => {
+    const updater = (prev: CustomizationConfig) => ({
+      ...prev,
+      player: { ...prev.player, position: pos },
+    });
+    if (isEditMode) updateDraft(updater);
+    else {
+      setSavedConfig((prev) => {
+        const next = updater(prev);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setDraftConfig(updater);
+    }
+  };
+
+  const toggleSidebarPosition = () => {
+    const current = activeConfig.sidebar.position;
+    const next = current === "left" ? "right" : current === "right" ? "top" : "left";
+    setSidebarPosition(next);
   };
 
   const moveBlock = (id: string, direction: "up" | "down") => {
@@ -239,6 +437,25 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       const temp = order[idx];
       order[idx] = order[targetIdx];
       order[targetIdx] = temp;
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          blockOrder: order,
+        },
+      };
+    });
+  };
+
+  const reorderBlocks = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    updateDraft((prev) => {
+      const order = [...prev.home.blockOrder];
+      const fromIdx = order.indexOf(sourceId);
+      const toIdx = order.indexOf(targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      order.splice(fromIdx, 1);
+      order.splice(toIdx, 0, sourceId);
       return {
         ...prev,
         home: {
@@ -278,21 +495,54 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const toggleSidebarPosition = () => {
-    updateDraft((prev) => ({
-      ...prev,
-      sidebar: {
-        ...prev.sidebar,
-        position: prev.sidebar.position === "left" ? "right" : "left",
-      },
-    }));
+  const applyPreset = (preset: ThemePreset) => {
+    updateThemeDirectly({
+      accentColor: preset.accentColor,
+      appBgColor: preset.appBgColor,
+      sidebarBgColor: preset.sidebarBgColor,
+      playerBgColor: preset.playerBgColor,
+      cardBgColor: preset.cardBgColor,
+      textColor: preset.textColor,
+      glassMode: preset.glassMode,
+      glassOpacity: preset.glassOpacity,
+    });
+  };
+
+  const saveToUserSlot = (slotIndex: number, customName?: string) => {
+    if (slotIndex < 0 || slotIndex >= 3) return;
+    const slotName = customName?.trim() || `Пользовательский пресет ${slotIndex + 1}`;
+    const newPreset: ThemePreset = {
+      id: `user_slot_${slotIndex + 1}`,
+      name: slotName,
+      desc: `Сохранено ${new Date().toLocaleDateString()}`,
+      accentColor: activeConfig.theme.accentColor,
+      appBgColor: activeConfig.theme.appBgColor,
+      sidebarBgColor: activeConfig.theme.sidebarBgColor,
+      playerBgColor: activeConfig.theme.playerBgColor,
+      cardBgColor: activeConfig.theme.cardBgColor,
+      textColor: activeConfig.theme.textColor,
+      glassMode: activeConfig.theme.glassMode,
+      glassOpacity: activeConfig.theme.glassOpacity,
+    };
+
+    const nextPresets = [...userPresets];
+    nextPresets[slotIndex] = newPreset;
+    setUserPresets(nextPresets);
+    try {
+      localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(nextPresets));
+    } catch {}
+  };
+
+  const loadFromUserSlot = (slotIndex: number) => {
+    const p = userPresets[slotIndex];
+    if (p) applyPreset(p);
   };
 
   const resetToDefaults = () => {
     setDraftConfig(JSON.parse(JSON.stringify(DEFAULT_CUSTOMIZATION)));
     if (!isEditMode) {
       setSavedConfig(DEFAULT_CUSTOMIZATION);
-      localStorage.removeItem(STORAGE_KEY);
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
     }
   };
 
@@ -306,15 +556,17 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         cancelEditMode,
         updateDraft,
         updateThemeDirectly,
-        isThemeModalOpen,
-        openThemeModal: () => setIsThemeModalOpen(true),
-        closeThemeModal: () => setIsThemeModalOpen(false),
-        activeBlockSettings,
-        setActiveBlockSettings,
+        setSidebarPosition,
+        setPlayerPosition,
+        toggleSidebarPosition,
         moveBlock,
+        reorderBlocks,
         toggleBlockVisibility,
         setBlockGridColumns,
-        toggleSidebarPosition,
+        applyPreset,
+        userPresets,
+        saveToUserSlot,
+        loadFromUserSlot,
         resetToDefaults,
       }}
     >

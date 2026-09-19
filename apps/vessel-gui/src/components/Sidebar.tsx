@@ -227,6 +227,63 @@ export function Sidebar() {
   };
 
   const isSidebarRight = config.sidebar?.position === "right";
+  const isSidebarTop = config.sidebar?.position === "top";
+
+  if (isSidebarTop) {
+    return (
+      <aside className="sidebar dock-top" style={{ position: "relative" }}>
+        {isEditMode && (
+          <button
+            className="sidebar-flip-handle dock-top-handle"
+            onClick={toggleSidebarPosition}
+            title="Сменить положение меню (Слева / Справа / Сверху)"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M7 16l-4-4m0 0l4-4m-4 4h18m-4 4l4-4m0 0l-4-4" />
+            </svg>
+          </button>
+        )}
+        <div className="top-nav-bar">
+          <div className="top-nav-items">
+            {["home", "wave", "search", "favorites", "playlists", "queue"].map((v) => {
+              const meta = getNavMeta(v);
+              const isActive = view === v;
+              return (
+                <button
+                  key={v}
+                  className={`nav-item top-nav-item ${isActive ? "active" : ""}`}
+                  onClick={() => navigateTo(v)}
+                >
+                  <span className="nav-item-icon">{meta.icon}</span>
+                  <span className="nav-item-label">{meta.label}</span>
+                  {meta.count !== undefined && state && <span className="nav-count">{meta.count}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="top-nav-right">
+            <button
+              className={`nav-item top-nav-item ${view === "settings" ? "active" : ""}`}
+              onClick={() => navigateTo("settings")}
+              title={t(lang, "nav.settings")}
+            >
+              <span className="nav-item-icon"><IconSettings /></span>
+              <span className="nav-item-label">{t(lang, "nav.settings")}</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside
@@ -239,11 +296,7 @@ export function Sidebar() {
         <button
           className="sidebar-flip-handle"
           onClick={toggleSidebarPosition}
-          title={
-            !isSidebarRight
-              ? "Перенести сайдбар направо"
-              : "Перенести сайдбар налево"
-          }
+          title="Сменить положение меню (Слева / Справа / Сверху)"
           style={
             !isSidebarRight
               ? { right: "-12px" }

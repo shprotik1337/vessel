@@ -223,6 +223,8 @@ export function BottomPlayer() {
   return (
     <footer
       className={`player ${failed ? "playback-error" : ""} ${
+        config.player?.position === "top" ? "dock-top" : "dock-bottom"
+      } ${
         config.player?.largeIcons ? "large-icons" : ""
       } ${config.player?.hideDetails ? "hide-details" : ""}`}
     >
@@ -233,6 +235,7 @@ export function BottomPlayer() {
             e.stopPropagation();
             setConstructorOpen(!constructorOpen);
           }}
+          title="Открыть конструктор плеера"
         >
           🛠️ КОНСТРУКТОР
         </div>
@@ -240,6 +243,18 @@ export function BottomPlayer() {
 
       {isEditMode && constructorOpen && (
         <div className="player-constructor-popover" onClick={(e) => e.stopPropagation()}>
+          <button
+            className={`constructor-toggle-btn ${config.player?.position === "top" ? "active" : ""}`}
+            onClick={() =>
+              updateDraft((prev) => ({
+                ...prev,
+                player: { ...prev.player, position: prev.player?.position === "top" ? "bottom" : "top" },
+              }))
+            }
+          >
+            {config.player?.position === "top" ? "⬇️ Плеер вниз" : "⬆️ Плеер наверх"}
+          </button>
+
           <button
             className={`constructor-toggle-btn ${config.player?.hideDetails ? "active" : ""}`}
             onClick={() =>
@@ -249,7 +264,7 @@ export function BottomPlayer() {
               }))
             }
           >
-            {config.player?.hideDetails ? "Показать инфо" : "Hide details"}
+            {config.player?.hideDetails ? "Показать инфо" : "Скрыть детали"}
           </button>
 
           <button
@@ -261,7 +276,7 @@ export function BottomPlayer() {
               }))
             }
           >
-            Large icons
+            {config.player?.largeIcons ? "Обычные кнопки" : "Крупные кнопки"}
           </button>
         </div>
       )}
