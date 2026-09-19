@@ -183,33 +183,35 @@ fn validate_cached_file(track: &TrackRef, path: &Path) -> Result<()> {
         let _ = std::fs::remove_file(path);
         anyhow::bail!("кэш-файл пустой, удалён: {}", path.display());
     }
-    // Полная проверка декодером — дорогая, гоняем только при сомнении
+    if metadata.len() < 64 * 1024 {
+        let _ = std::fs::remove_file(path);
+        anyhow::bail!("кэш-файл слишком мал ({} байт), удалён", metadata.len());
+    }
     let Some(expected_ms) = track.duration_ms else {
         return Ok(());
     };
-    let decoded_ms = probe_duration_ms(path);
-    match decoded_ms {
-        Some(decoded) if decoded + 10_000 < expected_ms => {
+    if let Some(decoded) = probe_duration_ms(path) {
+        if decoded + 30_000 < expected_ms && decoded * 10 < expected_ms * 7 {
             let _ = std::fs::remove_file(path);
             anyhow::bail!(
                 "кэш-файл обрезан (декодер {decoded}ms < метаданные {expected_ms}ms), удалён"
-            )
+            );
         }
-        _ => Ok(()),
     }
+    Ok(())
 }
 
 /// Быстро узнаёт длительность аудиофайла (проба формата, без полного декода).
 fn probe_duration_ms(path: &Path) -> Option<u64> {
     use symphonia::core::{
         formats::{FormatOptions, TrackType, probe::Hint},
-        io::{MediaSourceStream, MediaSourceStreamOptions},
+        io::MediaSourceStream,
         meta::MetadataOptions,
     };
     let file = std::fs::File::open(path).ok()?;
     let stream = MediaSourceStream::new(
         Box::new(file),
-        MediaSourceStreamOptions { buffer_len: 32 * 1024 },
+        Default::default(),
     );
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|value| value.to_str()) {
