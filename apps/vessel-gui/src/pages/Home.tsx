@@ -258,7 +258,9 @@ export function Home() {
 
   return (
     <div className="view">
-      {(config.home?.blockOrder || ["header", "wave", "recent", "playlists", "library"]).map((blockId) => renderSection(blockId))}
+      <div className="home-modular-grid">
+        {(config.home?.blockOrder || ["header", "wave", "recent", "playlists", "library"]).map((blockId) => renderSection(blockId))}
+      </div>
 
       {library.length === 0 && recent.length === 0 && (
         <div className="empty">

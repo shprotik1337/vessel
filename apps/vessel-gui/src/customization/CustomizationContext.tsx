@@ -14,19 +14,29 @@ export interface ThemeColors {
   glassOpacity: number; // 0.1..0.95
 }
 
+export type BorderRadiusPreset = "sharp" | "small" | "medium" | "round";
+export type BlockWidth = "third" | "half" | "two-thirds" | "full";
+export type ComponentStyle = "dock" | "floating";
+
 export interface CustomizationConfig {
+  borderRadius: BorderRadiusPreset;
   sidebar: {
-    position: "left" | "right" | "top";
+    position: "left" | "right" | "top" | "bottom";
+    style: ComponentStyle;
+    width: number; // default 232, min 160, max 360
     collapsed: boolean;
   };
   player: {
     position: "bottom" | "top";
+    style: ComponentStyle;
+    height: number; // default 82, min 68, max 120
     largeIcons: boolean;
     hideDetails: boolean;
   };
   home: {
     blockOrder: string[];
     hiddenBlocks: string[];
+    blockWidths: Record<string, BlockWidth>;
     gridColumns: Record<string, number>;
   };
   theme: ThemeColors;
@@ -128,18 +138,30 @@ export const BUILTIN_THEMES: ThemePreset[] = [
 ];
 
 export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
+  borderRadius: "medium",
   sidebar: {
     position: "left",
+    style: "dock",
+    width: 232,
     collapsed: false,
   },
   player: {
     position: "bottom",
+    style: "floating",
+    height: 82,
     largeIcons: false,
     hideDetails: false,
   },
   home: {
     blockOrder: ["header", "wave", "recent", "playlists", "library"],
     hiddenBlocks: [],
+    blockWidths: {
+      header: "full",
+      wave: "full",
+      recent: "full",
+      playlists: "full",
+      library: "full",
+    },
     gridColumns: {
       recent: 4,
       playlists: 3,
@@ -177,18 +199,49 @@ export function hexToRgba(hex: string, alpha: number): string {
   return hex;
 }
 
+export function getContrastTextColor(hex: string): string {
+  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) return "#ffffff";
+  let c = hex.substring(1);
+  if (c.length === 3) c = c.split("").map((x) => x + x).join("");
+  if (c.length === 6) {
+    const r = parseInt(c.substring(0, 2), 16) / 255;
+    const g = parseInt(c.substring(2, 4), 16) / 255;
+    const b = parseInt(c.substring(4, 6), 16) / 255;
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return lum > 0.48 ? "#000000" : "#ffffff";
+  }
+  return "#ffffff";
+}
+
 export function sanitizeConfig(raw: any): CustomizationConfig {
   if (!raw || typeof raw !== "object") {
     return JSON.parse(JSON.stringify(DEFAULT_CUSTOMIZATION));
   }
 
-  const sidebarPos =
-    raw.sidebar?.position === "right" || raw.sidebar?.position === "top"
-      ? raw.sidebar.position
-      : "left";
+  const validRadii: BorderRadiusPreset[] = ["sharp", "small", "medium", "round"];
+  const borderRadius: BorderRadiusPreset = validRadii.includes(raw.borderRadius)
+    ? raw.borderRadius
+    : "medium";
+
+  const validPositions = ["left", "right", "top", "bottom"] as const;
+  const sidebarPos = validPositions.includes(raw.sidebar?.position)
+    ? raw.sidebar.position
+    : "left";
+  const sidebarStyle: ComponentStyle =
+    raw.sidebar?.style === "floating" ? "floating" : "dock";
+  const sidebarWidth =
+    typeof raw.sidebar?.width === "number" && !isNaN(raw.sidebar.width)
+      ? Math.max(160, Math.min(360, raw.sidebar.width))
+      : 232;
   const sidebarCollapsed = Boolean(raw.sidebar?.collapsed);
 
   const playerPos = raw.player?.position === "top" ? "top" : "bottom";
+  const playerStyle: ComponentStyle =
+    raw.player?.style === "dock" ? "dock" : "floating";
+  const playerHeight =
+    typeof raw.player?.height === "number" && !isNaN(raw.player.height)
+      ? Math.max(68, Math.min(120, raw.player.height))
+      : 82;
   const playerLargeIcons = Boolean(raw.player?.largeIcons);
   const playerHideDetails = Boolean(raw.player?.hideDetails);
 
@@ -209,6 +262,22 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   const hiddenBlocks = Array.isArray(raw.home?.hiddenBlocks)
     ? raw.home.hiddenBlocks.filter((b: any) => typeof b === "string")
     : [];
+
+  const validWidths: BlockWidth[] = ["third", "half", "two-thirds", "full"];
+  const blockWidths: Record<string, BlockWidth> = {
+    header: "full",
+    wave: "full",
+    recent: "full",
+    playlists: "full",
+    library: "full",
+  };
+  if (typeof raw.home?.blockWidths === "object" && raw.home.blockWidths !== null) {
+    for (const [k, v] of Object.entries(raw.home.blockWidths)) {
+      if (typeof v === "string" && validWidths.includes(v as BlockWidth)) {
+        blockWidths[k] = v as BlockWidth;
+      }
+    }
+  }
 
   const gridColumns = {
     recent: 4,
@@ -232,25 +301,31 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   };
 
   return {
+    borderRadius,
     sidebar: {
       position: sidebarPos,
+      style: sidebarStyle,
+      width: sidebarWidth,
       collapsed: sidebarCollapsed,
     },
     player: {
       position: playerPos,
+      style: playerStyle,
+      height: playerHeight,
       largeIcons: playerLargeIcons,
       hideDetails: playerHideDetails,
     },
     home: {
       blockOrder,
       hiddenBlocks,
+      blockWidths,
       gridColumns,
     },
     theme,
   };
 }
 
-interface CustomizationContextType {
+export interface CustomizationContextType {
   config: CustomizationConfig;
   isEditMode: boolean;
   enterEditMode: () => void;
@@ -258,8 +333,15 @@ interface CustomizationContextType {
   cancelEditMode: () => void;
   updateDraft: (updater: (prev: CustomizationConfig) => CustomizationConfig) => void;
   updateThemeDirectly: (partial: Partial<ThemeColors>) => void;
-  setSidebarPosition: (pos: "left" | "right" | "top") => void;
+  setSidebarPosition: (pos: "left" | "right" | "top" | "bottom") => void;
+  setSidebarStyle: (style: ComponentStyle) => void;
+  setSidebarWidth: (width: number) => void;
   setPlayerPosition: (pos: "bottom" | "top") => void;
+  setPlayerStyle: (style: ComponentStyle) => void;
+  setPlayerHeight: (height: number) => void;
+  setPlayerOptions: (options: { largeIcons?: boolean; hideDetails?: boolean }) => void;
+  setBorderRadius: (preset: BorderRadiusPreset) => void;
+  setBlockWidth: (id: string, width: BlockWidth) => void;
   toggleSidebarPosition: () => void;
   moveBlock: (id: string, direction: "up" | "down") => void;
   reorderBlocks: (sourceId: string, targetId: string) => void;
@@ -307,26 +389,41 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   // Dynamically inject CSS variables into document.documentElement
   useEffect(() => {
     const root = document.documentElement;
-    const { theme } = activeConfig;
+    const { theme, borderRadius, sidebar, player } = activeConfig;
 
     root.style.setProperty("--accent", theme.accentColor);
     root.style.setProperty("--accent-hover", hexToRgba(theme.accentColor, 0.85));
     root.style.setProperty("--accent-glow", hexToRgba(theme.accentColor, 0.35));
+    root.style.setProperty("--accent-contrast-text", getContrastTextColor(theme.accentColor));
     root.style.setProperty("--text", theme.textColor);
     root.style.setProperty("--wp-blur", `${theme.wallpaperBlur}px`);
     root.style.setProperty("--wp-dim", `${theme.wallpaperDim / 100}`);
 
-    if (theme.wallpaperData && theme.glassMode) {
+    const radiusMap: Record<BorderRadiusPreset, { card: string; panel: string; btn: string; player: string }> = {
+      sharp: { card: "0px", panel: "0px", btn: "0px", player: "0px" },
+      small: { card: "6px", panel: "8px", btn: "4px", player: "8px" },
+      medium: { card: "14px", panel: "16px", btn: "8px", player: "16px" },
+      round: { card: "24px", panel: "24px", btn: "9999px", player: "26px" },
+    };
+    const r = radiusMap[borderRadius] || radiusMap.medium;
+    root.style.setProperty("--radius-card", r.card);
+    root.style.setProperty("--radius-panel", r.panel);
+    root.style.setProperty("--radius-btn", r.btn);
+    root.style.setProperty("--radius-player", r.player);
+    root.style.setProperty("--sidebar-width", `${sidebar.width || 232}px`);
+    root.style.setProperty("--player-height", `${player.height || 82}px`);
+
+    if (theme.glassMode) {
       const alpha = Math.max(0.1, Math.min(0.95, theme.glassOpacity));
-      root.style.setProperty("--bg", "transparent");
+      root.style.setProperty("--bg", theme.wallpaperData ? "transparent" : theme.appBgColor);
       root.style.setProperty("--panel", hexToRgba(theme.sidebarBgColor, alpha));
       root.style.setProperty("--sidebar-bg", hexToRgba(theme.sidebarBgColor, alpha));
       root.style.setProperty("--player-bg", hexToRgba(theme.playerBgColor, alpha));
-      root.style.setProperty("--card-bg", hexToRgba(theme.cardBgColor, alpha + 0.05));
-      root.style.setProperty("--elev", hexToRgba(theme.cardBgColor, alpha + 0.05));
-      root.style.setProperty("--elev2", hexToRgba(theme.cardBgColor, alpha + 0.12));
-      root.style.setProperty("--border", "rgba(255, 255, 255, 0.09)");
-      root.style.setProperty("--border2", "rgba(255, 255, 255, 0.15)");
+      root.style.setProperty("--card-bg", hexToRgba(theme.cardBgColor, Math.min(0.95, alpha + 0.05)));
+      root.style.setProperty("--elev", hexToRgba(theme.cardBgColor, Math.min(0.95, alpha + 0.05)));
+      root.style.setProperty("--elev2", hexToRgba(theme.cardBgColor, Math.min(0.95, alpha + 0.12)));
+      root.style.setProperty("--border", "rgba(255, 255, 255, 0.10)");
+      root.style.setProperty("--border2", "rgba(255, 255, 255, 0.16)");
       root.style.setProperty("--glass-blur", "16px");
     } else {
       root.style.setProperty("--bg", theme.appBgColor);
@@ -366,64 +463,105 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     setDraftConfig((prev) => sanitizeConfig(updater(prev)));
   };
 
-  const updateThemeDirectly = (partial: Partial<ThemeColors>) => {
-    const updater = (prev: CustomizationConfig): CustomizationConfig => ({
-      ...prev,
-      theme: {
-        ...prev.theme,
-        ...partial,
-      },
-    });
-
+  const persistOrDraft = (updater: (prev: CustomizationConfig) => CustomizationConfig) => {
     if (isEditMode) {
-      setDraftConfig((prev) => updater(prev));
+      updateDraft(updater);
     } else {
       setSavedConfig((prev) => {
-        const next = updater(prev);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-      setDraftConfig((prev) => updater(prev));
-    }
-  };
-
-  const setSidebarPosition = (pos: "left" | "right" | "top") => {
-    const updater = (prev: CustomizationConfig) => ({
-      ...prev,
-      sidebar: { ...prev.sidebar, position: pos },
-    });
-    if (isEditMode) updateDraft(updater);
-    else {
-      setSavedConfig((prev) => {
-        const next = updater(prev);
+        const next = sanitizeConfig(updater(prev));
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
         return next;
       });
-      setDraftConfig(updater);
+      setDraftConfig((prev) => sanitizeConfig(updater(prev)));
     }
+  };
+
+  const updateThemeDirectly = (partial: Partial<ThemeColors>) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      theme: { ...prev.theme, ...partial },
+    }));
+  };
+
+  const setSidebarPosition = (pos: "left" | "right" | "top" | "bottom") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, position: pos },
+    }));
+  };
+
+  const setSidebarStyle = (style: ComponentStyle) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, style },
+    }));
+  };
+
+  const setSidebarWidth = (width: number) => {
+    const clamped = Math.max(160, Math.min(360, Math.round(width)));
+    persistOrDraft((prev) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, width: clamped },
+    }));
   };
 
   const setPlayerPosition = (pos: "bottom" | "top") => {
-    const updater = (prev: CustomizationConfig) => ({
+    persistOrDraft((prev) => ({
       ...prev,
       player: { ...prev.player, position: pos },
-    });
-    if (isEditMode) updateDraft(updater);
-    else {
-      setSavedConfig((prev) => {
-        const next = updater(prev);
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
-        return next;
-      });
-      setDraftConfig(updater);
-    }
+    }));
+  };
+
+  const setPlayerStyle = (style: ComponentStyle) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, style },
+    }));
+  };
+
+  const setPlayerHeight = (height: number) => {
+    const clamped = Math.max(68, Math.min(120, Math.round(height)));
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, height: clamped },
+    }));
+  };
+
+  const setPlayerOptions = (options: { largeIcons?: boolean; hideDetails?: boolean }) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: {
+        ...prev.player,
+        ...(options.largeIcons !== undefined ? { largeIcons: options.largeIcons } : {}),
+        ...(options.hideDetails !== undefined ? { hideDetails: options.hideDetails } : {}),
+      },
+    }));
+  };
+
+  const setBorderRadius = (preset: BorderRadiusPreset) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      borderRadius: preset,
+    }));
+  };
+
+  const setBlockWidth = (id: string, width: BlockWidth) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      home: {
+        ...prev.home,
+        blockWidths: {
+          ...prev.home.blockWidths,
+          [id]: width,
+        },
+      },
+    }));
   };
 
   const toggleSidebarPosition = () => {
     const current = activeConfig.sidebar.position;
-    const next = current === "left" ? "right" : current === "right" ? "top" : "left";
+    const next =
+      current === "left" ? "right" : current === "right" ? "top" : current === "top" ? "bottom" : "left";
     setSidebarPosition(next);
   };
 
@@ -557,7 +695,14 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         updateDraft,
         updateThemeDirectly,
         setSidebarPosition,
+        setSidebarStyle,
+        setSidebarWidth,
         setPlayerPosition,
+        setPlayerStyle,
+        setPlayerHeight,
+        setPlayerOptions,
+        setBorderRadius,
+        setBlockWidth,
         toggleSidebarPosition,
         moveBlock,
         reorderBlocks,
