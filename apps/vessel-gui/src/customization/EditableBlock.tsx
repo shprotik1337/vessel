@@ -1,5 +1,8 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, createContext, useContext } from "react";
 import { useCustomization, type BlockWidth } from "./CustomizationContext";
+
+export const BlockWidthContext = createContext<BlockWidth>("full");
+export const useBlockWidth = () => useContext(BlockWidthContext);
 
 interface EditableBlockProps {
   id: string;
@@ -28,6 +31,7 @@ export function EditableBlock({
     config,
     reorderBlocks,
     toggleBlockVisibility,
+    deleteBlock,
     setBlockGridColumns,
     setBlockWidth,
   } = useCustomization();
@@ -77,7 +81,9 @@ export function EditableBlock({
   if (!isEditMode) {
     return (
       <div className="home-block-wrapper" data-width={currentWidth}>
-        {children}
+        <BlockWidthContext.Provider value={currentWidth}>
+          {children}
+        </BlockWidthContext.Provider>
       </div>
     );
   }
@@ -135,6 +141,52 @@ export function EditableBlock({
       if (targetId && targetId !== id) {
         reorderBlocks(id, targetId);
       }
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+  };
+
+  const onResizeBlockPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const handleEl = e.currentTarget as HTMLElement;
+    handleEl.setPointerCapture(e.pointerId);
+
+    const blockEl = handleEl.closest(".editable-block-wrapper") as HTMLElement;
+    const containerEl = blockEl?.parentElement as HTMLElement;
+    if (!blockEl || !containerEl) return;
+
+    const containerRect = containerEl.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const blockRect = blockEl.getBoundingClientRect();
+      const currentWidthPx = ev.clientX - blockRect.left;
+      const ratio = currentWidthPx / containerWidth;
+
+      let nextWidth: BlockWidth = "full";
+      if (ratio < 0.40) {
+        nextWidth = "third";
+      } else if (ratio < 0.58) {
+        nextWidth = "half";
+      } else if (ratio < 0.82) {
+        nextWidth = "two-thirds";
+      } else {
+        nextWidth = "full";
+      }
+
+      if (nextWidth !== currentWidth) {
+        setBlockWidth(id, nextWidth);
+      }
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
     };
 
     handleEl.addEventListener("pointermove", onPointerMove);
@@ -217,6 +269,20 @@ export function EditableBlock({
                 </svg>
               )}
             </button>
+            <button
+              type="button"
+              className="editable-tool-btn danger"
+              title="Удалить этот блок с Главной"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteBlock(id);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            </button>
           </div>
 
           {isSettingsOpen && (
@@ -254,14 +320,30 @@ export function EditableBlock({
                 >
                   {isHidden ? "Показать этот блок" : "Скрыть этот блок"}
                 </button>
+                <button
+                  type="button"
+                  className="popover-action-btn danger"
+                  onClick={() => deleteBlock(id)}
+                  style={{ marginTop: 6, color: "var(--red)" }}
+                >
+                  Удалить этот блок
+                </button>
               </div>
             </div>
           )}
         </div>
 
         <div className="editable-block-content">
-          {children}
+          <BlockWidthContext.Provider value={currentWidth}>
+            {children}
+          </BlockWidthContext.Provider>
         </div>
+
+        <div
+          className="editable-block-resize-handle"
+          onPointerDown={onResizeBlockPointerDown}
+          title="Потяните мышкой для изменения ширины блока"
+        />
       </div>
     </div>
   );

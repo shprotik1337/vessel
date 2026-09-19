@@ -35,7 +35,7 @@ function AppContent() {
     cacheProgress,
     lang,
   } = useApp();
-  const { config, isEditMode } = useCustomization();
+  const { config, isEditMode, activeDragTarget, activeDropZone } = useCustomization();
 
   const renderPage = () => {
     switch (view) {
@@ -96,6 +96,7 @@ function AppContent() {
   };
 
   const hasWallpaper = Boolean(config.theme?.wallpaperData);
+  const isGlass = config.theme?.glassMode || (config.theme?.glassOpacity ?? 1) < 0.98;
   const isSidebarRight = config.sidebar?.position === "right";
   const isSidebarTop = config.sidebar?.position === "top";
   const isSidebarBottom = config.sidebar?.position === "bottom";
@@ -112,8 +113,8 @@ function AppContent() {
   return (
     <div
       className={`app-shell ${hasWallpaper ? "has-wallpaper" : ""} ${
-        isEditMode ? "edit-mode-active" : ""
-      }`}
+        isGlass ? "glass-active" : ""
+      } ${isEditMode ? "edit-mode-active" : ""}`}
     >
       {hasWallpaper && (
         <div
@@ -127,6 +128,66 @@ function AppContent() {
       )}
       <Titlebar />
       <EditModeBanner />
+      {activeDragTarget && (
+        <div className="screen-drop-zones-overlay">
+          {activeDragTarget === "sidebar" && (
+            <>
+              <div className={`screen-drop-zone zone-left ${activeDropZone === "left" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">◧</span>
+                  <span>Слева</span>
+                </div>
+              </div>
+              <div className={`screen-drop-zone zone-right ${activeDropZone === "right" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">◨</span>
+                  <span>Справа</span>
+                </div>
+              </div>
+              <div className={`screen-drop-zone zone-top ${activeDropZone === "top" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">⬒</span>
+                  <span>Сверху</span>
+                </div>
+              </div>
+              <div className={`screen-drop-zone zone-bottom ${activeDropZone === "bottom" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">⬓</span>
+                  <span>Снизу</span>
+                </div>
+              </div>
+            </>
+          )}
+          {activeDragTarget === "player" && (
+            <>
+              <div className={`screen-drop-zone zone-left ${activeDropZone === "left" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">◀</span>
+                  <span>Плеер слева</span>
+                </div>
+              </div>
+              <div className={`screen-drop-zone zone-right ${activeDropZone === "right" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">▶</span>
+                  <span>Плеер справа</span>
+                </div>
+              </div>
+              <div className={`screen-drop-zone zone-top ${activeDropZone === "top" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">▲</span>
+                  <span>Плеер сверху</span>
+                </div>
+              </div>
+              <div className={`screen-drop-zone zone-bottom ${activeDropZone === "bottom" ? "active" : ""}`}>
+                <div className="zone-indicator">
+                  <span className="zone-icon">▼</span>
+                  <span>Плеер снизу</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div
         className={`app ${isSidebarTop ? "sidebar-dock-top" : ""} ${
           isSidebarBottom ? "sidebar-dock-bottom" : ""
@@ -136,8 +197,18 @@ function AppContent() {
         }}
       >
         <Sidebar />
-        <div className={`app-main ${isPlayerTop ? "player-at-top" : ""}`}>
-          <main className={`content ${isPlayerTop ? "player-dock-top" : ""}`}>{renderPage()}</main>
+        <div
+          className={`app-main ${isPlayerTop ? "player-at-top" : ""} ${
+            config.player?.position === "left" ? "player-at-left" : ""
+          } ${config.player?.position === "right" ? "player-at-right" : ""}`}
+        >
+          <main
+            className={`content ${isPlayerTop ? "player-dock-top" : ""} ${
+              config.player?.position === "left" ? "player-dock-left" : ""
+            } ${config.player?.position === "right" ? "player-dock-right" : ""}`}
+          >
+            {renderPage()}
+          </main>
           <BottomPlayer />
         </div>
       </div>
