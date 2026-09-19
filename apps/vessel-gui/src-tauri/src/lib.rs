@@ -564,6 +564,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::window_is_maximized,
             commands::window_close,
             commands::window_start_dragging,
+            commands::load_image_as_data_url,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

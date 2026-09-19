@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 
 import { useApp } from "../store";
+import { useCustomization } from "../customization";
 import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
@@ -53,6 +54,8 @@ const FULLSCREEN_SVG = (
 
 export function BottomPlayer() {
   const { state, showToast, refresh, navigateTo, lang, fullscreenOpen, setFullscreenOpen } = useApp();
+  const { isEditMode, config, updateDraft } = useCustomization();
+  const [constructorOpen, setConstructorOpen] = useState(false);
   if (!state) return null;
 
   const track = state.now_playing;
@@ -217,7 +220,51 @@ export function BottomPlayer() {
     ? `${track?.title ?? ""} — не удалось воспроизвести`
     : null;
   return (
-    <footer className={`player ${failed ? "playback-error" : ""}`}>
+    <footer
+      className={`player ${failed ? "playback-error" : ""} ${
+        config.player.largeIcons ? "large-icons" : ""
+      } ${config.player.hideDetails ? "hide-details" : ""}`}
+    >
+      {isEditMode && (
+        <div
+          className="player-constructor-badge"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConstructorOpen(!constructorOpen);
+          }}
+        >
+          🛠️ КОНСТРУКТОР
+        </div>
+      )}
+
+      {isEditMode && constructorOpen && (
+        <div className="player-constructor-popover" onClick={(e) => e.stopPropagation()}>
+          <button
+            className={`constructor-toggle-btn ${config.player.hideDetails ? "active" : ""}`}
+            onClick={() =>
+              updateDraft((prev) => ({
+                ...prev,
+                player: { ...prev.player, hideDetails: !prev.player.hideDetails },
+              }))
+            }
+          >
+            {config.player.hideDetails ? "Показать инфо" : "Hide details"}
+          </button>
+
+          <button
+            className={`constructor-toggle-btn ${config.player.largeIcons ? "active" : ""}`}
+            onClick={() =>
+              updateDraft((prev) => ({
+                ...prev,
+                player: { ...prev.player, largeIcons: !prev.player.largeIcons },
+              }))
+            }
+          >
+            Large icons
+          </button>
+        </div>
+      )}
+
       {errText && (
         <div className="err-banner">
           <span style={{ color: "var(--red)", fontWeight: 700 }}>!</span>

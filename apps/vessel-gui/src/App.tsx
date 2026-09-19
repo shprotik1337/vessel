@@ -13,8 +13,13 @@ import { Artist } from "./pages/Artist";
 import { WavePage } from "./pages/Wave";
 import { UserSelector } from "./components/UserSelector";
 import { FullscreenPlayer } from "./components/FullscreenPlayer";
-
 import { Titlebar } from "./components/Titlebar";
+import {
+  CustomizationProvider,
+  useCustomization,
+  EditModeBanner,
+  ThemeSettingsModal,
+} from "./customization";
 
 function AppContent() {
   const {
@@ -30,6 +35,7 @@ function AppContent() {
     cacheProgress,
     lang,
   } = useApp();
+  const { config, isEditMode } = useCustomization();
 
   const renderPage = () => {
     switch (view) {
@@ -90,9 +96,29 @@ function AppContent() {
   };
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${config.theme.wallpaperData ? "has-wallpaper" : ""} ${
+        isEditMode ? "edit-mode-active" : ""
+      }`}
+    >
+      {config.theme.wallpaperData && (
+        <div
+          className="vessel-wallpaper-layer"
+          style={{
+            backgroundImage: `url(${config.theme.wallpaperData})`,
+            filter: `blur(var(--wp-blur, 14px))`,
+            opacity: `calc(1 - var(--wp-dim, 0.45))`,
+          }}
+        />
+      )}
       <Titlebar />
-      <div className="app">
+      <EditModeBanner />
+      <div
+        className="app"
+        style={{
+          flexDirection: config.sidebar.position === "right" ? "row-reverse" : "row",
+        }}
+      >
         <Sidebar />
         <div className="app-main">
           <main className="content">{renderPage()}</main>
@@ -101,6 +127,7 @@ function AppContent() {
       </div>
       {fullscreenOpen && <FullscreenPlayer />}
       {state?.needs_user_selection && <UserSelector />}
+      <ThemeSettingsModal />
       {cacheProgress && (
         <div className="toast-wrap" style={{ bottom: toast ? "154px" : "104px", transition: "bottom 0.2s ease" }}>
           <div className="toast cache-toast">
@@ -127,7 +154,9 @@ function AppContent() {
 export default function App() {
   return (
     <AppProvider>
-      <AppContent />
+      <CustomizationProvider>
+        <AppContent />
+      </CustomizationProvider>
     </AppProvider>
   );
-}
+}
