@@ -119,11 +119,47 @@ export function Sidebar() {
     sidebarCollapsed: collapsed,
     toggleSidebarCollapsed: toggleCollapsed,
   } = useApp();
-  const { isEditMode, config, toggleSidebarPosition } = useCustomization();
+  const {
+    isEditMode,
+    config,
+    setSidebarPosition,
+    setSidebarStyle,
+    setSidebarWidth,
+  } = useCustomization();
   const [plExpanded, setPlExpanded] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
+
+  const isSidebarRight = config.sidebar?.position === "right";
+  const isSidebarTop = config.sidebar?.position === "top";
+  const isSidebarBottom = config.sidebar?.position === "bottom";
+  const isHorizontal = isSidebarTop || isSidebarBottom;
+  const isFloating = config.sidebar?.style === "floating";
+
+  const onResizePointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const handleEl = e.currentTarget as HTMLElement;
+    handleEl.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = config.sidebar?.width || 232;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const delta = isSidebarRight ? startX - ev.clientX : ev.clientX - startX;
+      setSidebarWidth(startW + delta);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+  };
 
   const reorderPlaylists = async (from: number, to: number) => {
     if (!state) return;
@@ -226,31 +262,54 @@ export function Sidebar() {
     );
   };
 
-  const isSidebarRight = config.sidebar?.position === "right";
-  const isSidebarTop = config.sidebar?.position === "top";
-
-  if (isSidebarTop) {
+  if (isHorizontal) {
     return (
-      <aside className="sidebar dock-top" style={{ position: "relative" }}>
+      <aside
+        className={`sidebar ${isSidebarBottom ? "dock-bottom" : "dock-top"} ${
+          isFloating ? "floating-island" : "full-dock"
+        }`}
+        style={{ position: "relative" }}
+      >
         {isEditMode && (
-          <button
-            className="sidebar-flip-handle dock-top-handle"
-            onClick={toggleSidebarPosition}
-            title="Сменить положение меню (Слева / Справа / Сверху)"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M7 16l-4-4m0 0l4-4m-4 4h18m-4 4l4-4m0 0l-4-4" />
-            </svg>
-          </button>
+          <div className="sidebar-floating-control" onClick={(e) => e.stopPropagation()}>
+            <div className="sidebar-control-btns">
+              <button
+                type="button"
+                className={`pos-pill-btn ${config.sidebar?.position === "left" ? "active" : ""}`}
+                onClick={() => setSidebarPosition("left")}
+              >
+                Слева
+              </button>
+              <button
+                type="button"
+                className={`pos-pill-btn ${config.sidebar?.position === "right" ? "active" : ""}`}
+                onClick={() => setSidebarPosition("right")}
+              >
+                Справа
+              </button>
+              <button
+                type="button"
+                className={`pos-pill-btn ${config.sidebar?.position === "top" ? "active" : ""}`}
+                onClick={() => setSidebarPosition("top")}
+              >
+                Сверху
+              </button>
+              <button
+                type="button"
+                className={`pos-pill-btn ${config.sidebar?.position === "bottom" ? "active" : ""}`}
+                onClick={() => setSidebarPosition("bottom")}
+              >
+                Снизу
+              </button>
+              <button
+                type="button"
+                className={`pos-pill-btn style-toggle ${isFloating ? "active" : ""}`}
+                onClick={() => setSidebarStyle(isFloating ? "dock" : "floating")}
+              >
+                {isFloating ? "Островок" : "Док"}
+              </button>
+            </div>
+          </div>
         )}
         <div className="top-nav-bar">
           <div className="top-nav-items">
@@ -289,33 +348,60 @@ export function Sidebar() {
     <aside
       className={`sidebar ${collapsed ? "collapsed" : ""} ${
         isSidebarRight ? "dock-right" : "dock-left"
-      }`}
-      style={{ position: "relative" }}
+      } ${isFloating ? "floating-island" : "full-dock"}`}
+      style={{
+        position: "relative",
+        width: collapsed ? undefined : `${config.sidebar?.width || 232}px`,
+      }}
     >
+      {isEditMode && !collapsed && (
+        <div
+          className={`sidebar-resize-handle ${isSidebarRight ? "resize-left" : "resize-right"}`}
+          onPointerDown={onResizePointerDown}
+          title="Потяните мышкой для изменения ширины меню"
+        />
+      )}
+
       {isEditMode && (
-        <button
-          className="sidebar-flip-handle"
-          onClick={toggleSidebarPosition}
-          title="Сменить положение меню (Слева / Справа / Сверху)"
-          style={
-            !isSidebarRight
-              ? { right: "-12px" }
-              : { left: "-12px" }
-          }
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M7 16l-4-4m0 0l4-4m-4 4h18m-4 4l4-4m0 0l-4-4" />
-          </svg>
-        </button>
+        <div className="sidebar-floating-control vertical" onClick={(e) => e.stopPropagation()}>
+          <div className="sidebar-control-btns">
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.sidebar?.position === "left" ? "active" : ""}`}
+              onClick={() => setSidebarPosition("left")}
+            >
+              Слева
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.sidebar?.position === "right" ? "active" : ""}`}
+              onClick={() => setSidebarPosition("right")}
+            >
+              Справа
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.sidebar?.position === "top" ? "active" : ""}`}
+              onClick={() => setSidebarPosition("top")}
+            >
+              Сверху
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.sidebar?.position === "bottom" ? "active" : ""}`}
+              onClick={() => setSidebarPosition("bottom")}
+            >
+              Снизу
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn style-toggle ${isFloating ? "active" : ""}`}
+              onClick={() => setSidebarStyle(isFloating ? "dock" : "floating")}
+            >
+              {isFloating ? "Островок" : "Док"}
+            </button>
+          </div>
+        </div>
       )}
       {/* Top section: search and sidebar toggle */}
       {!collapsed ? (

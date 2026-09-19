@@ -1,5 +1,9 @@
-import React, { useState, useRef } from "react";
-import { useCustomization, BUILTIN_THEMES } from "./CustomizationContext";
+import React, { useState, useRef, useEffect } from "react";
+import {
+  useCustomization,
+  BUILTIN_THEMES,
+  type BorderRadiusPreset,
+} from "./CustomizationContext";
 import { useApp } from "../store";
 import * as api from "../api/commands";
 
@@ -13,6 +17,10 @@ interface ColorPickerItemProps {
 function ColorPickerItem({ label, description, value, onChange }: ColorPickerItemProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [textVal, setTextVal] = useState(value);
+
+  useEffect(() => {
+    setTextVal(value);
+  }, [value]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -68,9 +76,10 @@ export function CustomizationTab() {
     config,
     enterEditMode,
     updateThemeDirectly,
-    setSidebarPosition,
-    setPlayerPosition,
-    updateDraft,
+    setSidebarStyle,
+    setPlayerStyle,
+    setPlayerOptions,
+    setBorderRadius,
     applyPreset,
     userPresets,
     saveToUserSlot,
@@ -79,12 +88,12 @@ export function CustomizationTab() {
   } = useCustomization();
 
   const { navigateTo, showToast } = useApp();
-  const [subTab, setSubTab] = useState<"layout" | "colors" | "wallpaper" | "presets">("layout");
+  const [subTab, setSubTab] = useState<"colors" | "wallpaper" | "style" | "presets">("colors");
   const [loadingWallpaper, setLoadingWallpaper] = useState(false);
   const [savingSlot, setSavingSlot] = useState<number | null>(null);
   const [slotNameInput, setSlotNameInput] = useState("");
 
-  const { theme, sidebar, player } = config;
+  const { theme, sidebar, player, borderRadius } = config;
 
   const handlePickWallpaper = async () => {
     try {
@@ -106,13 +115,20 @@ export function CustomizationTab() {
     navigateTo("home");
   };
 
+  const RADIUS_OPTIONS: { key: BorderRadiusPreset; name: string; desc: string; px: string }[] = [
+    { key: "sharp", name: "Квадратные", desc: "Строгие прямые углы", px: "0px" },
+    { key: "small", name: "Небольшое", desc: "Легкое скругление", px: "6px" },
+    { key: "medium", name: "Среднее", desc: "Сбалансированное (стандарт)", px: "14px" },
+    { key: "round", name: "Полностью круглые", desc: "Мягкие круглые капсулы", px: "26px" },
+  ];
+
   return (
     <div className="customization-tab-content">
       <div className="custom-tab-header">
         <div>
           <h2 className="custom-tab-title">Кастомизация интерфейса</h2>
           <p className="custom-tab-subtitle">
-            Настройте расположение блоков, сайдбара, плеера, палитру цветов и фоновые обои
+            Настройте форму, стили, цветовую палитру, матовое стекло и фоновые обои
           </p>
         </div>
 
@@ -132,7 +148,7 @@ export function CustomizationTab() {
             <span className="live-preview-pulse" /> Живой предпросмотр (Live Preview)
           </span>
           <span className="live-preview-coords">
-            Сайдбар: {sidebar.position === "left" ? "Слева" : sidebar.position === "right" ? "Справа" : "Сверху"} · Плеер: {player.position === "bottom" ? "Снизу" : "Сверху"}
+            Сайдбар: {sidebar.position === "left" ? "Слева" : sidebar.position === "right" ? "Справа" : sidebar.position === "top" ? "Сверху" : "Снизу"} ({sidebar.style === "floating" ? "Островок" : "Док"}) · Плеер: {player.position === "bottom" ? "Снизу" : "Сверху"} ({player.style === "floating" ? "Островок" : "Док"})
           </span>
         </div>
 
@@ -163,6 +179,8 @@ export function CustomizationTab() {
                 flexDirection:
                   sidebar.position === "top"
                     ? "column"
+                    : sidebar.position === "bottom"
+                    ? "column-reverse"
                     : sidebar.position === "right"
                     ? "row-reverse"
                     : "row",
@@ -170,13 +188,14 @@ export function CustomizationTab() {
             >
               {/* Mini Sidebar */}
               <div
-                className={`preview-sidebar ${sidebar.position === "top" ? "horizontal" : ""}`}
+                className={`preview-sidebar ${sidebar.position === "top" || sidebar.position === "bottom" ? "horizontal" : ""} ${sidebar.style === "floating" ? "preview-floating" : ""}`}
                 style={{
                   backgroundColor:
-                    theme.wallpaperData && theme.glassMode
+                    theme.glassMode
                       ? "rgba(20, 20, 24, 0.7)"
                       : theme.sidebarBgColor,
                   borderColor: theme.accentColor,
+                  borderRadius: borderRadius === "sharp" ? "0px" : borderRadius === "small" ? "4px" : borderRadius === "round" ? "14px" : "8px",
                 }}
               >
                 <div className="preview-nav-item active" style={{ backgroundColor: theme.accentColor }} />
@@ -197,9 +216,10 @@ export function CustomizationTab() {
                     className="preview-card"
                     style={{
                       backgroundColor:
-                        theme.wallpaperData && theme.glassMode
+                        theme.glassMode
                           ? "rgba(28, 28, 34, 0.75)"
                           : theme.cardBgColor,
+                      borderRadius: borderRadius === "sharp" ? "0px" : borderRadius === "small" ? "4px" : borderRadius === "round" ? "12px" : "8px",
                     }}
                   >
                     <div className="preview-card-art" style={{ backgroundColor: theme.accentColor }} />
@@ -209,21 +229,10 @@ export function CustomizationTab() {
                     className="preview-card"
                     style={{
                       backgroundColor:
-                        theme.wallpaperData && theme.glassMode
+                        theme.glassMode
                           ? "rgba(28, 28, 34, 0.75)"
                           : theme.cardBgColor,
-                    }}
-                  >
-                    <div className="preview-card-art" style={{ backgroundColor: theme.accentColor }} />
-                    <div className="preview-card-line" style={{ backgroundColor: theme.textColor }} />
-                  </div>
-                  <div
-                    className="preview-card"
-                    style={{
-                      backgroundColor:
-                        theme.wallpaperData && theme.glassMode
-                          ? "rgba(28, 28, 34, 0.75)"
-                          : theme.cardBgColor,
+                      borderRadius: borderRadius === "sharp" ? "0px" : borderRadius === "small" ? "4px" : borderRadius === "round" ? "12px" : "8px",
                     }}
                   >
                     <div className="preview-card-art" style={{ backgroundColor: theme.accentColor }} />
@@ -235,12 +244,13 @@ export function CustomizationTab() {
 
             {/* Mini Player */}
             <div
-              className="preview-player"
+              className={`preview-player ${player.style === "floating" ? "preview-floating" : ""}`}
               style={{
                 backgroundColor:
-                  theme.wallpaperData && theme.glassMode
+                  theme.glassMode
                     ? "rgba(20, 20, 24, 0.75)"
                     : theme.playerBgColor,
+                borderRadius: borderRadius === "sharp" ? "0px" : borderRadius === "small" ? "4px" : borderRadius === "round" ? "14px" : "8px",
               }}
             >
               <div className="preview-track-art" style={{ backgroundColor: theme.accentColor }} />
@@ -256,159 +266,35 @@ export function CustomizationTab() {
         </div>
       </div>
 
-      {/* Subcategory Navigation */}
+      {/* Subcategory Navigation without emojis */}
       <div className="custom-subtabs">
-        <button
-          className={`custom-subtab-btn ${subTab === "layout" ? "active" : ""}`}
-          onClick={() => setSubTab("layout")}
-        >
-          📐 Расположение и макет
-        </button>
         <button
           className={`custom-subtab-btn ${subTab === "colors" ? "active" : ""}`}
           onClick={() => setSubTab("colors")}
         >
-          🎨 Цветовая палитра
+          Цветовая палитра
         </button>
         <button
           className={`custom-subtab-btn ${subTab === "wallpaper" ? "active" : ""}`}
           onClick={() => setSubTab("wallpaper")}
         >
-          🖼️ Обои и Glassmorphism
+          Обои и стекло
+        </button>
+        <button
+          className={`custom-subtab-btn ${subTab === "style" ? "active" : ""}`}
+          onClick={() => setSubTab("style")}
+        >
+          Форма и стиль
         </button>
         <button
           className={`custom-subtab-btn ${subTab === "presets" ? "active" : ""}`}
           onClick={() => setSubTab("presets")}
         >
-          ⭐ Темы и Пресеты
+          Темы и пресеты
         </button>
       </div>
 
-      {/* Subtab 1: Layout */}
-      {subTab === "layout" && (
-        <div className="subtab-panel">
-          <div className="custom-group">
-            <h3 className="custom-group-title">Положение Сайдбара (Меню навигации)</h3>
-            <div className="position-options-grid">
-              <button
-                className={`pos-card ${sidebar.position === "left" ? "active" : ""}`}
-                onClick={() => setSidebarPosition("left")}
-              >
-                <div className="pos-card-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="9" y1="3" x2="9" y2="21" />
-                  </svg>
-                </div>
-                <div className="pos-card-title">Слева (по умолчанию)</div>
-                <div className="pos-card-desc">Классический сайдбар у левого края</div>
-              </button>
-
-              <button
-                className={`pos-card ${sidebar.position === "right" ? "active" : ""}`}
-                onClick={() => setSidebarPosition("right")}
-              >
-                <div className="pos-card-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="15" y1="3" x2="15" y2="21" />
-                  </svg>
-                </div>
-                <div className="pos-card-title">Справа</div>
-                <div className="pos-card-desc">Пристыковать меню к правому краю</div>
-              </button>
-
-              <button
-                className={`pos-card ${sidebar.position === "top" ? "active" : ""}`}
-                onClick={() => setSidebarPosition("top")}
-              >
-                <div className="pos-card-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="3" y1="9" x2="21" y2="9" />
-                  </svg>
-                </div>
-                <div className="pos-card-title">Сверху</div>
-                <div className="pos-card-desc">Горизонтальная навигационная панель</div>
-              </button>
-            </div>
-          </div>
-
-          <div className="custom-group">
-            <h3 className="custom-group-title">Положение Плеера</h3>
-            <div className="position-options-grid">
-              <button
-                className={`pos-card ${player.position === "bottom" ? "active" : ""}`}
-                onClick={() => setPlayerPosition("bottom")}
-              >
-                <div className="pos-card-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="3" y1="16" x2="21" y2="16" />
-                  </svg>
-                </div>
-                <div className="pos-card-title">Снизу (классический)</div>
-                <div className="pos-card-desc">Нижняя закрепленная панель управления</div>
-              </button>
-
-              <button
-                className={`pos-card ${player.position === "top" ? "active" : ""}`}
-                onClick={() => setPlayerPosition("top")}
-              >
-                <div className="pos-card-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="3" y1="8" x2="21" y2="8" />
-                  </svg>
-                </div>
-                <div className="pos-card-title">Сверху (под шапкой)</div>
-                <div className="pos-card-desc">Плеер располагается над основным контентом</div>
-              </button>
-            </div>
-          </div>
-
-          <div className="custom-group">
-            <h3 className="custom-group-title">Вид и элементы управления плеера</h3>
-            <div className="checkbox-options-list">
-              <label className="checkbox-row-label">
-                <input
-                  type="checkbox"
-                  checked={player.largeIcons}
-                  onChange={(e) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      player: { ...prev.player, largeIcons: e.target.checked },
-                    }))
-                  }
-                />
-                <div>
-                  <div className="checkbox-title">Крупные кнопки управления (Large Icons)</div>
-                  <div className="checkbox-desc">Увеличивает размер Play/Pause, Next и Prev</div>
-                </div>
-              </label>
-
-              <label className="checkbox-row-label">
-                <input
-                  type="checkbox"
-                  checked={player.hideDetails}
-                  onChange={(e) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      player: { ...prev.player, hideDetails: e.target.checked },
-                    }))
-                  }
-                />
-                <div>
-                  <div className="checkbox-title">Компактный режим плеера</div>
-                  <div className="checkbox-desc">Скрывает обложку и название трека для максимальной компактности</div>
-                </div>
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Subtab 2: Colors */}
+      {/* Subtab 1: Colors */}
       {subTab === "colors" && (
         <div className="subtab-panel">
           <p className="subtab-desc">
@@ -461,7 +347,7 @@ export function CustomizationTab() {
         </div>
       )}
 
-      {/* Subtab 3: Wallpaper & Glass */}
+      {/* Subtab 2: Wallpaper & Glass */}
       {subTab === "wallpaper" && (
         <div className="subtab-panel">
           <div className="custom-group">
@@ -493,7 +379,7 @@ export function CustomizationTab() {
                   onClick={handlePickWallpaper}
                   disabled={loadingWallpaper}
                 >
-                  {loadingWallpaper ? "Загрузка..." : "📁 Выбрать картинку с компьютера"}
+                  {loadingWallpaper ? "Загрузка..." : "Выбрать картинку с компьютера"}
                 </button>
                 {theme.wallpaperData && (
                   <button
@@ -507,74 +393,183 @@ export function CustomizationTab() {
             </div>
           </div>
 
-          {theme.wallpaperData && (
-            <div className="custom-group">
-              <h3 className="custom-group-title">Настройки отображения обоев и стекла</h3>
-              <div className="sliders-column">
+          <div className="custom-group">
+            <h3 className="custom-group-title">Настройки стекла и эффектов</h3>
+            <p className="custom-group-subtitle">
+              Эффект матового стекла (Glassmorphism) работает как с пользовательскими обоями, так и со стандартным фоном
+            </p>
+
+            <div className="sliders-column">
+              <label className="checkbox-row-label">
+                <input
+                  type="checkbox"
+                  checked={theme.glassMode}
+                  onChange={(e) => updateThemeDirectly({ glassMode: e.target.checked })}
+                />
+                <div>
+                  <div className="checkbox-title">Эффект матового стекла (Glassmorphism)</div>
+                  <div className="checkbox-desc">Панели и карточки становятся полупрозрачными с размытием заднего плана</div>
+                </div>
+              </label>
+
+              {theme.glassMode && (
                 <div className="slider-row-wrap">
                   <div className="slider-row-labels">
-                    <span>Размытие фона (Blur):</span>
-                    <span className="slider-val">{theme.wallpaperBlur}px</span>
+                    <span>Прозрачность панелей:</span>
+                    <span className="slider-val">{Math.round((1 - theme.glassOpacity) * 100)}%</span>
                   </div>
                   <input
                     type="range"
-                    min="0"
-                    max="40"
-                    step="1"
-                    value={theme.wallpaperBlur}
-                    onChange={(e) => updateThemeDirectly({ wallpaperBlur: parseInt(e.target.value, 10) })}
+                    min="0.1"
+                    max="0.9"
+                    step="0.05"
+                    value={theme.glassOpacity}
+                    onChange={(e) => updateThemeDirectly({ glassOpacity: parseFloat(e.target.value) })}
                     className="theme-slider"
                   />
                 </div>
+              )}
 
-                <div className="slider-row-wrap">
-                  <div className="slider-row-labels">
-                    <span>Затемнение (Dimming):</span>
-                    <span className="slider-val">{theme.wallpaperDim}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="90"
-                    step="1"
-                    value={theme.wallpaperDim}
-                    onChange={(e) => updateThemeDirectly({ wallpaperDim: parseInt(e.target.value, 10) })}
-                    className="theme-slider"
-                  />
+              <div className="slider-row-wrap">
+                <div className="slider-row-labels">
+                  <span>Размытие фона (Blur):</span>
+                  <span className="slider-val">{theme.wallpaperBlur}px</span>
                 </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="40"
+                  step="1"
+                  value={theme.wallpaperBlur}
+                  onChange={(e) => updateThemeDirectly({ wallpaperBlur: parseInt(e.target.value, 10) })}
+                  className="theme-slider"
+                />
+              </div>
 
-                <label className="checkbox-row-label">
-                  <input
-                    type="checkbox"
-                    checked={theme.glassMode}
-                    onChange={(e) => updateThemeDirectly({ glassMode: e.target.checked })}
-                  />
-                  <div>
-                    <div className="checkbox-title">Эффект матового стекла (Glassmorphism)</div>
-                    <div className="checkbox-desc">Панели и карточки становятся полупрозрачными с размытием заднего плана</div>
-                  </div>
-                </label>
-
-                {theme.glassMode && (
-                  <div className="slider-row-wrap">
-                    <div className="slider-row-labels">
-                      <span>Прозрачность панелей:</span>
-                      <span className="slider-val">{Math.round((1 - theme.glassOpacity) * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.1"
-                      max="0.9"
-                      step="0.05"
-                      value={theme.glassOpacity}
-                      onChange={(e) => updateThemeDirectly({ glassOpacity: parseFloat(e.target.value) })}
-                      className="theme-slider"
-                    />
-                  </div>
-                )}
+              <div className="slider-row-wrap">
+                <div className="slider-row-labels">
+                  <span>Затемнение (Dimming):</span>
+                  <span className="slider-val">{theme.wallpaperDim}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="90"
+                  step="1"
+                  value={theme.wallpaperDim}
+                  onChange={(e) => updateThemeDirectly({ wallpaperDim: parseInt(e.target.value, 10) })}
+                  className="theme-slider"
+                />
               </div>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Subtab 3: Form & Style */}
+      {subTab === "style" && (
+        <div className="subtab-panel">
+          <div className="custom-group">
+            <h3 className="custom-group-title">Скругление углов элементов</h3>
+            <p className="custom-group-subtitle">
+              Определяет форму карточек, кнопок, меню и плеера
+            </p>
+            <div className="radius-options-grid">
+              {RADIUS_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  className={`radius-preset-card ${borderRadius === opt.key ? "active" : ""}`}
+                  onClick={() => setBorderRadius(opt.key)}
+                >
+                  <div
+                    className="radius-preview-sample"
+                    style={{
+                      borderRadius: opt.key === "sharp" ? "0px" : opt.key === "small" ? "4px" : opt.key === "round" ? "18px" : "10px",
+                    }}
+                  />
+                  <div className="radius-card-title">{opt.name}</div>
+                  <div className="radius-card-desc">{opt.desc} ({opt.px})</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="custom-group">
+            <h3 className="custom-group-title">Стиль панелей</h3>
+            <div className="style-panels-grid">
+              <div className="style-panel-card">
+                <div className="style-card-title">Сайдбар (Меню навигации)</div>
+                <div className="style-card-desc">Внешний вид боковой панели</div>
+                <div className="style-btn-toggle-row">
+                  <button
+                    type="button"
+                    className={`style-choice-btn ${sidebar.style === "floating" ? "active" : ""}`}
+                    onClick={() => setSidebarStyle("floating")}
+                  >
+                    Островок (Плавающий)
+                  </button>
+                  <button
+                    type="button"
+                    className={`style-choice-btn ${sidebar.style === "dock" ? "active" : ""}`}
+                    onClick={() => setSidebarStyle("dock")}
+                  >
+                    На весь экран (Док)
+                  </button>
+                </div>
+              </div>
+
+              <div className="style-panel-card">
+                <div className="style-card-title">Плеер</div>
+                <div className="style-card-desc">Внешний вид нижней полосы воспроизведения</div>
+                <div className="style-btn-toggle-row">
+                  <button
+                    type="button"
+                    className={`style-choice-btn ${player.style === "floating" ? "active" : ""}`}
+                    onClick={() => setPlayerStyle("floating")}
+                  >
+                    Островок (Плавающий)
+                  </button>
+                  <button
+                    type="button"
+                    className={`style-choice-btn ${player.style === "dock" ? "active" : ""}`}
+                    onClick={() => setPlayerStyle("dock")}
+                  >
+                    На всю ширину (Док)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="custom-group">
+            <h3 className="custom-group-title">Параметры плеера</h3>
+            <div className="checkbox-options-list">
+              <label className="checkbox-row-label">
+                <input
+                  type="checkbox"
+                  checked={player.largeIcons}
+                  onChange={(e) => setPlayerOptions({ largeIcons: e.target.checked })}
+                />
+                <div>
+                  <div className="checkbox-title">Крупные кнопки управления (Large Icons)</div>
+                  <div className="checkbox-desc">Увеличивает размер Play/Pause, Next и Prev</div>
+                </div>
+              </label>
+
+              <label className="checkbox-row-label">
+                <input
+                  type="checkbox"
+                  checked={player.hideDetails}
+                  onChange={(e) => setPlayerOptions({ hideDetails: e.target.checked })}
+                />
+                <div>
+                  <div className="checkbox-title">Компактный режим плеера</div>
+                  <div className="checkbox-desc">Скрывает обложку и название трека для максимальной компактности</div>
+                </div>
+              </label>
+            </div>
+          </div>
         </div>
       )}
 
@@ -582,7 +577,7 @@ export function CustomizationTab() {
       {subTab === "presets" && (
         <div className="subtab-panel">
           <div className="custom-group">
-            <h3 className="custom-group-title">Встроенные дизайнерские темы</h3>
+            <h3 className="custom-group-title">Встроенные темы</h3>
             <div className="presets-grid">
               {BUILTIN_THEMES.map((preset) => (
                 <div key={preset.id} className="preset-card">

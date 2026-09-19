@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
-import { useCustomization } from "./CustomizationContext";
+import { useCustomization, type BlockWidth } from "./CustomizationContext";
 
 interface EditableBlockProps {
   id: string;
@@ -8,6 +8,13 @@ interface EditableBlockProps {
   allowGridResize?: boolean;
   allowMove?: boolean;
 }
+
+const WIDTH_OPTIONS: { key: BlockWidth; label: string }[] = [
+  { key: "third", label: "1/3" },
+  { key: "half", label: "1/2" },
+  { key: "two-thirds", label: "2/3" },
+  { key: "full", label: "100%" },
+];
 
 export function EditableBlock({
   id,
@@ -19,18 +26,19 @@ export function EditableBlock({
   const {
     isEditMode,
     config,
-    moveBlock,
     reorderBlocks,
     toggleBlockVisibility,
     setBlockGridColumns,
+    setBlockWidth,
   } = useCustomization();
 
-  const [isDraggingThis, setIsDraggingThis] = useState(false);
-  const [isDragOverThis, setIsDragOverThis] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const isHidden = (config.home?.hiddenBlocks || []).includes(id);
   const gridCols = config.home?.gridColumns?.[id] || 4;
+  const currentWidth: BlockWidth = config.home?.blockWidths?.[id] || "full";
 
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -48,106 +56,135 @@ export function EditableBlock({
     };
   }, [isSettingsOpen]);
 
+  // Listen for global drag hover events across blocks
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.targetId === id && detail.sourceId !== id) {
+        setIsDropTarget(true);
+      } else {
+        setIsDropTarget(false);
+      }
+    };
+    window.addEventListener("vessel-block-drag-hover", handler);
+    return () => window.removeEventListener("vessel-block-drag-hover", handler);
+  }, [id]);
+
   if (isHidden && !isEditMode) {
     return null;
   }
 
   if (!isEditMode) {
-    return <>{children}</>;
+    return (
+      <div className="home-block-wrapper" data-width={currentWidth}>
+        {children}
+      </div>
+    );
   }
 
-  const handleDragStart = (e: React.DragEvent) => {
+  // Pointer events drag and drop for reliable WebView2 / mouse dragging
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!allowMove) return;
-    e.dataTransfer.setData("text/vessel-block-id", id);
-    e.dataTransfer.effectAllowed = "move";
-    setIsDraggingThis(true);
-  };
-
-  const handleDragEnd = () => {
-    setIsDraggingThis(false);
-    setIsDragOverThis(false);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    if (!allowMove) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (!isDragOverThis) setIsDragOverThis(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragOverThis(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    if (!allowMove) return;
-    e.preventDefault();
-    setIsDragOverThis(false);
-    const sourceId = e.dataTransfer.getData("text/vessel-block-id");
-    if (sourceId && sourceId !== id) {
-      reorderBlocks(sourceId, id);
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, select, .width-chip, .editable-block-popover")) {
+      return;
     }
+
+    e.preventDefault();
+    const handleEl = e.currentTarget;
+    handleEl.setPointerCapture(e.pointerId);
+    setIsDragging(true);
+    document.body.classList.add("vessel-block-dragging");
+
+    const onPointerMove = (ev: PointerEvent) => {
+      ev.preventDefault();
+      const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
+      const targetWrapper = elements.find(
+        (el) => el.hasAttribute("data-block-id") && el.getAttribute("data-block-id") !== id
+      );
+      const targetId = targetWrapper ? targetWrapper.getAttribute("data-block-id") : null;
+
+      window.dispatchEvent(
+        new CustomEvent("vessel-block-drag-hover", {
+          detail: { targetId, sourceId: id },
+        })
+      );
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+      setIsDragging(false);
+      document.body.classList.remove("vessel-block-dragging");
+
+      const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
+      const targetWrapper = elements.find(
+        (el) => el.hasAttribute("data-block-id") && el.getAttribute("data-block-id") !== id
+      );
+      const targetId = targetWrapper ? targetWrapper.getAttribute("data-block-id") : null;
+
+      window.dispatchEvent(
+        new CustomEvent("vessel-block-drag-hover", {
+          detail: { targetId: null, sourceId: null },
+        })
+      );
+
+      if (targetId && targetId !== id) {
+        reorderBlocks(id, targetId);
+      }
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
   };
 
   return (
     <div
       className={`editable-block-wrapper ${isHidden ? "hidden-block" : ""} ${
-        isDraggingThis ? "is-dragging" : ""
-      } ${isDragOverThis ? "is-drag-over" : ""}`}
-      draggable={allowMove}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+        isDragging ? "is-dragging" : ""
+      } ${isDropTarget ? "is-drag-over" : ""}`}
+      data-block-id={id}
+      data-width={currentWidth}
     >
-      {isDragOverThis && <div className="block-drop-line-indicator" />}
+      {isDropTarget && <div className="block-drop-line-indicator" />}
 
       <div className="editable-block-outline">
-        <div className="editable-block-bar top-bar">
-          <span className="editable-block-title" title="Зажмите мышкой для перетаскивания">
+        <div
+          className="editable-block-bar top-bar"
+          onPointerDown={handlePointerDown}
+          title="Зажмите и перетащите мышкой для смены порядка блоков"
+        >
+          <span className="editable-block-title">
             <span className="editable-block-drag-icon">⠿</span>
             {title} {isHidden && <span className="block-hidden-tag">(Скрыто)</span>}
           </span>
 
-          <div className="editable-block-tools">
-            {allowMove && (
-              <div className="move-btn-group">
-                <button
-                  type="button"
-                  className="editable-tool-btn"
-                  title="Переместить выше"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    moveBlock(id, "up");
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="18 15 12 9 6 15" />
-                  </svg>
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="editable-tool-btn"
-                  title="Переместить ниже"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    moveBlock(id, "down");
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                  ↓
-                </button>
-              </div>
-            )}
+          {/* Width Selector Chips */}
+          <div className="editable-block-widths" onClick={(e) => e.stopPropagation()}>
+            {WIDTH_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                className={`width-chip ${currentWidth === opt.key ? "active" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setBlockWidth(id, opt.key);
+                }}
+                title={`Ширина блока: ${opt.label}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
 
+          <div className="editable-block-tools" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               className={`editable-tool-btn ${isSettingsOpen ? "active" : ""}`}
-              title="Настройки секции"
+              title="Настройки сетки секции"
               onClick={(e) => {
                 e.stopPropagation();
                 setIsSettingsOpen(!isSettingsOpen);
@@ -188,7 +225,7 @@ export function EditableBlock({
 
               {allowGridResize && (
                 <div className="popover-row">
-                  <div className="popover-label">Размер сетки карточек ({gridCols}):</div>
+                  <div className="popover-label">Колонок в карточках ({gridCols}):</div>
                   <input
                     type="range"
                     min="1"

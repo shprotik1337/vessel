@@ -98,7 +98,16 @@ function AppContent() {
   const hasWallpaper = Boolean(config.theme?.wallpaperData);
   const isSidebarRight = config.sidebar?.position === "right";
   const isSidebarTop = config.sidebar?.position === "top";
+  const isSidebarBottom = config.sidebar?.position === "bottom";
   const isPlayerTop = config.player?.position === "top";
+
+  const appFlexDirection = isSidebarTop
+    ? "column"
+    : isSidebarBottom
+    ? "column-reverse"
+    : isSidebarRight
+    ? "row-reverse"
+    : "row";
 
   return (
     <div
@@ -119,9 +128,11 @@ function AppContent() {
       <Titlebar />
       <EditModeBanner />
       <div
-        className={`app ${isSidebarTop ? "sidebar-dock-top" : ""}`}
+        className={`app ${isSidebarTop ? "sidebar-dock-top" : ""} ${
+          isSidebarBottom ? "sidebar-dock-bottom" : ""
+        }`}
         style={{
-          flexDirection: isSidebarTop ? "column" : isSidebarRight ? "row-reverse" : "row",
+          flexDirection: appFlexDirection,
         }}
       >
         <Sidebar />

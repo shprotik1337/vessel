@@ -54,13 +54,44 @@ const FULLSCREEN_SVG = (
 
 export function BottomPlayer() {
   const { state, showToast, refresh, navigateTo, lang, fullscreenOpen, setFullscreenOpen } = useApp();
-  const { isEditMode, config, updateDraft } = useCustomization();
-  const [constructorOpen, setConstructorOpen] = useState(false);
+  const {
+    isEditMode,
+    config,
+    setPlayerPosition,
+    setPlayerStyle,
+    setPlayerHeight,
+    setPlayerOptions,
+  } = useCustomization();
   const seekBarRef = useRef<HTMLDivElement>(null);
   const volBarRef = useRef<HTMLDivElement>(null);
   const [dragPercent, setDragPercent] = useState<number | null>(null);
   // Мут: запоминаем последнюю громкость, чтобы вернуть её при размуте
   const lastVolumeRef = useRef<number | null>(null);
+
+  const onResizeHeightPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const handleEl = e.currentTarget as HTMLElement;
+    handleEl.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = config.player?.height || 82;
+    const isTop = config.player?.position === "top";
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const delta = isTop ? ev.clientY - startY : startY - ev.clientY;
+      setPlayerHeight(startH + delta);
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      try {
+        handleEl.releasePointerCapture(ev.pointerId);
+      } catch {}
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+  };
 
   if (!state) return null;
 
@@ -225,59 +256,63 @@ export function BottomPlayer() {
       className={`player ${failed ? "playback-error" : ""} ${
         config.player?.position === "top" ? "dock-top" : "dock-bottom"
       } ${
+        config.player?.style === "floating" ? "floating-island" : "full-dock"
+      } ${
         config.player?.largeIcons ? "large-icons" : ""
       } ${config.player?.hideDetails ? "hide-details" : ""}`}
+      style={{
+        height: `${config.player?.height || 82}px`,
+        minHeight: `${config.player?.height || 82}px`,
+        maxHeight: `${config.player?.height || 82}px`,
+      }}
     >
       {isEditMode && (
         <div
-          className="player-constructor-badge"
-          onClick={(e) => {
-            e.stopPropagation();
-            setConstructorOpen(!constructorOpen);
-          }}
-          title="Открыть конструктор плеера"
-        >
-          🛠️ КОНСТРУКТОР
-        </div>
+          className={`player-resize-handle ${config.player?.position === "top" ? "resize-bottom" : "resize-top"}`}
+          onPointerDown={onResizeHeightPointerDown}
+          title="Потяните мышкой для изменения высоты плеера"
+        />
       )}
 
-      {isEditMode && constructorOpen && (
-        <div className="player-constructor-popover" onClick={(e) => e.stopPropagation()}>
-          <button
-            className={`constructor-toggle-btn ${config.player?.position === "top" ? "active" : ""}`}
-            onClick={() =>
-              updateDraft((prev) => ({
-                ...prev,
-                player: { ...prev.player, position: prev.player?.position === "top" ? "bottom" : "top" },
-              }))
-            }
-          >
-            {config.player?.position === "top" ? "⬇️ Плеер вниз" : "⬆️ Плеер наверх"}
-          </button>
-
-          <button
-            className={`constructor-toggle-btn ${config.player?.hideDetails ? "active" : ""}`}
-            onClick={() =>
-              updateDraft((prev) => ({
-                ...prev,
-                player: { ...prev.player, hideDetails: !prev.player?.hideDetails },
-              }))
-            }
-          >
-            {config.player?.hideDetails ? "Показать инфо" : "Скрыть детали"}
-          </button>
-
-          <button
-            className={`constructor-toggle-btn ${config.player?.largeIcons ? "active" : ""}`}
-            onClick={() =>
-              updateDraft((prev) => ({
-                ...prev,
-                player: { ...prev.player, largeIcons: !prev.player?.largeIcons },
-              }))
-            }
-          >
-            {config.player?.largeIcons ? "Обычные кнопки" : "Крупные кнопки"}
-          </button>
+      {isEditMode && (
+        <div className="player-floating-control" onClick={(e) => e.stopPropagation()}>
+          <div className="player-control-btns">
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.player?.position === "bottom" ? "active" : ""}`}
+              onClick={() => setPlayerPosition("bottom")}
+            >
+              Снизу
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.player?.position === "top" ? "active" : ""}`}
+              onClick={() => setPlayerPosition("top")}
+            >
+              Сверху
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn style-toggle ${config.player?.style === "floating" ? "active" : ""}`}
+              onClick={() => setPlayerStyle(config.player?.style === "floating" ? "dock" : "floating")}
+            >
+              {config.player?.style === "floating" ? "Островок" : "Док"}
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.player?.largeIcons ? "active" : ""}`}
+              onClick={() => setPlayerOptions({ largeIcons: !config.player?.largeIcons })}
+            >
+              {config.player?.largeIcons ? "Крупные" : "Обычные"}
+            </button>
+            <button
+              type="button"
+              className={`pos-pill-btn ${config.player?.hideDetails ? "active" : ""}`}
+              onClick={() => setPlayerOptions({ hideDetails: !config.player?.hideDetails })}
+            >
+              {config.player?.hideDetails ? "Компакт" : "Инфо"}
+            </button>
+          </div>
         </div>
       )}
 
