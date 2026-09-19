@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { useCustomization } from "./CustomizationContext";
 
 interface EditableBlockProps {
@@ -20,13 +20,15 @@ export function EditableBlock({
     isEditMode,
     config,
     moveBlock,
+    reorderBlocks,
     toggleBlockVisibility,
     setBlockGridColumns,
-    activeBlockSettings,
-    setActiveBlockSettings,
   } = useCustomization();
 
-  const isSettingsOpen = activeBlockSettings === id;
+  const [isDraggingThis, setIsDraggingThis] = useState(false);
+  const [isDragOverThis, setIsDragOverThis] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   const isHidden = (config.home?.hiddenBlocks || []).includes(id);
   const gridCols = config.home?.gridColumns?.[id] || 4;
 
@@ -35,7 +37,7 @@ export function EditableBlock({
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
-        if (isSettingsOpen) setActiveBlockSettings(null);
+        if (isSettingsOpen) setIsSettingsOpen(false);
       }
     }
     if (isSettingsOpen) {
@@ -44,7 +46,7 @@ export function EditableBlock({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isSettingsOpen, setActiveBlockSettings]);
+  }, [isSettingsOpen]);
 
   if (isHidden && !isEditMode) {
     return null;
@@ -54,12 +56,57 @@ export function EditableBlock({
     return <>{children}</>;
   }
 
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!allowMove) return;
+    e.dataTransfer.setData("text/vessel-block-id", id);
+    e.dataTransfer.effectAllowed = "move";
+    setIsDraggingThis(true);
+  };
+
+  const handleDragEnd = () => {
+    setIsDraggingThis(false);
+    setIsDragOverThis(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!allowMove) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!isDragOverThis) setIsDragOverThis(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOverThis(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!allowMove) return;
+    e.preventDefault();
+    setIsDragOverThis(false);
+    const sourceId = e.dataTransfer.getData("text/vessel-block-id");
+    if (sourceId && sourceId !== id) {
+      reorderBlocks(sourceId, id);
+    }
+  };
+
   return (
-    <div className={`editable-block-wrapper ${isHidden ? "hidden-block" : ""}`}>
+    <div
+      className={`editable-block-wrapper ${isHidden ? "hidden-block" : ""} ${
+        isDraggingThis ? "is-dragging" : ""
+      } ${isDragOverThis ? "is-drag-over" : ""}`}
+      draggable={allowMove}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragOverThis && <div className="block-drop-line-indicator" />}
+
       <div className="editable-block-outline">
         <div className="editable-block-bar top-bar">
-          <span className="editable-block-title">
-            <span className="editable-block-drag-icon">⋮⋮</span>
+          <span className="editable-block-title" title="Зажмите мышкой для перетаскивания">
+            <span className="editable-block-drag-icon">⠿</span>
             {title} {isHidden && <span className="block-hidden-tag">(Скрыто)</span>}
           </span>
 
@@ -67,8 +114,9 @@ export function EditableBlock({
             {allowMove && (
               <div className="move-btn-group">
                 <button
+                  type="button"
                   className="editable-tool-btn"
-                  title="Переместить вверх"
+                  title="Переместить выше"
                   onClick={(e) => {
                     e.stopPropagation();
                     moveBlock(id, "up");
@@ -77,11 +125,12 @@ export function EditableBlock({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="18 15 12 9 6 15" />
                   </svg>
-                  Move ↑
+                  ↑
                 </button>
                 <button
+                  type="button"
                   className="editable-tool-btn"
-                  title="Переместить вниз"
+                  title="Переместить ниже"
                   onClick={(e) => {
                     e.stopPropagation();
                     moveBlock(id, "down");
@@ -90,17 +139,18 @@ export function EditableBlock({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
-                  Move ↓
+                  ↓
                 </button>
               </div>
             )}
 
             <button
+              type="button"
               className={`editable-tool-btn ${isSettingsOpen ? "active" : ""}`}
-              title="Настройки блока"
+              title="Настройки секции"
               onClick={(e) => {
                 e.stopPropagation();
-                setActiveBlockSettings(isSettingsOpen ? null : id);
+                setIsSettingsOpen(!isSettingsOpen);
               }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -110,6 +160,7 @@ export function EditableBlock({
             </button>
 
             <button
+              type="button"
               className="editable-tool-btn"
               title={isHidden ? "Показать блок" : "Скрыть блок"}
               onClick={(e) => {
@@ -137,7 +188,7 @@ export function EditableBlock({
 
               {allowGridResize && (
                 <div className="popover-row">
-                  <div className="popover-label">Размер сетки ({gridCols}):</div>
+                  <div className="popover-label">Размер сетки карточек ({gridCols}):</div>
                   <input
                     type="range"
                     min="1"
@@ -160,6 +211,7 @@ export function EditableBlock({
 
               <div className="popover-actions">
                 <button
+                  type="button"
                   className="popover-action-btn"
                   onClick={() => toggleBlockVisibility(id)}
                 >

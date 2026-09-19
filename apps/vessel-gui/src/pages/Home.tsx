@@ -234,6 +234,23 @@ export function Home() {
           </EditableBlock>
         );
 
+      case "header":
+        return (
+          <EditableBlock
+            key="header"
+            id="header"
+            title="Приветствие и заголовок"
+            allowMove={true}
+          >
+            <div className="view-hd">
+              <div>
+                <div className="view-title">{t(lang, "home.title")}</div>
+                <div className="view-sub">{t(lang, "home.sub")}</div>
+              </div>
+            </div>
+          </EditableBlock>
+        );
+
       default:
         return null;
     }
@@ -241,16 +258,7 @@ export function Home() {
 
   return (
     <div className="view">
-      <EditableBlock id="header" title="Шапка главной" allowMove={false}>
-        <div className="view-hd">
-          <div>
-            <div className="view-title">{t(lang, "home.title")}</div>
-            <div className="view-sub">{t(lang, "home.sub")}</div>
-          </div>
-        </div>
-      </EditableBlock>
-
-      {(config.home?.blockOrder || ["wave", "recent", "playlists", "library"]).map((blockId) => renderSection(blockId))}
+      {(config.home?.blockOrder || ["header", "wave", "recent", "playlists", "library"]).map((blockId) => renderSection(blockId))}
 
       {library.length === 0 && recent.length === 0 && (
         <div className="empty">

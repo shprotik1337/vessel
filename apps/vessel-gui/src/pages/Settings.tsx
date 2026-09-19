@@ -8,8 +8,9 @@ import { ServersTab } from "./Servers";
 import type { ProviderStatus, UserProfile } from "../api/types";
 import * as api from "../api/commands";
 import { t } from "../i18n";
+import { CustomizationTab } from "../customization";
 
-type Tab = "services" | "servers" | "language" | "playback" | "storage" | "users" | "recommendations" | "vpn";
+type Tab = "customization" | "services" | "servers" | "language" | "playback" | "storage" | "users" | "recommendations" | "vpn";
 
 type ConfirmTarget = "settings" | "data" | null;
 type DirTarget = "download" | "cache" | null;
@@ -1183,6 +1184,12 @@ export function Settings() {
         <div className="sett-nav">
           <span className="nav-label">Settings</span>
           <button
+            className={`sett-item ${tab === "customization" ? "active" : ""}`}
+            onClick={() => setTab("customization")}
+          >
+            <span>{lang === "ru" ? "Кастомизация" : "Customization"}</span>
+          </button>
+          <button
             className={`sett-item ${tab === "services" ? "active" : ""}`}
             onClick={() => setTab("services")}
           >
@@ -1236,6 +1243,8 @@ export function Settings() {
         </div>
 
         <div className="sett-body">
+          {tab === "customization" && <CustomizationTab />}
+
           {tab === "services" && (
             <>
               <div className="sett-hd">

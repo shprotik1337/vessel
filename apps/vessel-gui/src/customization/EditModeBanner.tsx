@@ -1,11 +1,18 @@
 import { useCustomization } from "./CustomizationContext";
+import { useApp } from "../store";
 
 export function EditModeBanner() {
-  const { isEditMode, saveEditMode, cancelEditMode, openThemeModal, toggleSidebarPosition, config } = useCustomization();
+  const { isEditMode, saveEditMode, cancelEditMode, toggleSidebarPosition, config } = useCustomization();
+  const { navigateTo } = useApp();
 
   if (!isEditMode) return null;
 
-  const sidebarPos = config.sidebar?.position === "right" ? "right" : "left";
+  const sidebarPos =
+    config.sidebar?.position === "right"
+      ? "Справа"
+      : config.sidebar?.position === "top"
+      ? "Сверху"
+      : "Слева";
 
   return (
     <div className="edit-mode-floating-banner">
@@ -32,26 +39,30 @@ export function EditModeBanner() {
 
         <div className="edit-banner-divider" />
 
-        <button className="edit-banner-btn theme" onClick={openThemeModal} title="Настройки темы, обоев и акцента">
+        <button
+          className="edit-banner-btn theme"
+          onClick={() => {
+            saveEditMode();
+            navigateTo("settings");
+          }}
+          title="Открыть раздел кастомизации в настройках"
+        >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
-            <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
-            <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
-            <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
-            <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-          Тема и фон
+          Палитра и темы
         </button>
 
         <button
           className="edit-banner-btn side"
           onClick={toggleSidebarPosition}
-          title={`Сайдбар: ${sidebarPos === "left" ? "Слева (нажмите для переноса направо)" : "Справа (нажмите для переноса налево)"}`}
+          title="Сменить положение меню (Слева / Справа / Сверху)"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M7 16l-4-4m0 0l4-4m-4 4h18m-4 4l4-4m0 0l-4-4" />
           </svg>
-          Сайдбар: {sidebarPos === "left" ? "Слева" : "Справа"}
+          Сайдбар: {sidebarPos}
         </button>
       </div>
     </div>
