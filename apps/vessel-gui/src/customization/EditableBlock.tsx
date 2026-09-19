@@ -27,8 +27,8 @@ export function EditableBlock({
   } = useCustomization();
 
   const isSettingsOpen = activeBlockSettings === id;
-  const isHidden = config.home.hiddenBlocks.includes(id);
-  const gridCols = config.home.gridColumns[id] || 4;
+  const isHidden = (config.home?.hiddenBlocks || []).includes(id);
+  const gridCols = config.home?.gridColumns?.[id] || 4;
 
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -59,8 +59,8 @@ export function EditableBlock({
       <div className="editable-block-outline">
         <div className="editable-block-bar top-bar">
           <span className="editable-block-title">
-            <span className="editable-block-drag-icon">??</span>
-            {title} {isHidden && <span className="block-hidden-tag">(?????)</span>}
+            <span className="editable-block-drag-icon">⋮⋮</span>
+            {title} {isHidden && <span className="block-hidden-tag">(Скрыто)</span>}
           </span>
 
           <div className="editable-block-tools">
@@ -68,7 +68,7 @@ export function EditableBlock({
               <div className="move-btn-group">
                 <button
                   className="editable-tool-btn"
-                  title="??????????? ????"
+                  title="Переместить вверх"
                   onClick={(e) => {
                     e.stopPropagation();
                     moveBlock(id, "up");
@@ -77,11 +77,11 @@ export function EditableBlock({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="18 15 12 9 6 15" />
                   </svg>
-                  Move ?
+                  Move ↑
                 </button>
                 <button
                   className="editable-tool-btn"
-                  title="??????????? ????"
+                  title="Переместить вниз"
                   onClick={(e) => {
                     e.stopPropagation();
                     moveBlock(id, "down");
@@ -90,14 +90,14 @@ export function EditableBlock({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="6 9 12 15 18 9" />
                   </svg>
-                  Move ?
+                  Move ↓
                 </button>
               </div>
             )}
 
             <button
               className={`editable-tool-btn ${isSettingsOpen ? "active" : ""}`}
-              title="????????? ?????"
+              title="Настройки блока"
               onClick={(e) => {
                 e.stopPropagation();
                 setActiveBlockSettings(isSettingsOpen ? null : id);
@@ -111,7 +111,7 @@ export function EditableBlock({
 
             <button
               className="editable-tool-btn"
-              title={isHidden ? "???????? ????" : "?????? ????"}
+              title={isHidden ? "Показать блок" : "Скрыть блок"}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleBlockVisibility(id);
@@ -133,11 +133,11 @@ export function EditableBlock({
 
           {isSettingsOpen && (
             <div className="editable-block-popover" ref={popoverRef} onClick={(e) => e.stopPropagation()}>
-              <div className="popover-title">????????? ??????</div>
+              <div className="popover-title">Настройки секции</div>
 
               {allowGridResize && (
                 <div className="popover-row">
-                  <div className="popover-label">?????? ????? ({gridCols}):</div>
+                  <div className="popover-label">Размер сетки ({gridCols}):</div>
                   <input
                     type="range"
                     min="1"
@@ -163,7 +163,7 @@ export function EditableBlock({
                   className="popover-action-btn"
                   onClick={() => toggleBlockVisibility(id)}
                 >
-                  {isHidden ? "???????? ???? ????" : "?????? ???? ????"}
+                  {isHidden ? "Показать этот блок" : "Скрыть этот блок"}
                 </button>
               </div>
             </div>

@@ -226,10 +226,12 @@ export function Sidebar() {
     );
   };
 
+  const isSidebarRight = config.sidebar?.position === "right";
+
   return (
     <aside
       className={`sidebar ${collapsed ? "collapsed" : ""} ${
-        config.sidebar.position === "right" ? "dock-right" : "dock-left"
+        isSidebarRight ? "dock-right" : "dock-left"
       }`}
       style={{ position: "relative" }}
     >
@@ -238,12 +240,12 @@ export function Sidebar() {
           className="sidebar-flip-handle"
           onClick={toggleSidebarPosition}
           title={
-            config.sidebar.position === "left"
+            !isSidebarRight
               ? "Перенести сайдбар направо"
               : "Перенести сайдбар налево"
           }
           style={
-            config.sidebar.position === "left"
+            !isSidebarRight
               ? { right: "-12px" }
               : { left: "-12px" }
           }

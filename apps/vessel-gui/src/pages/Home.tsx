@@ -52,17 +52,17 @@ export function Home() {
     }
   };
 
-  const recentCols = config.home.gridColumns["recent"] || 4;
+  const recentCols = config.home?.gridColumns?.["recent"] || 4;
   const recentCardWidth = Math.max(130, Math.min(260, Math.round(760 / recentCols)));
 
-  const plCols = config.home.gridColumns["playlists"] || 3;
+  const plCols = config.home?.gridColumns?.["playlists"] || 3;
   const plCardWidth = Math.max(140, Math.min(280, Math.round(760 / plCols)));
 
   const renderSection = (blockId: string) => {
     switch (blockId) {
       case "wave":
         return (
-          <EditableBlock key="wave" id="wave" title="??? ?????" allowMove={true}>
+          <EditableBlock key="wave" id="wave" title="Моя волна" allowMove={true}>
             <WaveSection />
           </EditableBlock>
         );
@@ -93,7 +93,7 @@ export function Home() {
                     onClick={() => playRecent(track)}
                   >
                     {isEditMode && (
-                      <div className="card-edit-badge" title="????????? ????????">
+                      <div className="card-edit-badge" title="Настройка элемента">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <path d="M12 20h9" />
                           <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
@@ -165,7 +165,7 @@ export function Home() {
                     onClick={() => !isEditMode && navigateTo("playlist", { playlistId: p.id })}
                   >
                     {isEditMode && (
-                      <div className="card-edit-badge" title="????????? ????????">
+                      <div className="card-edit-badge" title="Настройка элемента">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <path d="M12 20h9" />
                           <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
@@ -187,7 +187,7 @@ export function Home() {
                           void playPlaylist(p.id);
                         }}
                       >
-                        {isPlayingPlaylist(p.tracks) ? "??" : "?"}
+                        {isPlayingPlaylist(p.tracks) ? "❚❚" : "▶"}
                       </button>
                     </div>
                     <div className="card-t">{p.title}</div>
@@ -241,7 +241,7 @@ export function Home() {
 
   return (
     <div className="view">
-      <EditableBlock id="header" title="????? ????????" allowMove={false}>
+      <EditableBlock id="header" title="Шапка главной" allowMove={false}>
         <div className="view-hd">
           <div>
             <div className="view-title">{t(lang, "home.title")}</div>
@@ -250,11 +250,11 @@ export function Home() {
         </div>
       </EditableBlock>
 
-      {config.home.blockOrder.map((blockId) => renderSection(blockId))}
+      {(config.home?.blockOrder || ["wave", "recent", "playlists", "library"]).map((blockId) => renderSection(blockId))}
 
       {library.length === 0 && recent.length === 0 && (
         <div className="empty">
-          <div className="ico">?</div>
+          <div className="ico">♫</div>
           <div className="t1">{t(lang, "home.empty1")}</div>
           <div className="t2">{t(lang, "home.empty2")}</div>
         </div>

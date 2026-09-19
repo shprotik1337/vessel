@@ -95,17 +95,20 @@ function AppContent() {
     }
   };
 
+  const hasWallpaper = Boolean(config.theme?.wallpaperData);
+  const isSidebarRight = config.sidebar?.position === "right";
+
   return (
     <div
-      className={`app-shell ${config.theme.wallpaperData ? "has-wallpaper" : ""} ${
+      className={`app-shell ${hasWallpaper ? "has-wallpaper" : ""} ${
         isEditMode ? "edit-mode-active" : ""
       }`}
     >
-      {config.theme.wallpaperData && (
+      {hasWallpaper && (
         <div
           className="vessel-wallpaper-layer"
           style={{
-            backgroundImage: `url(${config.theme.wallpaperData})`,
+            backgroundImage: `url(${config.theme?.wallpaperData})`,
             filter: `blur(var(--wp-blur, 14px))`,
             opacity: `calc(1 - var(--wp-dim, 0.45))`,
           }}
@@ -116,7 +119,7 @@ function AppContent() {
       <div
         className="app"
         style={{
-          flexDirection: config.sidebar.position === "right" ? "row-reverse" : "row",
+          flexDirection: isSidebarRight ? "row-reverse" : "row",
         }}
       >
         <Sidebar />

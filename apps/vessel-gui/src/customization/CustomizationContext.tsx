@@ -80,37 +80,89 @@ interface CustomizationContextType {
 
 const CustomizationContext = createContext<CustomizationContextType | null>(null);
 
+export function sanitizeConfig(raw: any): CustomizationConfig {
+  if (!raw || typeof raw !== "object") {
+    return JSON.parse(JSON.stringify(DEFAULT_CUSTOMIZATION));
+  }
+
+  const sidebarPos = raw.sidebar?.position === "right" ? "right" : "left";
+  const sidebarCollapsed = Boolean(raw.sidebar?.collapsed);
+
+  const defaultOrder = ["wave", "recent", "playlists", "library"];
+  let blockOrder: string[] = [];
+  if (Array.isArray(raw.home?.blockOrder) && raw.home.blockOrder.length > 0) {
+    blockOrder = raw.home.blockOrder.filter((b: any) => typeof b === "string");
+  }
+  if (blockOrder.length === 0) {
+    blockOrder = [...defaultOrder];
+  }
+  for (const b of defaultOrder) {
+    if (!blockOrder.includes(b)) {
+      blockOrder.push(b);
+    }
+  }
+
+  const hiddenBlocks = Array.isArray(raw.home?.hiddenBlocks)
+    ? raw.home.hiddenBlocks.filter((b: any) => typeof b === "string")
+    : [];
+
+  const gridColumns = {
+    recent: 4,
+    playlists: 3,
+    library: 4,
+    ...(typeof raw.home?.gridColumns === "object" && raw.home?.gridColumns !== null ? raw.home.gridColumns : {}),
+  };
+
+  const player = {
+    largeIcons: Boolean(raw.player?.largeIcons),
+    verticalVolume: Boolean(raw.player?.verticalVolume),
+    hideDetails: Boolean(raw.player?.hideDetails),
+    miniQueue: Boolean(raw.player?.miniQueue),
+  };
+
+  const theme = {
+    accentColor: typeof raw.theme?.accentColor === "string" ? raw.theme.accentColor : "#3b82f6",
+    wallpaperData: typeof raw.theme?.wallpaperData === "string" ? raw.theme.wallpaperData : null,
+    wallpaperBlur: typeof raw.theme?.wallpaperBlur === "number" ? raw.theme.wallpaperBlur : 14,
+    wallpaperDim: typeof raw.theme?.wallpaperDim === "number" ? raw.theme.wallpaperDim : 45,
+    glassMode: raw.theme?.glassMode !== undefined ? Boolean(raw.theme.glassMode) : true,
+    glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.72,
+  };
+
+  return {
+    sidebar: {
+      position: sidebarPos,
+      collapsed: sidebarCollapsed,
+    },
+    home: {
+      blockOrder,
+      hiddenBlocks,
+      gridColumns,
+    },
+    player,
+    theme,
+  };
+}
+
 export function CustomizationProvider({ children }: { children: ReactNode }) {
   const [savedConfig, setSavedConfig] = useState<CustomizationConfig>(() => {
     try {
       const item = localStorage.getItem(STORAGE_KEY);
       if (item) {
-        const parsed = JSON.parse(item);
-        return {
-          ...DEFAULT_CUSTOMIZATION,
-          ...parsed,
-          sidebar: { ...DEFAULT_CUSTOMIZATION.sidebar, ...(parsed.sidebar || {}) },
-          home: {
-            ...DEFAULT_CUSTOMIZATION.home,
-            ...(parsed.home || {}),
-            gridColumns: { ...DEFAULT_CUSTOMIZATION.home.gridColumns, ...(parsed.home?.gridColumns || {}) },
-          },
-          player: { ...DEFAULT_CUSTOMIZATION.player, ...(parsed.player || {}) },
-          theme: { ...DEFAULT_CUSTOMIZATION.theme, ...(parsed.theme || {}) },
-        };
+        return sanitizeConfig(JSON.parse(item));
       }
     } catch (e) {
       console.error("Failed to read customization config from localStorage", e);
     }
-    return DEFAULT_CUSTOMIZATION;
+    return JSON.parse(JSON.stringify(DEFAULT_CUSTOMIZATION));
   });
 
-  const [draftConfig, setDraftConfig] = useState<CustomizationConfig>(savedConfig);
+  const [draftConfig, setDraftConfig] = useState<CustomizationConfig>(() => sanitizeConfig(savedConfig));
   const [isEditMode, setIsEditMode] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [activeBlockSettings, setActiveBlockSettings] = useState<string | null>(null);
 
-  const activeConfig = isEditMode ? draftConfig : savedConfig;
+  const activeConfig = sanitizeConfig(isEditMode ? draftConfig : savedConfig);
 
   // Apply CSS custom variables whenever activeConfig changes
   useEffect(() => {
