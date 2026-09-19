@@ -9,6 +9,8 @@ import * as api from "../api/commands";
 
 export function Queue() {
   const { state, playTracks, showToast, refresh, lang } = useApp();
+  const drag = useRef<{ from: number; startY: number; moved: boolean } | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   if (!state) return null;
 
@@ -49,9 +51,6 @@ export function Queue() {
       showToast(String(error), true);
     }
   };
-
-  const drag = useRef<{ from: number; startY: number; moved: boolean } | null>(null);
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const onMouseDown = (e: React.MouseEvent, i: number) => {
     if (e.button !== 0) return;

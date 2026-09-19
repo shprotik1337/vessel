@@ -56,14 +56,17 @@ export function BottomPlayer() {
   const { state, showToast, refresh, navigateTo, lang, fullscreenOpen, setFullscreenOpen } = useApp();
   const { isEditMode, config, updateDraft } = useCustomization();
   const [constructorOpen, setConstructorOpen] = useState(false);
+  const seekBarRef = useRef<HTMLDivElement>(null);
+  const volBarRef = useRef<HTMLDivElement>(null);
+  const [dragPercent, setDragPercent] = useState<number | null>(null);
+  // Мут: запоминаем последнюю громкость, чтобы вернуть её при размуте
+  const lastVolumeRef = useRef<number | null>(null);
+
   if (!state) return null;
 
   const track = state.now_playing;
   const player = state.player;
   const fav = track ? isFavorite(state.library, track) : false;
-  const seekBarRef = useRef<HTMLDivElement>(null);
-  const volBarRef = useRef<HTMLDivElement>(null);
-  const [dragPercent, setDragPercent] = useState<number | null>(null);
 
   const percent =
     player.duration_ms > 0
@@ -194,8 +197,6 @@ export function BottomPlayer() {
     }
   };
 
-  // Мут: запоминаем последнюю громкость, чтобы вернуть её при размуте
-  const lastVolumeRef = useRef<number | null>(null);
   const muted = player.volume_percent === 0;
 
   const handleMute = async () => {
