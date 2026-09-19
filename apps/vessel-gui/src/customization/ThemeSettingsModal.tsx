@@ -3,13 +3,13 @@ import { useCustomization } from "./CustomizationContext";
 import * as api from "../api/commands";
 
 const ACCENT_PRESETS = [
-  { name: "?????", color: "#3b82f6" },
-  { name: "??????????", color: "#a855f7" },
-  { name: "??????????", color: "#10b981" },
-  { name: "???????", color: "#f43f5e" },
-  { name: "????????", color: "#f59e0b" },
-  { name: "????", color: "#06b6d4" },
-  { name: "???????", color: "#ef4444" },
+  { name: "Синий", color: "#3b82f6" },
+  { name: "Фиолетовый", color: "#a855f7" },
+  { name: "Изумрудный", color: "#10b981" },
+  { name: "Розовый", color: "#f43f5e" },
+  { name: "Янтарный", color: "#f59e0b" },
+  { name: "Циан", color: "#06b6d4" },
+  { name: "Красный", color: "#ef4444" },
 ];
 
 export function ThemeSettingsModal() {
@@ -25,7 +25,14 @@ export function ThemeSettingsModal() {
 
   if (!isThemeModalOpen) return null;
 
-  const { theme } = config;
+  const theme = config.theme || {
+    accentColor: "#3b82f6",
+    wallpaperData: null,
+    wallpaperBlur: 14,
+    wallpaperDim: 45,
+    glassMode: true,
+    glassOpacity: 0.72,
+  };
 
   const handlePickWallpaper = async () => {
     try {
@@ -68,16 +75,16 @@ export function ThemeSettingsModal() {
               <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
               <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
             </svg>
-            ???? ? ????????? ???
+            Тема и оформление
           </div>
-          <button className="modal-close-btn" onClick={closeThemeModal}>?</button>
+          <button className="modal-close-btn" onClick={closeThemeModal}>✕</button>
         </div>
 
         <div className="modal-body">
           {errorMsg && <div className="theme-error-banner">{errorMsg}</div>}
 
           <div className="theme-section">
-            <div className="theme-section-title">??????? ??????????? (????)</div>
+            <div className="theme-section-title">Фоновое изображение (Обои)</div>
             <div className="wallpaper-preview-box">
               {theme.wallpaperData ? (
                 <div className="wallpaper-preview" style={{ backgroundImage: `url(${theme.wallpaperData})` }}>
@@ -85,17 +92,17 @@ export function ThemeSettingsModal() {
                 </div>
               ) : (
                 <div className="wallpaper-preview placeholder">
-                  <span>??? ?? ?????? (???????????? ?????? ????)</span>
+                  <span>Фон не выбран (используется стандартная темная тема)</span>
                 </div>
               )}
 
               <div className="wallpaper-actions">
                 <button className="theme-action-btn primary" onClick={handlePickWallpaper} disabled={loadingFile}>
-                  {loadingFile ? "????????..." : "?? ??????? ???????? ? ??"}
+                  {loadingFile ? "Загрузка..." : "📁 Выбрать картинку с ПК"}
                 </button>
                 {theme.wallpaperData && (
                   <button className="theme-action-btn danger" onClick={handleRemoveWallpaper}>
-                    ??????? ???
+                    Удалить фон
                   </button>
                 )}
               </div>
@@ -105,7 +112,7 @@ export function ThemeSettingsModal() {
               <div className="theme-controls-group">
                 <div className="theme-control-row">
                   <div className="control-label-row">
-                    <span>???????? ???? (Blur):</span>
+                    <span>Размытие фона (Blur):</span>
                     <span className="control-val">{theme.wallpaperBlur}px</span>
                   </div>
                   <input
@@ -121,7 +128,7 @@ export function ThemeSettingsModal() {
 
                 <div className="theme-control-row">
                   <div className="control-label-row">
-                    <span>?????????? (Dimming):</span>
+                    <span>Затемнение (Dimming):</span>
                     <span className="control-val">{theme.wallpaperDim}%</span>
                   </div>
                   <input
@@ -142,14 +149,14 @@ export function ThemeSettingsModal() {
                       checked={theme.glassMode}
                       onChange={(e) => updateThemeDirectly((prev) => ({ ...prev, glassMode: e.target.checked }))}
                     />
-                    <span>?????? ???????? ?????? (Glassmorphism ??? ??????? ? ????????)</span>
+                    <span>Эффект матового стекла (Glassmorphism для панелей)</span>
                   </label>
                 </div>
 
                 {theme.glassMode && (
                   <div className="theme-control-row">
                     <div className="control-label-row">
-                      <span>???????????? ??????:</span>
+                      <span>Прозрачность панелей:</span>
                       <span className="control-val">{Math.round((1 - theme.glassOpacity) * 100)}%</span>
                     </div>
                     <input
@@ -168,7 +175,7 @@ export function ThemeSettingsModal() {
           </div>
 
           <div className="theme-section">
-            <div className="theme-section-title">????????? ????</div>
+            <div className="theme-section-title">Акцентный цвет</div>
             <div className="color-presets-row">
               {ACCENT_PRESETS.map((preset) => (
                 <button
@@ -178,11 +185,11 @@ export function ThemeSettingsModal() {
                   title={preset.name}
                   onClick={() => updateThemeDirectly((prev) => ({ ...prev, accentColor: preset.color }))}
                 >
-                  {theme.accentColor === preset.color && <span>?</span>}
+                  {theme.accentColor === preset.color && <span>✓</span>}
                 </button>
               ))}
 
-              <div className="custom-color-picker-wrap" title="???????????????? ????">
+              <div className="custom-color-picker-wrap" title="Пользовательский цвет">
                 <input
                   type="color"
                   value={theme.accentColor}
@@ -196,7 +203,7 @@ export function ThemeSettingsModal() {
 
         <div className="modal-footer">
           <button className="theme-action-btn primary" onClick={closeThemeModal}>
-            ???????
+            Закрыть
           </button>
         </div>
       </div>

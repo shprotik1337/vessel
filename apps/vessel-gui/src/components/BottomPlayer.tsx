@@ -222,8 +222,8 @@ export function BottomPlayer() {
   return (
     <footer
       className={`player ${failed ? "playback-error" : ""} ${
-        config.player.largeIcons ? "large-icons" : ""
-      } ${config.player.hideDetails ? "hide-details" : ""}`}
+        config.player?.largeIcons ? "large-icons" : ""
+      } ${config.player?.hideDetails ? "hide-details" : ""}`}
     >
       {isEditMode && (
         <div
@@ -240,23 +240,23 @@ export function BottomPlayer() {
       {isEditMode && constructorOpen && (
         <div className="player-constructor-popover" onClick={(e) => e.stopPropagation()}>
           <button
-            className={`constructor-toggle-btn ${config.player.hideDetails ? "active" : ""}`}
+            className={`constructor-toggle-btn ${config.player?.hideDetails ? "active" : ""}`}
             onClick={() =>
               updateDraft((prev) => ({
                 ...prev,
-                player: { ...prev.player, hideDetails: !prev.player.hideDetails },
+                player: { ...prev.player, hideDetails: !prev.player?.hideDetails },
               }))
             }
           >
-            {config.player.hideDetails ? "Показать инфо" : "Hide details"}
+            {config.player?.hideDetails ? "Показать инфо" : "Hide details"}
           </button>
 
           <button
-            className={`constructor-toggle-btn ${config.player.largeIcons ? "active" : ""}`}
+            className={`constructor-toggle-btn ${config.player?.largeIcons ? "active" : ""}`}
             onClick={() =>
               updateDraft((prev) => ({
                 ...prev,
-                player: { ...prev.player, largeIcons: !prev.player.largeIcons },
+                player: { ...prev.player, largeIcons: !prev.player?.largeIcons },
               }))
             }
           >
