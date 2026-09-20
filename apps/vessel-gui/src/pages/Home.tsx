@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApp } from "../store";
-import { useCustomization, EditableBlock, useBlockWidth, ALL_HOME_BLOCKS } from "../customization";
+import { useCustomization, EditableBlock, useBlockWidth, globalDraggingPanelId } from "../customization";
 import { TrackRow } from "../components/TrackRow";
 import { WaveSection } from "../components/WaveSection";
 import { trackKey, dedupe, filterValidArtists } from "../lib/utils";
@@ -306,8 +306,9 @@ function LibraryBlockContent({
 
 export function Home() {
   const { state, playTracks, navigateTo, showToast, lang } = useApp();
-  const { config, isEditMode, addBlock } = useCustomization();
-  const [isAddDropdownOpen, setIsAddDropdownOpen] = useState(false);
+  const { config, isEditMode, addSection, removeSection, movePanel, toggleSectionLayoutMode, resetSectionOffsets, setBlockAlign } = useCustomization();
+  const [dragOverSection, setDragOverSection] = useState<number | null>(null);
+  const [dropSlotIndicator, setDropSlotIndicator] = useState<{ sectionIndex: number; slotIndex: number } | null>(null);
 
   if (!state) return null;
 
@@ -355,14 +356,20 @@ export function Home() {
   const plCols = config.home?.gridColumns?.["playlists"] || 3;
   const plCardWidth = Math.max(140, Math.min(280, Math.round(760 / plCols)));
 
-  const activeBlockIds = config.home?.blockOrder || ["header", "wave", "recent", "playlists", "library"];
-  const deletedBlocks = ALL_HOME_BLOCKS.filter((b) => !activeBlockIds.includes(b.id));
+  const rows = config.home?.rows && config.home.rows.length > 0
+    ? config.home.rows
+    : [["header"], ["wave"], ["playlists", "recent"], ["library"], []];
+
+  const activeBlockIds = config.home?.blockOrder || ["header", "wave", "playlists", "recent", "library"];
+  const inRows = new Set(rows.flat());
+  const missing = activeBlockIds.filter((id) => !inRows.has(id));
+  const effectiveRows = missing.length > 0 ? [...rows, missing] : rows;
 
   const renderSection = (blockId: string) => {
     switch (blockId) {
       case "wave":
         return (
-          <EditableBlock key="wave" id="wave" title="Моя волна" allowMove={true}>
+          <EditableBlock key="wave" id="wave" title={t(lang, "wave.title")} allowGridResize={true} allowMove={true}>
             <WaveSection />
           </EditableBlock>
         );
@@ -419,7 +426,7 @@ export function Home() {
             key="library"
             id="library"
             title={t(lang, "home.fromLibrary")}
-            allowGridResize={false}
+            allowGridResize={true}
             allowMove={true}
           >
             <LibraryBlockContent
@@ -439,6 +446,7 @@ export function Home() {
             key="header"
             id="header"
             title="Приветствие и заголовок"
+            allowGridResize={true}
             allowMove={true}
           >
             <div className="view-hd">
@@ -456,50 +464,281 @@ export function Home() {
   };
 
   return (
-    <div className="view">
-      <div className="home-modular-grid">
-        {activeBlockIds.map((blockId) => renderSection(blockId))}
-      </div>
+    <div className="view home-view-container">
+      <div className={`home-rows-container ${isEditMode ? "edit-mode-active" : ""}`}>
+        {effectiveRows.map((rowBlockIds, rowIndex) => {
+          const visibleBlocks = rowBlockIds.filter(
+            (blockId) => isEditMode || !config.home?.hiddenBlocks?.includes(blockId)
+          );
 
-      {isEditMode && (
-        <div className="home-add-block-container">
-          <button
-            type="button"
-            className="btn-add-home-block"
-            onClick={() => setIsAddDropdownOpen((prev) => !prev)}
-          >
-            <span style={{ fontSize: 16 }}>+</span>
-            <span>Добавить блок</span>
-          </button>
-          {isAddDropdownOpen && (
-            <div className="add-block-dropdown">
-              {deletedBlocks.length === 0 ? (
-                <div style={{ padding: "8px 12px", color: "var(--text3)", fontSize: 12 }}>
-                  Все блоки уже добавлены на страницу
+          if (!isEditMode && visibleBlocks.length === 0) return null;
+
+          if (!isEditMode) {
+            return (
+              <div className="home-row-line" key={`row-${rowIndex}`} data-row-index={rowIndex}>
+                {visibleBlocks.map((blockId) => renderSection(blockId))}
+              </div>
+            );
+          }
+
+          const isSectionDragOver = dragOverSection === rowIndex;
+          const isFreeLayout = config.home?.freeLayoutSections?.includes(rowIndex) ?? false;
+
+          return (
+            <div
+              className={`home-section-line edit-mode ${isSectionDragOver ? "section-drag-over" : ""} ${
+                visibleBlocks.length === 0 ? "is-empty" : ""
+              } ${isFreeLayout ? "free-layout-mode" : ""}`}
+              key={`row-${rowIndex}`}
+              data-row-index={rowIndex}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverSection !== rowIndex) {
+                  setDragOverSection(rowIndex);
+                }
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  if (dragOverSection === rowIndex) {
+                    setDragOverSection(null);
+                  }
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverSection(null);
+                setDropSlotIndicator(null);
+                const blockId = globalDraggingPanelId || e.dataTransfer.getData("text/plain");
+                if (blockId) {
+                  movePanel(blockId, rowIndex);
+                }
+              }}
+            >
+              {/* Section Header */}
+              <div className="section-line-header" onClick={(e) => e.stopPropagation()}>
+                <div className="section-line-title">
+                  <span className="section-line-badge">Секция {rowIndex + 1}</span>
+                  <span className="section-line-count">
+                    {visibleBlocks.length === 0
+                      ? "Пустая секция"
+                      : `${visibleBlocks.length} ${
+                          visibleBlocks.length === 1 ? "панель" : "панели"
+                        }`}
+                  </span>
                 </div>
-              ) : (
-                deletedBlocks.map((b) => (
+                <div className="section-line-actions">
+                  {isFreeLayout && (
+                    <button
+                      type="button"
+                      className="section-auto-align-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        resetSectionOffsets(rowIndex);
+                      }}
+                      title="Автопоправление: выровнять панели по сетке и сбросить все отступы"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="3" y1="6" x2="21" y2="6" />
+                        <line x1="3" y1="12" x2="21" y2="12" />
+                        <line x1="3" y1="18" x2="21" y2="18" />
+                      </svg>
+                      <span>Автопоправление</span>
+                    </button>
+                  )}
                   <button
-                    key={b.id}
                     type="button"
-                    className="add-block-item"
-                    onClick={() => {
-                      addBlock(b.id);
-                      setIsAddDropdownOpen(false);
+                    className={`section-layout-btn ${isFreeLayout ? "free-mode" : "grid-mode"}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSectionLayoutMode(rowIndex);
+                    }}
+                    title={isFreeLayout ? "Включить выравнивание по сетке" : "Отключить сетку (Свободное перемещение)"}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      {isFreeLayout ? (
+                        <>
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+                          <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" />
+                        </>
+                      ) : (
+                        <>
+                          <rect x="3" y="3" width="7" height="7" />
+                          <rect x="14" y="3" width="7" height="7" />
+                          <rect x="14" y="14" width="7" height="7" />
+                          <rect x="3" y="14" width="7" height="7" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="section-delete-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeSection(rowIndex);
+                    }}
+                    title="Удалить эту секцию"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Section Content: Blocks Grid or Empty Drop Area */}
+              <div
+                className="section-line-body"
+                onDragOver={isFreeLayout ? (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverSection !== rowIndex) {
+                    setDragOverSection(rowIndex);
+                  }
+                } : undefined}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverSection(null);
+                  setDropSlotIndicator(null);
+                  const draggedId = globalDraggingPanelId || e.dataTransfer.getData("text/plain");
+                  if (draggedId) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const ratio = (e.clientX - rect.left) / rect.width;
+                    const align = ratio > 0.65 ? "right" : ratio > 0.35 ? "center" : "left";
+                    movePanel(draggedId, rowIndex);
+                    if (!isFreeLayout) {
+                      setBlockAlign(draggedId, align);
+                    }
+                  }
+                }}
+              >
+                {visibleBlocks.length === 0 ? (
+                  <div
+                    className="section-empty-drop-area"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = "move";
+                      if (dragOverSection !== rowIndex) {
+                        setDragOverSection(rowIndex);
+                      }
+                    }}
+                    onDragLeave={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragOverSection(null);
+                      setDropSlotIndicator(null);
+                      const blockId = globalDraggingPanelId || e.dataTransfer.getData("text/plain");
+                      if (blockId) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const ratio = (e.clientX - rect.left) / rect.width;
+                        const align = ratio > 0.65 ? "right" : ratio > 0.35 ? "center" : "left";
+                        movePanel(blockId, rowIndex);
+                        if (!isFreeLayout) {
+                          setBlockAlign(blockId, align);
+                        }
+                      }
                     }}
                   >
-                    <span>{b.title}</span>
-                    <span style={{ color: "var(--accent)", fontSize: 16 }}>+</span>
-                  </button>
-                ))
-              )}
+                    <span className="empty-drop-icon">⇣</span>
+                    <span className="empty-drop-text">Перетащите сюда панель мышкой</span>
+                  </div>
+                ) : (
+                  visibleBlocks.map((blockId, slotIndex) => {
+                    const isDropBefore =
+                      dropSlotIndicator?.sectionIndex === rowIndex &&
+                      dropSlotIndicator?.slotIndex === slotIndex;
+                    const isDropAfter =
+                      dropSlotIndicator?.sectionIndex === rowIndex &&
+                      dropSlotIndicator?.slotIndex === slotIndex + 1;
+
+                    return (
+                      <div
+                        key={blockId}
+                        className={`section-slot-wrapper ${
+                          isDropBefore && !isFreeLayout ? "drop-before" : isDropAfter && !isFreeLayout ? "drop-after" : ""
+                        }`}
+                        data-width={config.home?.blockWidths?.[blockId] || "full"}
+                        data-align={config.home?.blockAligns?.[blockId] || "left"}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = "move";
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const isRightSide = e.clientX > rect.left + rect.width / 2;
+                          const targetSlot = isRightSide ? slotIndex + 1 : slotIndex;
+                          
+                          if (!isFreeLayout) {
+                            setDropSlotIndicator({ sectionIndex: rowIndex, slotIndex: targetSlot });
+                          }
+                          if (dragOverSection !== rowIndex) {
+                            setDragOverSection(rowIndex);
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setDropSlotIndicator(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDragOverSection(null);
+                          setDropSlotIndicator(null);
+                          const draggedId = globalDraggingPanelId || e.dataTransfer.getData("text/plain");
+                          if (draggedId) {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const isRightSide = e.clientX > rect.left + rect.width / 2;
+                            const targetSlot = isRightSide ? slotIndex + 1 : slotIndex;
+
+                            // If dropping on itself or only 1 block in the section, toggle left/right alignment!
+                            if (visibleBlocks.length === 1 && draggedId === blockId) {
+                              setBlockAlign(draggedId, isRightSide ? "right" : "left");
+                            } else {
+                              movePanel(draggedId, rowIndex, targetSlot);
+                            }
+                          }
+                        }}
+                      >
+                        {renderSection(blockId)}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          );
+        })}
+
+        {/* Add Section Button in Edit Mode */}
+        {isEditMode && (
+          <div className="home-add-section-wrap">
+            <button
+              type="button"
+              className="home-add-section-btn"
+              onClick={addSection}
+              title="Создать новую пустую секцию на Главной"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              <span>Добавить секцию</span>
+            </button>
+          </div>
+        )}
+      </div>
 
       {library.length === 0 && recent.length === 0 && (
-        <div className="empty">
+        <div className="empty" style={{ marginTop: 40 }}>
           <div className="ico">♫</div>
           <div className="t1">{t(lang, "home.empty1")}</div>
           <div className="t2">{t(lang, "home.empty2")}</div>

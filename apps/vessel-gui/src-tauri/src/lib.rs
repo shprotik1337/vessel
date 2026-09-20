@@ -567,12 +567,14 @@ pub fn run() -> anyhow::Result<()> {
             commands::load_image_as_data_url,
         ])
         .on_window_event(|window, event| {
+            vessel_core::dlog!("[window_event] {:?} on {:?}", event, window.label());
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
             }
         })
         .setup(|app| {
+            vessel_core::dlog!("[setup] start");
             let app_handle = app.handle().clone();
             let core_state = app.state::<Arc<Mutex<GuiCore>>>().inner();
             let core = Arc::clone(core_state);
@@ -634,6 +636,14 @@ pub fn run() -> anyhow::Result<()> {
             }
 
             let _tray = tray_builder.build(app)?;
+
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+
+            vessel_core::dlog!("[setup] done");
 
             Ok(())
         })

@@ -397,13 +397,15 @@ export function BottomPlayer() {
       )}
 
       {isEditMode && (
-        <div
-          className="player-drag-grip"
-          onPointerDown={onDragPlayerPointerDown}
-          title="Зажмите мышкой и перетащите плеер к любому краю экрана"
-        >
-          <span className="grip-icon">⠿</span>
-          <span className="grip-label">Перетащить плеер</span>
+        <div className={`player-grip-bar ${isVertical ? "vertical-grip" : ""}`}>
+          <div
+            className="player-drag-grip"
+            onPointerDown={onDragPlayerPointerDown}
+            title="Зажмите мышкой и перетащите плеер к любому краю экрана"
+          >
+            <span className="grip-icon">⠿</span>
+            <span className="grip-label">Перетащить</span>
+          </div>
         </div>
       )}
 
@@ -450,20 +452,22 @@ export function BottomPlayer() {
             })()}
           </div>
         </div>
-        <button
-          className={`heart ${fav ? "active" : ""}`}
-          onClick={handleFav}
-          title={t(lang, "bottom.favorite")}
-          aria-label="Like"
-          disabled={!track}
-        >
-          {HEART_SVG}
-        </button>
-        {track && (
-          <span className="pl-src-badge" title={track.provider}>
-            {providerLabel(track.provider)}
-          </span>
-        )}
+        <div className="pl-actions-row">
+          <button
+            className={`heart ${fav ? "active" : ""}`}
+            onClick={handleFav}
+            title={t(lang, "bottom.favorite")}
+            aria-label="Like"
+            disabled={!track}
+          >
+            {HEART_SVG}
+          </button>
+          {track && (
+            <span className="pl-src-badge" title={track.provider}>
+              {providerLabel(track.provider)}
+            </span>
+          )}
+        </div>
       </div>
       <div className="pl-center">
         <div className="pl-controls">

@@ -16,7 +16,27 @@ export interface ThemeColors {
 
 export type BorderRadiusPreset = "sharp" | "small" | "medium" | "round";
 export type BlockWidth = "third" | "half" | "two-thirds" | "full";
+export type BlockAlign = "left" | "center" | "right";
 export type ComponentStyle = "dock" | "floating";
+
+export let globalDraggingPanelId: string | null = null;
+export function setGlobalDraggingPanelId(id: string | null) {
+  globalDraggingPanelId = id;
+}
+
+export let globalDragStartX: number | null = null;
+export function setGlobalDragStartX(x: number | null) {
+  globalDragStartX = x;
+}
+
+export interface BlockCanvasPos {
+  x: number; // in pixels, snapped to 24px
+  y: number; // in pixels, snapped to 24px
+  w: number | string; // in pixels or percentage
+  h?: number | string; // optional height in pixels
+  widthPreset?: BlockWidth;
+  offsetX?: number;
+}
 
 export interface CustomizationConfig {
   borderRadius: BorderRadiusPreset;
@@ -26,6 +46,7 @@ export interface CustomizationConfig {
     width: number; // default 232, min 160, max 360
     height?: number; // for top/bottom, default 64, min 50, max 130
     collapsed: boolean;
+    topVariant?: "compact" | "full";
   };
   player: {
     position: "bottom" | "top" | "left" | "right";
@@ -39,7 +60,11 @@ export interface CustomizationConfig {
     blockOrder: string[];
     hiddenBlocks: string[];
     blockWidths: Record<string, BlockWidth>;
+    blockAligns?: Record<string, BlockAlign>;
+    rows?: string[][];
     gridColumns: Record<string, number>;
+    canvasPositions?: Record<string, BlockCanvasPos>;
+    freeLayoutSections?: number[];
   };
   theme: ThemeColors;
 }
@@ -147,6 +172,7 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
     width: 232,
     height: 64,
     collapsed: false,
+    topVariant: "full",
   },
   player: {
     position: "bottom",
@@ -157,20 +183,42 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
     hideDetails: false,
   },
   home: {
-    blockOrder: ["header", "wave", "recent", "playlists", "library"],
+    blockOrder: ["header", "wave", "playlists", "recent", "library"],
     hiddenBlocks: [],
+    rows: [
+      ["header"],
+      ["wave"],
+      ["playlists", "recent"],
+      ["library"],
+      [],
+    ],
     blockWidths: {
       header: "full",
       wave: "full",
-      recent: "full",
-      playlists: "full",
+      playlists: "half",
+      recent: "half",
       library: "full",
+    },
+    blockAligns: {
+      header: "left",
+      wave: "left",
+      playlists: "left",
+      recent: "left",
+      library: "left",
     },
     gridColumns: {
       recent: 4,
       playlists: 3,
       library: 4,
     },
+    canvasPositions: {
+      header: { x: 0, y: 0, w: "100%", widthPreset: "full", offsetX: 0 },
+      wave: { x: 0, y: 72, w: "100%", widthPreset: "full", offsetX: 0 },
+      playlists: { x: 0, y: 264, w: 576, widthPreset: "half", offsetX: 0 },
+      recent: { x: 0, y: 264, w: 576, widthPreset: "half", offsetX: 0 },
+      library: { x: 0, y: 552, w: "100%", widthPreset: "full", offsetX: 0 },
+    },
+    freeLayoutSections: [],
   },
   theme: {
     accentColor: "#3b82f6",
@@ -300,8 +348,44 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     recent: 4,
     playlists: 3,
     library: 4,
-    ...(typeof raw.home?.gridColumns === "object" && raw.home?.gridColumns !== null ? raw.home.gridColumns : {}),
   };
+  if (typeof raw.home?.gridColumns === "object" && raw.home?.gridColumns !== null) {
+    if (typeof raw.home.gridColumns.recent === "number") gridColumns.recent = raw.home.gridColumns.recent;
+    if (typeof raw.home.gridColumns.playlists === "number") gridColumns.playlists = raw.home.gridColumns.playlists;
+    if (typeof raw.home.gridColumns.library === "number") gridColumns.library = raw.home.gridColumns.library;
+  }
+
+  const sidebarTopVariant = raw.sidebar?.topVariant === "compact" ? "compact" : "full";
+
+  const defaultCanvasPositions: Record<string, BlockCanvasPos> = {
+    header: { x: 0, y: 0, w: "100%", widthPreset: "full", offsetX: 0 },
+    wave: { x: 0, y: 72, w: "100%", widthPreset: "full", offsetX: 0 },
+    playlists: { x: 0, y: 264, w: 576, widthPreset: "half", offsetX: 0 },
+    recent: { x: 0, y: 264, w: 576, widthPreset: "half", offsetX: 0 },
+    library: { x: 0, y: 552, w: "100%", widthPreset: "full", offsetX: 0 },
+  };
+
+  const canvasPositions: Record<string, BlockCanvasPos> = { ...defaultCanvasPositions };
+  if (typeof raw.home?.canvasPositions === "object" && raw.home?.canvasPositions !== null) {
+    for (const [k, v] of Object.entries(raw.home.canvasPositions)) {
+      if (typeof v === "object" && v !== null) {
+        const item = v as any;
+        canvasPositions[k] = {
+          x: typeof item.x === "number" ? item.x : 0,
+          y: typeof item.y === "number" ? item.y : 0,
+          w: typeof item.w === "number" || typeof item.w === "string" ? item.w : "100%",
+          h: typeof item.h === "number" || typeof item.h === "string" ? item.h : undefined,
+          widthPreset: item.widthPreset,
+          offsetX: typeof item.offsetX === "number" ? item.offsetX : 0,
+        };
+      }
+    }
+  }
+
+  let freeLayoutSections: number[] = [];
+  if (Array.isArray(raw.home?.freeLayoutSections)) {
+    freeLayoutSections = raw.home.freeLayoutSections.filter((i: any) => typeof i === "number");
+  }
 
   const theme: ThemeColors = {
     accentColor: typeof raw.theme?.accentColor === "string" ? raw.theme.accentColor : "#3b82f6",
@@ -317,6 +401,51 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.72,
   };
 
+  const validAligns: BlockAlign[] = ["left", "center", "right"];
+  const blockAligns: Record<string, BlockAlign> = {
+    header: "left",
+    wave: "left",
+    playlists: "left",
+    recent: "left",
+    library: "left",
+  };
+  if (typeof raw.home?.blockAligns === "object" && raw.home.blockAligns !== null) {
+    for (const [k, v] of Object.entries(raw.home.blockAligns)) {
+      if (typeof v === "string" && validAligns.includes(v as BlockAlign)) {
+        blockAligns[k] = v as BlockAlign;
+      }
+    }
+  }
+
+  // Row lines (sections): string[][]
+  let rows: string[][] = [];
+  if (Array.isArray(raw.home?.rows) && raw.home.rows.length > 0) {
+    rows = raw.home.rows.map((r: any) =>
+      Array.isArray(r) ? r.filter((b: any) => typeof b === "string") : []
+    );
+  }
+  if (rows.length === 0) {
+    rows = [
+      ["header"],
+      ["wave"],
+      ["playlists", "recent"],
+      ["library"],
+      [],
+    ];
+  }
+  const existingInRows = new Set(rows.flat());
+  for (const b of blockOrder) {
+    if (!existingInRows.has(b) && !hiddenBlocks.includes(b)) {
+      const emptyIdx = rows.findIndex((r) => r.length === 0);
+      if (emptyIdx !== -1) {
+        rows[emptyIdx].push(b);
+      } else {
+        rows.push([b]);
+      }
+      existingInRows.add(b);
+    }
+  }
+
   return {
     borderRadius,
     sidebar: {
@@ -325,6 +454,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       width: sidebarWidth,
       height: sidebarHeight,
       collapsed: sidebarCollapsed,
+      topVariant: sidebarTopVariant,
     },
     player: {
       position: playerPos,
@@ -338,7 +468,11 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       blockOrder,
       hiddenBlocks,
       blockWidths,
+      blockAligns,
+      rows,
       gridColumns,
+      canvasPositions,
+      freeLayoutSections,
     },
     theme,
   };
@@ -356,6 +490,7 @@ export interface CustomizationContextType {
   setSidebarStyle: (style: ComponentStyle) => void;
   setSidebarWidth: (width: number) => void;
   setSidebarHeight: (height: number) => void;
+  setSidebarTopVariant: (variant: "compact" | "full") => void;
   setPlayerPosition: (pos: "bottom" | "top" | "left" | "right") => void;
   setPlayerStyle: (style: ComponentStyle) => void;
   setPlayerHeight: (height: number) => void;
@@ -363,12 +498,25 @@ export interface CustomizationContextType {
   setPlayerOptions: (options: { largeIcons?: boolean; hideDetails?: boolean }) => void;
   setBorderRadius: (preset: BorderRadiusPreset) => void;
   setBlockWidth: (id: string, width: BlockWidth) => void;
+  setBlockAlign: (id: string, align: BlockAlign) => void;
+  setBlockCanvasPos: (id: string, pos: Partial<BlockCanvasPos>) => void;
+  toggleSectionLayoutMode: (rowIndex: number) => void;
+  resetSectionOffsets: (rowIndex: number) => void;
   toggleSidebarPosition: () => void;
   moveBlock: (id: string, direction: "up" | "down") => void;
+  moveBlockRow: (id: string, direction: "up" | "down") => void;
+  shiftBlockInRow: (id: string, direction: "left" | "right") => void;
+  separateBlockToNewRow: (id: string) => void;
+  joinBlockWithRowAbove: (id: string) => void;
   reorderBlocks: (sourceId: string, targetId: string) => void;
+  addSection: () => void;
+  removeSection: (sectionIndex: number) => void;
+  movePanel: (panelId: string, targetSectionIndex: number, targetSlotIndex?: number) => void;
   toggleBlockVisibility: (id: string) => void;
   deleteBlock: (id: string) => void;
-  addBlock: (id: string) => void;
+  addBlock: (id: string, targetSectionIndex?: number) => void;
+  isAddModalOpen: boolean;
+  setIsAddModalOpen: (open: boolean) => void;
   setBlockGridColumns: (id: string, cols: number) => void;
   applyPreset: (preset: ThemePreset) => void;
   userPresets: (ThemePreset | null)[];
@@ -400,6 +548,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [activeDragTarget, setActiveDragTarget] = useState<"sidebar" | "player" | null>(null);
   const [activeDropZone, setActiveDropZone] = useState<"left" | "right" | "top" | "bottom" | null>(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // User preset slots (up to 3 slots)
   const [userPresets, setUserPresets] = useState<(ThemePreset | null)[]>(() => {
@@ -543,6 +692,13 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const setSidebarTopVariant = (variant: "compact" | "full") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, topVariant: variant },
+    }));
+  };
+
   const setPlayerPosition = (pos: "bottom" | "top" | "left" | "right") => {
     persistOrDraft((prev) => ({
       ...prev,
@@ -602,6 +758,62 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         },
       },
     }));
+  };
+
+  const setBlockCanvasPos = (id: string, pos: Partial<BlockCanvasPos>) => {
+    persistOrDraft((prev) => {
+      const current = prev.home.canvasPositions?.[id] || { x: 0, y: 0, w: "100%", widthPreset: "full" };
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          canvasPositions: {
+            ...prev.home.canvasPositions,
+            [id]: {
+              ...current,
+              ...pos,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const toggleSectionLayoutMode = (rowIndex: number) => {
+    persistOrDraft((prev) => {
+      const current = prev.home.freeLayoutSections || [];
+      const isFree = current.includes(rowIndex);
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          freeLayoutSections: isFree ? current.filter(i => i !== rowIndex) : [...current, rowIndex],
+        },
+      };
+    });
+  };
+
+  const resetSectionOffsets = (rowIndex: number) => {
+    persistOrDraft((prev) => {
+      const row = prev.home.rows?.[rowIndex] || [];
+      const updatedCanvasPositions = { ...(prev.home.canvasPositions || {}) };
+      for (const blockId of row) {
+        if (updatedCanvasPositions[blockId]) {
+          updatedCanvasPositions[blockId] = {
+            ...updatedCanvasPositions[blockId],
+            offsetX: 0,
+            x: 0,
+          };
+        }
+      }
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          canvasPositions: updatedCanvasPositions,
+        },
+      };
+    });
   };
 
   const toggleSidebarPosition = () => {
@@ -666,25 +878,294 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const deleteBlock = (id: string) => {
-    persistOrDraft((prev) => ({
-      ...prev,
-      home: {
-        ...prev.home,
-        blockOrder: prev.home.blockOrder.filter((b) => b !== id),
-      },
-    }));
-  };
-
-  const addBlock = (id: string) => {
+  const moveBlockRow = (id: string, direction: "up" | "down") => {
     persistOrDraft((prev) => {
-      if (prev.home.blockOrder.includes(id)) return prev;
+      let rows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"]]).map((r) => [...r]);
+      const r = rows.findIndex((row) => row.includes(id));
+      if (r === -1) return prev;
+
+      if (direction === "up") {
+        if (r === 0) return prev;
+        if (rows[r].length > 1) {
+          rows[r] = rows[r].filter((b) => b !== id);
+          rows.splice(r, 0, [id]);
+        } else {
+          const temp = rows[r];
+          rows[r] = rows[r - 1];
+          rows[r - 1] = temp;
+        }
+      } else {
+        if (rows[r].length > 1) {
+          rows[r] = rows[r].filter((b) => b !== id);
+          rows.splice(r + 1, 0, [id]);
+        } else {
+          if (r < rows.length - 1) {
+            const temp = rows[r];
+            rows[r] = rows[r + 1];
+            rows[r + 1] = temp;
+          } else {
+            return prev;
+          }
+        }
+      }
+
+      rows = rows.filter((row) => row.length > 0);
       return {
         ...prev,
         home: {
           ...prev.home,
-          blockOrder: [...prev.home.blockOrder, id],
-          hiddenBlocks: prev.home.hiddenBlocks.filter((b) => b !== id),
+          rows,
+          blockOrder: rows.flat(),
+        },
+      };
+    });
+  };
+
+  const shiftBlockInRow = (id: string, direction: "left" | "right") => {
+    persistOrDraft((prev) => {
+      const rows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"]]).map((r) => [...r]);
+      const r = rows.findIndex((row) => row.includes(id));
+      if (r === -1) return prev;
+
+      const currentRow = rows[r];
+      if (currentRow.length > 1) {
+        const idx = currentRow.indexOf(id);
+        const targetIdx = direction === "left" ? idx - 1 : idx + 1;
+        if (targetIdx >= 0 && targetIdx < currentRow.length) {
+          const temp = currentRow[idx];
+          currentRow[idx] = currentRow[targetIdx];
+          currentRow[targetIdx] = temp;
+          return {
+            ...prev,
+            home: {
+              ...prev.home,
+              rows,
+              blockOrder: rows.flat(),
+            },
+          };
+        }
+        return prev;
+      }
+
+      const currentAlign = prev.home.blockAligns?.[id] || "left";
+      const alignCycle: BlockAlign[] = ["left", "center", "right"];
+      let curIdx = alignCycle.indexOf(currentAlign);
+      if (curIdx === -1) curIdx = 0;
+      let nextIdx = direction === "left" ? curIdx - 1 : curIdx + 1;
+      if (nextIdx < 0) nextIdx = 0;
+      if (nextIdx >= alignCycle.length) nextIdx = alignCycle.length - 1;
+
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          blockAligns: {
+            ...prev.home.blockAligns,
+            [id]: alignCycle[nextIdx],
+          },
+        },
+      };
+    });
+  };
+
+  const setBlockAlign = (id: string, align: BlockAlign) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      home: {
+        ...prev.home,
+        blockAligns: {
+          ...prev.home.blockAligns,
+          [id]: align,
+        },
+      },
+    }));
+  };
+
+  const separateBlockToNewRow = (id: string) => {
+    persistOrDraft((prev) => {
+      let rows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"]]).map((r) => [...r]);
+      const r = rows.findIndex((row) => row.includes(id));
+      if (r === -1 || rows[r].length <= 1) return prev;
+      rows[r] = rows[r].filter((b) => b !== id);
+      rows.splice(r + 1, 0, [id]);
+      rows = rows.filter((row) => row.length > 0);
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          rows,
+          blockOrder: rows.flat(),
+        },
+      };
+    });
+  };
+
+  const joinBlockWithRowAbove = (id: string) => {
+    persistOrDraft((prev) => {
+      let rows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"]]).map((r) => [...r]);
+      const r = rows.findIndex((row) => row.includes(id));
+      if (r <= 0) return prev;
+      rows[r] = rows[r].filter((b) => b !== id);
+      rows[r - 1].push(id);
+      rows = rows.filter((row) => row.length > 0);
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          rows,
+          blockOrder: rows.flat(),
+        },
+      };
+    });
+  };
+
+  const addSection = () => {
+    persistOrDraft((prev) => {
+      const currentRows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"], []]).map((r) => [...r]);
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          rows: [...currentRows, []],
+        },
+      };
+    });
+  };
+
+  const removeSection = (sectionIndex: number) => {
+    persistOrDraft((prev) => {
+      const currentRows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"], []]).map((r) => [...r]);
+      if (sectionIndex < 0 || sectionIndex >= currentRows.length) return prev;
+
+      const removedBlocks = currentRows[sectionIndex];
+      currentRows.splice(sectionIndex, 1);
+
+      if (removedBlocks.length > 0) {
+        const targetIdx = Math.max(0, sectionIndex - 1);
+        if (currentRows[targetIdx]) {
+          currentRows[targetIdx].push(...removedBlocks);
+        } else {
+          currentRows.push(removedBlocks);
+        }
+      }
+
+      if (currentRows.length === 0) {
+        currentRows.push([]);
+      }
+
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          rows: currentRows,
+          blockOrder: currentRows.flat(),
+        },
+      };
+    });
+  };
+
+  const movePanel = (panelId: string, targetSectionIndex: number, targetSlotIndex?: number) => {
+    persistOrDraft((prev) => {
+      let currentRows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"], []]).map((r) => [...r]);
+
+      while (currentRows.length <= targetSectionIndex) {
+        currentRows.push([]);
+      }
+
+      const sourceRowIndex = currentRows.findIndex((r) => r.includes(panelId));
+      let sourceSlotIndex = -1;
+      if (sourceRowIndex >= 0) {
+        sourceSlotIndex = currentRows[sourceRowIndex].indexOf(panelId);
+      }
+
+      if (sourceRowIndex === targetSectionIndex && sourceSlotIndex >= 0 && typeof targetSlotIndex === "number") {
+        const row = [...currentRows[targetSectionIndex]];
+        row.splice(sourceSlotIndex, 1);
+        let adjustedTarget = targetSlotIndex;
+        if (sourceSlotIndex < targetSlotIndex) {
+          adjustedTarget = targetSlotIndex - 1;
+        }
+        if (adjustedTarget < 0) adjustedTarget = 0;
+        if (adjustedTarget > row.length) adjustedTarget = row.length;
+        row.splice(adjustedTarget, 0, panelId);
+        currentRows[targetSectionIndex] = row;
+      } else {
+        currentRows = currentRows.map((r) => r.filter((id) => id !== panelId));
+        const targetRow = currentRows[targetSectionIndex] || [];
+        if (typeof targetSlotIndex === "number" && targetSlotIndex >= 0 && targetSlotIndex <= targetRow.length) {
+          targetRow.splice(targetSlotIndex, 0, panelId);
+        } else {
+          targetRow.push(panelId);
+        }
+        currentRows[targetSectionIndex] = targetRow;
+      }
+
+      const hidden = (prev.home.hiddenBlocks || []).filter((b) => b !== panelId);
+      const order = currentRows.flat();
+      const updatedBlockWidths = { ...(prev.home.blockWidths || {}) };
+
+      // If the target section now has multiple blocks, make sure they don't force each other to wrap onto separate lines
+      if (currentRows[targetSectionIndex].length > 1) {
+        for (const bid of currentRows[targetSectionIndex]) {
+          if (!updatedBlockWidths[bid] || updatedBlockWidths[bid] === "full") {
+            updatedBlockWidths[bid] = "half";
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          rows: currentRows,
+          blockOrder: order,
+          hiddenBlocks: hidden,
+          blockWidths: updatedBlockWidths,
+        },
+      };
+    });
+  };
+
+  const deleteBlock = (id: string) => {
+    persistOrDraft((prev) => {
+      const rows = (prev.home.rows || []).map((r) => r.filter((b) => b !== id));
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          blockOrder: prev.home.blockOrder.filter((b) => b !== id),
+          rows,
+        },
+      };
+    });
+  };
+
+  const addBlock = (id: string, targetSectionIndex?: number) => {
+    persistOrDraft((prev) => {
+      let rows = (prev.home.rows || [["header"], ["wave"], ["playlists", "recent"], ["library"], []]).map((r) => [...r]);
+      rows = rows.map((r) => r.filter((b) => b !== id));
+
+      if (typeof targetSectionIndex === "number" && targetSectionIndex >= 0 && targetSectionIndex < rows.length) {
+        rows[targetSectionIndex].push(id);
+      } else {
+        const emptyIdx = rows.findIndex((r) => r.length === 0);
+        if (emptyIdx !== -1) {
+          rows[emptyIdx].push(id);
+        } else {
+          rows.push([id]);
+        }
+      }
+
+      const order = rows.flat();
+      const hidden = (prev.home.hiddenBlocks || []).filter((b) => b !== id);
+
+      return {
+        ...prev,
+        home: {
+          ...prev.home,
+          blockOrder: order,
+          hiddenBlocks: hidden,
+          rows,
         },
       };
     });
@@ -768,6 +1249,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         setSidebarStyle,
         setSidebarWidth,
         setSidebarHeight,
+        setSidebarTopVariant,
         setPlayerPosition,
         setPlayerStyle,
         setPlayerHeight,
@@ -775,12 +1257,25 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         setPlayerOptions,
         setBorderRadius,
         setBlockWidth,
+        setBlockAlign,
+        setBlockCanvasPos,
+        toggleSectionLayoutMode,
+        resetSectionOffsets,
         toggleSidebarPosition,
         moveBlock,
+        moveBlockRow,
+        shiftBlockInRow,
+        separateBlockToNewRow,
+        joinBlockWithRowAbove,
         reorderBlocks,
+        addSection,
+        removeSection,
+        movePanel,
         toggleBlockVisibility,
         deleteBlock,
         addBlock,
+        isAddModalOpen,
+        setIsAddModalOpen,
         setBlockGridColumns,
         applyPreset,
         userPresets,

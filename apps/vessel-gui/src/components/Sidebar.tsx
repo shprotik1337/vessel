@@ -124,7 +124,6 @@ export function Sidebar() {
     config,
     setSidebarPosition,
     setSidebarWidth,
-    setSidebarHeight,
     setActiveDragTarget,
     setActiveDropZone,
   } = useCustomization();
@@ -221,29 +220,6 @@ export function Sidebar() {
     handleEl.addEventListener("pointerup", onPointerUp);
   };
 
-  const onResizeHeightPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const handleEl = e.currentTarget as HTMLElement;
-    handleEl.setPointerCapture(e.pointerId);
-    const startY = e.clientY;
-    const startH = config.sidebar?.height || 64;
-
-    const onPointerMove = (ev: PointerEvent) => {
-      const delta = isSidebarBottom ? startY - ev.clientY : ev.clientY - startY;
-      setSidebarHeight(startH + delta);
-    };
-
-    const onPointerUp = (ev: PointerEvent) => {
-      try {
-        handleEl.releasePointerCapture(ev.pointerId);
-      } catch {}
-      handleEl.removeEventListener("pointermove", onPointerMove);
-      handleEl.removeEventListener("pointerup", onPointerUp);
-    };
-
-    handleEl.addEventListener("pointermove", onPointerMove);
-    handleEl.addEventListener("pointerup", onPointerUp);
-  };
 
   const reorderPlaylists = async (from: number, to: number) => {
     if (!state) return;
@@ -347,34 +323,31 @@ export function Sidebar() {
   };
 
   if (isHorizontal) {
+    const topVariant = config.sidebar?.topVariant || "full";
+    const defaultH = topVariant === "compact" ? 46 : 64;
+    const currentH = config.sidebar?.height || defaultH;
+
     return (
       <aside
         className={`sidebar ${isSidebarBottom ? "dock-bottom" : "dock-top"} ${
           isFloating ? "floating-island" : "full-dock"
-        }`}
+        } ${topVariant === "compact" ? "top-compact" : ""}`}
         style={{
           position: "relative",
-          height: `${config.sidebar?.height || 64}px`,
+          height: `${currentH}px`,
         }}
       >
         {isEditMode && (
-          <>
-            <div
-              className={`sidebar-resize-handle-horiz ${isSidebarBottom ? "resize-top" : "resize-bottom"}`}
-              onPointerDown={onResizeHeightPointerDown}
-              title="Потяните мышкой для изменения высоты меню"
-            />
-            <div
-              className="sidebar-drag-grip horizontal"
-              onPointerDown={onDragSidebarPointerDown}
-              title="Зажмите мышкой и перетащите меню к любому краю экрана"
-            >
-              <span className="grip-icon">⠿</span>
-              <span className="grip-label">Перетащить панель</span>
-            </div>
-          </>
+          <div
+            className="sidebar-drag-grip horizontal"
+            onPointerDown={onDragSidebarPointerDown}
+            title="Зажмите мышкой и перетащите меню к любому краю экрана"
+          >
+            <span className="grip-icon">⠿</span>
+            <span className="grip-label">Перетащить</span>
+          </div>
         )}
-        <div className="top-nav-bar">
+        <div className={`top-nav-bar ${topVariant === "compact" ? "compact" : ""}`}>
           <div className="top-nav-items">
             {["home", "wave", "search", "favorites", "playlists", "queue"].map((v) => {
               const meta = getNavMeta(v);
@@ -384,9 +357,12 @@ export function Sidebar() {
                   key={v}
                   className={`nav-item top-nav-item ${isActive ? "active" : ""}`}
                   onClick={() => navigateTo(v)}
+                  title={meta.label}
                 >
                   <span className="nav-item-icon">{meta.icon}</span>
-                  <span className="nav-item-label">{meta.label}</span>
+                  {topVariant !== "compact" && (
+                    <span className="nav-item-label">{meta.label}</span>
+                  )}
                   {meta.count !== undefined && state && <span className="nav-count">{meta.count}</span>}
                 </button>
               );
@@ -399,7 +375,9 @@ export function Sidebar() {
               title={t(lang, "nav.settings")}
             >
               <span className="nav-item-icon"><IconSettings /></span>
-              <span className="nav-item-label">{t(lang, "nav.settings")}</span>
+              {topVariant !== "compact" && (
+                <span className="nav-item-label">{t(lang, "nav.settings")}</span>
+              )}
             </button>
           </div>
         </div>
@@ -432,7 +410,7 @@ export function Sidebar() {
           title="Зажмите мышкой и перетащите меню к любому краю экрана"
         >
           <span className="grip-icon">⠿</span>
-          {!collapsed && <span className="grip-label">Перетащить меню</span>}
+          {!collapsed && <span className="grip-label">Перетащить</span>}
         </div>
       )}
       {/* Top section: search and sidebar toggle */}

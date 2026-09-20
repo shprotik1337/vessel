@@ -1,3 +1,4 @@
+import { Component, ErrorInfo, ReactNode } from "react";
 import { AppProvider, useApp } from "./store";
 import { Sidebar } from "./components/Sidebar";
 import { BottomPlayer } from "./components/BottomPlayer";
@@ -20,6 +21,97 @@ import {
   EditModeBanner,
   ThemeSettingsModal,
 } from "./customization";
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Vessel React Error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          backgroundColor: "#121214",
+          color: "#ffffff",
+          padding: "24px",
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          textAlign: "center"
+        }}>
+          <h2 style={{ marginBottom: "12px", color: "#f87171" }}>Ошибка интерфейса Vessel</h2>
+          <pre style={{
+            background: "#1c1c20",
+            padding: "16px",
+            borderRadius: "8px",
+            maxWidth: "600px",
+            overflowX: "auto",
+            marginBottom: "20px",
+            fontSize: "13px",
+            color: "#e2e8f0"
+          }}>
+            {this.state.error?.message || "Unknown error"}
+          </pre>
+          <div style={{ display: "flex", gap: "12px" }}>
+            <button
+              onClick={() => {
+                localStorage.removeItem("vessel_customization_v1");
+                window.location.reload();
+              }}
+              style={{
+                padding: "8px 16px",
+                background: "#3b82f6",
+                color: "#fff",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: "bold"
+              }}
+            >
+              Сбросить настройки и перезагрузить
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                padding: "8px 16px",
+                background: "#27272a",
+                color: "#fff",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer"
+              }}
+            >
+              Перезагрузить
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 
 function AppContent() {
   const {
@@ -102,13 +194,7 @@ function AppContent() {
   const isSidebarBottom = config.sidebar?.position === "bottom";
   const isPlayerTop = config.player?.position === "top";
 
-  const appFlexDirection = isSidebarTop
-    ? "column"
-    : isSidebarBottom
-    ? "column-reverse"
-    : isSidebarRight
-    ? "row-reverse"
-    : "row";
+  const appFlexDirection = (isSidebarTop || isSidebarBottom) ? "column" : "row";
 
   return (
     <div
@@ -189,8 +275,14 @@ function AppContent() {
         </div>
       )}
       <div
-        className={`app ${isSidebarTop ? "sidebar-dock-top" : ""} ${
-          isSidebarBottom ? "sidebar-dock-bottom" : ""
+        className={`app ${
+          isSidebarTop
+            ? "sidebar-dock-top"
+            : isSidebarBottom
+            ? "sidebar-dock-bottom"
+            : isSidebarRight
+            ? "sidebar-dock-right"
+            : "sidebar-dock-left"
         }`}
         style={{
           flexDirection: appFlexDirection,
@@ -240,10 +332,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <CustomizationProvider>
-        <AppContent />
-      </CustomizationProvider>
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <CustomizationProvider>
+          <AppContent />
+        </CustomizationProvider>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
