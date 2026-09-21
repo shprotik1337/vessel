@@ -15,6 +15,7 @@ import { WavePage } from "./pages/Wave";
 import { UserSelector } from "./components/UserSelector";
 import { FullscreenPlayer } from "./components/FullscreenPlayer";
 import { Titlebar } from "./components/Titlebar";
+import { QueueDrawer } from "./components/QueueDrawer";
 import {
   CustomizationProvider,
   useCustomization,
@@ -126,8 +127,18 @@ function AppContent() {
     fullscreenOpen,
     cacheProgress,
     lang,
+    navigateTo,
   } = useApp();
-  const { config, isEditMode, activeDragTarget, activeDropZone } = useCustomization();
+  const {
+    config,
+    isEditMode,
+    activeDragTarget,
+    activeDropZone,
+    isPreviewActive,
+    previewPreset,
+    applyPreview,
+    cancelPreview,
+  } = useCustomization();
 
   const renderPage = () => {
     switch (view) {
@@ -214,6 +225,39 @@ function AppContent() {
       )}
       <Titlebar />
       <EditModeBanner />
+      {isPreviewActive && (
+        <div className="preview-floating-bar">
+          <div className="preview-floating-info">
+            <span className="preview-pill-eye">👁</span>
+            <span className="preview-pill-text">
+              {lang === "ru" ? "Предпросмотр темы: " : "Previewing theme: "}
+              <strong>{previewPreset?.name || "Тема"}</strong>
+            </span>
+          </div>
+          <div className="preview-floating-actions">
+            <button
+              type="button"
+              className="preview-btn-apply"
+              onClick={() => {
+                applyPreview();
+                navigateTo("settings");
+              }}
+            >
+              {lang === "ru" ? "Применить" : "Apply"}
+            </button>
+            <button
+              type="button"
+              className="preview-btn-back"
+              onClick={() => {
+                cancelPreview();
+                navigateTo("settings");
+              }}
+            >
+              {lang === "ru" ? "Назад к настройкам" : "Back to settings"}
+            </button>
+          </div>
+        </div>
+      )}
       {activeDragTarget && (
         <div className="screen-drop-zones-overlay">
           {activeDragTarget === "sidebar" && (
@@ -305,6 +349,7 @@ function AppContent() {
         </div>
       </div>
       {fullscreenOpen && <FullscreenPlayer />}
+      <QueueDrawer />
       {state?.needs_user_selection && <UserSelector />}
       <ThemeSettingsModal />
       {cacheProgress && (

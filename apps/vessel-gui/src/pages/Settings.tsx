@@ -1,72 +1,89 @@
-import { useEffect, useState } from "react";
-
+import { useEffect, useState, useMemo } from "react";
 import { useApp } from "../store";
+import {
+  useCustomization,
+  BUILTIN_THEMES,
+  PresetCard,
+} from "../customization";
 import { PlatformIcon } from "../components/PlatformIcon";
 import { TextInputModal, ConfirmModal, PathModal } from "../components/Modal";
 import { VpnTab } from "../components/VpnTab";
 import { ServersTab } from "./Servers";
-import type { ProviderStatus, UserProfile } from "../api/types";
+import type { UserProfile } from "../api/types";
 import * as api from "../api/commands";
-import { t } from "../i18n";
-import { CustomizationTab } from "../customization";
 
-type Tab = "customization" | "services" | "servers" | "language" | "playback" | "storage" | "users" | "recommendations" | "vpn";
+// Navigation tabs matching Dotify structure
+type SettingsTab =
+  | "users"
+  | "general"
+  | "audio"
+  | "storage"
+  | "player"
+  | "interface"
+  | "tabs"
+  | "background"
+  | "customization"
+  | "service_youtube_music"
+  | "service_soundcloud"
+  | "service_spotify"
+  | "service_vk"
+  | "service_yandex"
+  | "service_deezer"
+  | "service_apple"
+  | "proxy"
+  | "servers"
+  | "discord"
+  | "vpn";
 
 type ConfirmTarget = "settings" | "data" | null;
 type DirTarget = "download" | "cache" | null;
 
-function formatDate(ms: number): string {
-  if (!ms) return "—";
-  return new Date(ms).toLocaleString();
-}
-
-const SERVICE_ICON_SIZE: Record<string, number> = {
-  soundcloud: 42, deezer: 44, yandex: 33, spotify: 64, youtube_music: 48,
-};
-
-const REC_ICON_SIZE: Record<string, number> = {
-  soundcloud: 40, deezer: 44, yandex: 33, spotify: 59, youtube_music: 32,
-};
-
-const SERVICE_META: Record<string, { key: string; hint: string; logo: string; bg: string }> = {  soundcloud: {
+const SERVICE_META: Record<string, { key: string; hint: string; bg: string; brandColor: string }> = {
+  spotify: {
+    key: "spotify",
+    hint: "Вставьте значение cookie sp_dc из браузера (или воспользуйтесь входом через браузер).",
+    bg: "#1DB954",
+    brandColor: "#1DB954",
+  },
+  youtube_music: {
+    key: "youtube_music",
+    hint: "Вставьте cookies из браузера (SID, SSID, HSID, LOGIN_INFO) для полного доступа к библиотеке.",
+    bg: "#FF0000",
+    brandColor: "#FF0000",
+  },
+  soundcloud: {
     key: "soundcloud",
-    hint: "client_id — ключ из браузера. Вставь client_id для SoundCloud.",
-    logo: "SC",
-    bg: "#F50",
+    hint: "client_id — ключ из сетевых запросов браузера SoundCloud.",
+    bg: "#FF5500",
+    brandColor: "#FF5500",
+  },
+  vk: {
+    key: "vk",
+    hint: "Токен доступа VK Музыка (Kate Mobile / VK Admin token).",
+    bg: "#0077FF",
+    brandColor: "#0077FF",
   },
   yandex: {
     key: "yandex",
     hint: "OAuth-токен из расширения yandex-music-token. Хранится только локально.",
-    logo: "YA",
-    bg: "#FC0",
+    bg: "#FFCC00",
+    brandColor: "#FFCC00",
   },
   deezer: {
     key: "deezer",
-    hint: "Значение cookie arl или строка arl=...; cookie хранится только локально.",
-    logo: "DZ",
+    hint: "Значение cookie arl из браузера Deezer (arl=...).",
     bg: "#A238FF",
+    brandColor: "#A238FF",
   },
-  spotify: {
-    key: "spotify",
-    hint: "Вставь значение cookie sp_dc из браузера. Токен останется только локально.",
-    logo: "SP",
-    bg: "#1DB954",
-  },
-  youtube_music: {
-    key: "you_tube_music",
-    hint: "Вставь cookie из браузера (SID, SSID, HSID, LOGIN_INFO и др.) — полные треки без 60-сек лимита.",
-    logo: "YT",
-    bg: "#FF0000",
+  apple: {
+    key: "apple",
+    hint: "Developer Token / MusicKit токен подписки Apple Music.",
+    bg: "#FA233B",
+    brandColor: "#FA233B",
   },
 };
 
 type BrowserLoginKind = "spotify" | "soundcloud" | "deezer";
-
-const BROWSER_LOGIN_HINT_KEY: Record<BrowserLoginKind, Parameters<typeof t>[1]> = {
-  spotify: "settings.browserHint.spotify",
-  soundcloud: "settings.browserHint.soundcloud",
-  deezer: "settings.browserHint.deezer",
-};
 
 const BROWSER_LOGIN: Record<
   BrowserLoginKind,
@@ -89,1574 +106,1862 @@ const BROWSER_LOGIN: Record<
   },
 };
 
-function ServiceRow({ status }: { status: ProviderStatus }) {
-  const { showToast, refresh, lang } = useApp();
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<"ok" | "fail" | null>(null);
-  const meta = SERVICE_META[status.kind];
-  // Бэкенд сериализует kind в snake_case: "youtube_music" (не "you_tube_music").
-  const isYoutubeMusic =
-    status.kind === "youtube_music" || status.kind === "you_tube_music";
-
-  const connect = async () => {
-    if (!value.trim()) return;
-    setBusy(true);
-    setResult(null);
-    try {
-      await api.probeCredential(meta.key, value.trim());
-      setResult("ok");
-      await api.saveCredential(meta.key, value.trim());
-      await refresh();
-      setEditing(false);
-      setValue("");
-      showToast(`${status.label} connected`);
-    } catch (error) {
-      setResult("fail");
-      showToast(`Invalid key: ${error}`, true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const disconnect = async () => {
-    try {
-      await api.removeCredential(meta.key);
-      await refresh();
-      showToast(`${status.label} disconnected`);
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  // Автоматический auth flow: открыли окно → залогинились → приложение само
-  // замечает ключ/cookie (sp_dc, arl, client_id), сохраняет и закрывает окно.
-  const [loginBusy, setLoginBusy] = useState(false);
-  const [loginKind, setLoginKind] = useState<BrowserLoginKind | null>(null);
-
-  const browserLogin = async (kind: BrowserLoginKind) => {
-    setLoginBusy(true);
-    try {
-      await BROWSER_LOGIN[kind].login();
-      setLoginKind(kind);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setLoginBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!loginKind) return;
-    let cancelled = false;
-    const timer = setInterval(async () => {
-      try {
-        const [statuses, open] = await Promise.all([
-          api.getProviderStatus(),
-          BROWSER_LOGIN[loginKind].open(),
-        ]);
-        if (cancelled) return;
-        const provider = statuses.find((s) => s.kind === loginKind);
-        if (provider?.connected) {
-          setLoginKind(null);
-          await refresh();
-          showToast(`${provider.label} ${t(lang, "settings.providerConnected")}`);
-        } else if (!open) {
-          // Окно закрыли: либо вход отменён, либо сохранение уже прошло
-          setLoginKind(null);
-          await refresh();
-        }
-      } catch {
-        // сеть/окно — продолжаем опрос
-      }
-    }, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loginKind]);
-
-  const cancelBrowserLogin = async () => {
-    if (!loginKind) return;
-    const kind = loginKind;
-    setLoginKind(null);
-    try {
-      await BROWSER_LOGIN[kind].cancel();
-    } catch {
-      // окно могло уже закрыться
-    }
-  };
-
-  return (
-    <div className="svc-row">
-      <div className="svc-logo" style={{ background: "var(--elev)", width: 52, height: 52, borderRadius: 6 }}>
-        <PlatformIcon
-          kind={status.kind as "soundcloud" | "deezer" | "yandex" | "spotify" | "you_tube_music"}
-          size={SERVICE_ICON_SIZE[status.kind] ?? 36}
-        />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600 }}>{status.label}</div>
-        <div className="set-desc" style={{ marginTop: 2 }}>
-          {isYoutubeMusic
-            ? t(lang, "settings.connected")
-            : status.connected
-              ? t(lang, "settings.connected")
-              : status.has_credentials
-                ? t(lang, "settings.keySavedNotConnected")
-                : t(lang, "settings.notConnected")}
-        </div>
-      </div>
-      {isYoutubeMusic ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="badge ok">
-            <span className="bdot" />
-            {t(lang, "settings.connected")}
-          </span>
-        </div>
-      ) : status.connected ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="badge ok">
-            <span className="bdot" />
-            {t(lang, "settings.connected")}
-          </span>
-          <button className="btn btn-outline btn-sm" onClick={disconnect}>
-            {t(lang, "settings.disconnect")}
-          </button>
-        </div>
-      ) : editing ? (
-        <div className="input-row" style={{ maxWidth: 320 }}>
-          <input
-            type="text"
-            placeholder={meta.hint}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void connect();
-              if (e.key === "Escape") setEditing(false);
-            }}
-          />
-          <button className="btn btn-primary btn-sm" onClick={connect} disabled={busy}>
-            {busy ? "…" : t(lang, "settings.connect")}
-          </button>
-          <button className="btn btn-outline btn-sm" onClick={() => setEditing(false)}>
-            {t(lang, "common.cancel")}
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {status.has_credentials && (
-            <span className="badge warn">
-              <span className="bdot" />
-              {t(lang, "settings.keyInvalid")}
-            </span>
-          )}
-          <button className="btn btn-outline btn-sm" onClick={() => setEditing(true)}>
-            {t(lang, "settings.connect")}
-          </button>
-          {(status.kind === "spotify" ||
-            status.kind === "soundcloud" ||
-            status.kind === "deezer") &&
-            (loginKind === status.kind ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span className="badge warn">
-                  <span className="bdot" />
-                  {t(lang, "settings.youtubeLoginOpen")}
-                </span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={cancelBrowserLogin}
-                >
-                  {t(lang, "common.cancel")}
-                </button>
-              </div>
-            ) : (
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => void browserLogin(status.kind as BrowserLoginKind)}
-                disabled={loginBusy}
-                title={t(lang, BROWSER_LOGIN_HINT_KEY[status.kind as BrowserLoginKind])}
-              >
-                {loginBusy ? t(lang, "settings.oauthBusy") : t(lang, "settings.oauthLogin")}
-              </button>
-            ))}
-        </div>
-      )}
-      {result === "ok" && (
-        <span style={{ color: "var(--text)", fontSize: 12 }}>{t(lang, "settings.validKey")}</span>
-      )}
-      {result === "fail" && (
-        <span style={{ color: "var(--red)", fontSize: 12 }}>{t(lang, "settings.invalidKey")}</span>
-      )}
-    </div>
-  );
-}
-
-function UsersTab() {
-  const { showToast, refresh, lang } = useApp();
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [active, setActive] = useState<UserProfile | null>(null);
-  const [autoLogin, setAutoLogin] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-
-  const colors = ["#E1332D", "#4361EE", "#7209B7", "#F72585", "#1DB954", "#FF6B35", "#06D6A0", "#118AB2"];
-
-  const load = async () => {
-    try {
-      const [known, profile, auto] = await Promise.all([
-        api.getKnownUsers(),
-        api.getUserProfile(),
-        api.getAutoLogin(),
-      ]);
-      setUsers(known);
-      setActive(profile);
-      setAutoLogin(auto);
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const doCreate = async (name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setBusy(true);
-    try {
-      await api.createUser(trimmed);
-      await load();
-      await refresh();
-      setCreateOpen(false);
-      showToast(`${t(lang, "toast.createdUser")} ${trimmed}`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const switchTo = async (name: string) => {
-    if (active?.display_name === name) return;
-    setBusy(true);
-    try {
-      await api.switchUser(name);
-      await load();
-      await refresh();
-      showToast(`${t(lang, "toast.switched")} ${name}`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const doRemove = async () => {
-    if (!deleteTarget) return;
-    const name = deleteTarget;
-    setBusy(true);
-    try {
-      await api.deleteUser(name);
-      if (autoLogin === name) setAutoLogin(null);
-      await load();
-      await refresh();
-      showToast(t(lang, "toast.deleted"));
-      setDeleteTarget(null);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const doExport = async (destination: string) => {
-    const path = destination.trim();
-    if (!path) return;
-    setBusy(true);
-    try {
-      const exported = await api.exportUser(path);
-      setExportOpen(false);
-      showToast(`${t(lang, "toast.exported")} ${exported}`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const doImport = async (source: string) => {
-    const path = source.trim();
-    if (!path) return;
-    setBusy(true);
-    try {
-      const profile = await api.importUser(path);
-      await load();
-      await refresh();
-      setImportOpen(false);
-      showToast(`${t(lang, "toast.imported")} ${profile.display_name}`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openUsersFolder = async () => {
-    try {
-      const dir = await api.getUsersDir();
-      await api.openPath(dir);
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  const backup = async () => {
-    setBusy(true);
-    try {
-      const path = await api.backupUser();
-      showToast(`${t(lang, "toast.backup")} ${path}`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const clearRemember = async () => {
-    try {
-      await api.clearAutoLogin();
-      setAutoLogin(null);
-      showToast(t(lang, "toast.autoLoginReset"));
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  return (
-    <>
-      <div className="sett-hd">
-        <div className="sett-title">{t(lang, "users.title")}</div>
-        <div className="sett-sub">{t(lang, "users.sub")}</div>
-      </div>
-
-      <div className="group">
-        <div className="group-hd">
-          <span className="group-title">{t(lang, "users.list")}</span>
-          <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)} disabled={busy}>
-            {t(lang, "users.create")}
-          </button>
-        </div>
-        <div className="panel">
-          {users.map((u) => {
-            const isActive = active?.id === u.id;
-            return (
-              <div key={u.id} className="svc-row">
-                <div className="svc-logo" style={{ background: colors[users.indexOf(u) % colors.length], color: "#fff" }}>
-                  {u.display_name.slice(0, 1).toUpperCase()}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600 }}>{u.display_name}</div>
-                  <div className="set-desc" style={{ marginTop: 2 }}>
-                    {t(lang, "users.created")}: {formatDate(u.created_at_ms)}
-                  </div>
-                </div>
-                {isActive ? (
-                  <span className="badge ok">
-                    <span className="bdot" />
-                    {t(lang, "users.active")}
-                  </span>
-                ) : (
-                  <div className="btns">
-                    <button className="btn btn-outline btn-sm" onClick={() => switchTo(u.display_name)} disabled={busy}>
-                      {t(lang, "users.open")}
-                    </button>
-                    <button className="btn btn-danger btn-sm" onClick={() => setDeleteTarget(u.display_name)} disabled={busy}>
-                      {t(lang, "users.delete")}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {users.length === 0 && (
-            <div className="set-desc" style={{ padding: 12 }}>
-              {t(lang, "users.none")}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="group">
-        <div className="group-hd">
-          <span className="group-title">{t(lang, "users.autoLogin")}</span>
-        </div>
-        <div className="panel">
-          <div className="set-row">
-            <div className="set-cell">
-              <div className="set-title">{t(lang, "users.autoLoginTitle")}</div>
-              <div className="set-desc">
-                {autoLogin
-                  ? `${t(lang, "users.autoLogin.saved")} ${autoLogin}`
-                  : t(lang, "users.autoLogin.none")}
-              </div>
-            </div>
-            <div className="btns">
-              <button className="btn btn-outline btn-sm" onClick={clearRemember} disabled={!autoLogin}>
-                {t(lang, "users.autoLogin.reset")}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="group">
-        <div className="group-hd">
-          <span className="group-title">{t(lang, "users.transfer")}</span>
-        </div>
-        <div className="panel">
-          <div className="set-row">
-            <div className="set-cell">
-              <div className="set-title">{t(lang, "users.export")}</div>
-              <div className="set-desc">{t(lang, "users.export.desc")}</div>
-            </div>
-            <div className="btns">
-              <button className="btn btn-ghost btn-sm" onClick={() => setExportOpen(true)} disabled={busy}>
-                {t(lang, "users.exportAction")}
-              </button>
-            </div>
-          </div>
-          <div className="set-row">
-            <div className="set-cell">
-              <div className="set-title">{t(lang, "users.import")}</div>
-              <div className="set-desc">{t(lang, "users.import.desc")}</div>
-            </div>
-            <div className="btns">
-              <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(true)} disabled={busy}>
-                {t(lang, "users.importAction")}
-              </button>
-            </div>
-          </div>
-          <div className="set-row">
-            <div className="set-cell">
-              <div className="set-title">{t(lang, "users.folder")}</div>
-              <div className="set-desc">{t(lang, "users.folder.desc")}</div>
-            </div>
-            <div className="btns">
-              <button className="btn btn-outline btn-sm" onClick={openUsersFolder}>
-                {t(lang, "users.folderAction")}
-              </button>
-            </div>
-          </div>
-          <div className="set-row">
-            <div className="set-cell">
-              <div className="set-title">{t(lang, "users.backup")}</div>
-              <div className="set-desc">{t(lang, "users.backup.desc")}</div>
-            </div>
-            <div className="btns">
-              <button className="btn btn-outline btn-sm" onClick={backup} disabled={busy}>
-                {t(lang, "users.backupAction")}
-              </button>
-            </div>
-          </div>
-          {active && (
-            <div className="set-row">
-              <div className="set-cell">
-                <div className="set-title">{t(lang, "users.profile")}</div>
-                <div className="set-desc">
-                  ID: {active.id} · {t(lang, "users.formatVersion")}: {active.format_version} ·{" "}
-                  {t(lang, "users.updated")}: {formatDate(active.updated_at_ms)}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {createOpen && (
-        <TextInputModal
-          lang={lang}
-          title={t(lang, "users.createName")}
-          placeholder={t(lang, "users.createName")}
-          confirmText={t(lang, "common.create")}
-          onSubmit={doCreate}
-          onClose={() => setCreateOpen(false)}
-        />
-      )}
-
-      {deleteTarget && (
-        <ConfirmModal
-          lang={lang}
-          title={`${t(lang, "users.deleteConfirm1")} «${deleteTarget}» ${t(lang, "users.deleteConfirm2")}`}
-          confirmText={t(lang, "common.delete")}
-          onConfirm={doRemove}
-          onClose={() => setDeleteTarget(null)}
-        />
-      )}
-
-      {exportOpen && (
-        <PathModal
-          lang={lang}
-          title={t(lang, "users.export")}
-          hint={t(lang, "users.exportHint")}
-          browseMode="folder"
-          confirmText={t(lang, "users.exportAction")}
-          onSubmit={doExport}
-          onClose={() => setExportOpen(false)}
-        />
-      )}
-
-      {importOpen && (
-        <PathModal
-          lang={lang}
-          title={t(lang, "users.import")}
-          hint={t(lang, "users.importHint")}
-          browseMode="folder"
-          confirmText={t(lang, "users.importAction")}
-          onSubmit={doImport}
-          onClose={() => setImportOpen(false)}
-        />
-      )}
-    </>
-  );
-}
-
-function PlaybackSourceBlock() {
-  const { showToast, lang, state } = useApp();
-  const [source, setSource] = useState<string>("youtube_music");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    void api.getSpotifyPlaybackSource().then(setSource).catch(() => {});
-  }, []);
-
-  const isSpotifyConnected = state?.providers.some(
-    (p) => p.kind === "spotify" && p.connected,
-  );
-  const ytAvailable =
-    state?.providers.some((p) => p.kind === "youtube_music" && p.connected) ?? true;
-  const deezerAvailable =
-    state?.providers.some((p) => p.kind === "deezer" && p.connected) ?? false;
-  const autoAvailable = deezerAvailable || ytAvailable;
-
-  const choose = async (key: string) => {
-    setSaving(true);
-    try {
-      await api.setSpotifyPlaybackSource(key);
-      setSource(key);
-      showToast(t(lang, "settings.playbackSource.saved"));
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const options = [
-    {
-      key: "auto",
-      label: t(lang, "settings.playbackSource.auto"),
-      badge: "YouTube Music → Deezer",
-      available: autoAvailable,
-    },
-    {
-      key: "deezer",
-      label: t(lang, "settings.playbackSource.deezer"),
-      badge: null,
-      available: deezerAvailable,
-    },
-    {
-      key: "youtube_music",
-      label: t(lang, "settings.playbackSource.yt"),
-      badge: null,
-      available: ytAvailable,
-    },
-  ];
-
-  return (
-    <div className="group">
-      <div className="group-hd">
-        <span className="group-title">{t(lang, "settings.playbackSource")}</span>
-      </div>
-      <div className="panel">
-        <div className="svc-row" style={{ borderBottom: "none" }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <span style={{ fontSize: 16 }}>♪</span>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600 }}>{t(lang, "settings.playbackSource")}</div>
-            <div className="set-desc" style={{ marginTop: 2 }}>
-              {isSpotifyConnected
-                ? t(lang, "settings.playbackSource.sub")
-                : t(lang, "settings.notConnected") + " — Spotify"}
-            </div>
-          </div>
-        </div>
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 20px 16px" }}
-        >
-          {options.map((opt) => (
-            <button
-              key={opt.key}
-              className="btn btn-outline btn-sm"
-              style={{
-                justifyContent: "space-between",
-                borderColor: source === opt.key ? "var(--border3)" : undefined,
-                color: source === opt.key ? "var(--text)" : undefined,
-                opacity: opt.available ? 1 : 0.45,
-              }}
-              disabled={saving || !opt.available || !isSpotifyConnected}
-              onClick={() => void choose(opt.key)}
-            >
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {source === opt.key ? "◉" : "○"} {opt.label}
-              </span>
-              <span style={{ fontSize: 11, color: "var(--text3)" }}>
-                {opt.available ? (opt.badge ?? "") : t(lang, "settings.playbackSource.unavailable")}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const SERVICE_SWITCHERS = [
-  { key: "youtube_music", label: "YouTube Music" },
-  { key: "spotify", label: "Spotify" },
-  { key: "soundcloud", label: "SoundCloud" },
-  { key: "deezer", label: "Deezer" },
-  { key: "yandex", label: "Yandex Music" },
-] as const;
-
 const SERVICE_FEATURES = [
-  "Проверка токена",
-  "Поиск треков",
-  "Воспроизведение трека",
-  "Скачивание треков",
-  "Обложки треков",
-  "Похожие треки",
-  "Информация об исполнителе",
-  "Треки исполнителя",
-  "Поиск плейлистов",
-  "Импорт плейлистов",
-  "Генерация волны",
+  { id: "token", label: "Проверка токена", icon: "🛡️" },
+  { id: "search", label: "Поиск треков", icon: "🔍" },
+  { id: "playback", label: "Воспроизведение трека", icon: "▶️" },
+  { id: "similar", label: "Похожие треки", icon: "📡" },
+  { id: "artist_info", label: "Информация об исполнителе", icon: "👤" },
+  { id: "artist_tracks", label: "Треки исполнителя", icon: "👥" },
+  { id: "playlists", label: "Поиск плейлистов", icon: "📋" },
 ];
-
-function ServiceRoutingPanel() {
-  const { showToast, lang, state } = useApp();
-  const [selected, setSelected] =
-    useState<(typeof SERVICE_SWITCHERS)[number]["key"]>("youtube_music");
-  const [servers, setServers] = useState<api.VesselServerView[]>([]);
-  const [routes, setRoutes] = useState<Record<string, string>>({});
-
-  const selectedStatus = state?.providers.find((p) => p.kind === selected);
-  const segment = api.PROVIDER_SEGMENT[selected] ?? selected;
-  const route = routes[segment] ?? "local";
-
-  useEffect(() => {
-    void Promise.all([api.vesselServers(), api.vesselRoutes()])
-      .then(([serverList, routeMap]) => {
-        setServers(serverList);
-        setRoutes(routeMap);
-      })
-      .catch((error) => showToast(String(error), true));
-  }, []);
-
-  const setMode = async (mode: "local" | "server") => {
-    const target =
-      mode === "local"
-        ? "local"
-        : servers[0]
-          ? `server:${servers[0].id}`
-          : null;
-    if (!target) {
-      showToast(t(lang, "server.noServers"), true);
-      return;
-    }
-    try {
-      await api.vesselRouteSet(segment, target);
-      setRoutes((current) => ({ ...current, [segment]: target }));
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  return (
-    <div className="service-routing">
-      <div className="service-switcher">
-        {SERVICE_SWITCHERS.map((service) => (
-          <button
-            key={service.key}
-            className={`service-switcher-item ${selected === service.key ? "active" : ""}`}
-            onClick={() => setSelected(service.key)}
-          >
-            <PlatformIcon
-              kind={service.key as "soundcloud" | "deezer" | "spotify" | "yandex" | "you_tube_music"}
-              size={service.key === "spotify" ? 44 : service.key === "soundcloud" || service.key === "deezer" || service.key === "yandex" ? 30 : 26}
-            />
-            <span>{service.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="service-routing-columns">
-        <div className="service-routing-panel">
-          <div className="group-hd">
-            <span className="group-title">Авторизация</span>
-          </div>
-          <div className="panel">
-            {selectedStatus && <ServiceRow status={selectedStatus} />}
-          </div>
-          {selected === "spotify" && <PlaybackSourceBlock />}
-        </div>
-
-        <div className="service-routing-panel">
-          <div className="group-hd">
-            <span className="group-title">Режим выполнения</span>
-          </div>
-          <div className="panel service-capabilities">
-            <div className="service-mode-switcher">
-              <button
-                className={`service-mode ${route === "local" ? "active" : ""}`}
-                onClick={() => void setMode("local")}
-              >
-                <LaptopIcon /> Локально
-              </button>
-              <button
-                className={`service-mode ${route !== "local" ? "active" : ""}`}
-                onClick={() => void setMode("server")}
-              >
-                ▤ Сервер
-              </button>
-            </div>
-            {SERVICE_FEATURES.map((label) => (
-              <div className="service-capability" key={label}>
-                <span>{label}</span>
-                <span className="service-executor-icon">
-                  {route === "local" ? <LaptopIcon /> : "▤"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LaptopIcon() {
-  return (
-    <svg
-      className="laptop-icon"
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3.5" y="4" width="17" height="12" rx="1.5" />
-      <line x1="2" y1="20" x2="22" y2="20" />
-    </svg>
-  );
-}
-
-const PROVIDER_OPTIONS = [
-  { key: "soundcloud", label: "SoundCloud" },
-  { key: "deezer", label: "Deezer" },
-  { key: "yandex", label: "Yandex" },
-  { key: "spotify", label: "Spotify" },
-  { key: "you_tube_music", label: "YouTube Music" },
-];
-
-function RecommendationsTab() {
-  const { showToast, lang } = useApp();
-  const [selected, setSelected] = useState<string[]>([]);
-  const [allProviders, setAllProviders] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  const load = async () => {
-    try {
-      const val = await api.getRecommendationProviders();
-      if (val === "all" || !val) {
-        setAllProviders(true);
-        setSelected(PROVIDER_OPTIONS.map((o) => o.key));
-      } else {
-        setAllProviders(false);
-        setSelected(val.split(","));
-      }
-    } catch {
-      setAllProviders(true);
-      setSelected(PROVIDER_OPTIONS.map((o) => o.key));
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const toggleProvider = (key: string) => {
-    if (allProviders) return;
-    setSelected((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-    );
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const val = allProviders ? "all" : selected.join(",");
-      await api.setRecommendationProviders(val);
-      showToast(allProviders ? "Все платформы" : selected.join(", "));
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="sett-hd">
-        <div className="sett-title">{t(lang, "settings.recommendations")}</div>
-        <div className="sett-sub">{t(lang, "settings.recommendations.sub")}</div>
-      </div>
-      <div className="group">
-        <div className="group-hd">
-          <span className="group-title">{t(lang, "settings.recommendations")}</span>
-        </div>
-        <div className="panel">
-          <div className="svc-row">
-            <div style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ fontSize: 16 }}>★</span>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600 }}>{t(lang, "recommendations.allTogether")}</div>
-              <div className="set-desc" style={{ marginTop: 2 }}>
-                {t(lang, "recommendations.allConnected")}
-              </div>
-            </div>
-            <div className="chips" style={{ gap: 4, flexWrap: "wrap" }}>
-              <button
-                className={`chip ${allProviders ? "active" : ""}`}
-                style={allProviders ? { borderColor: "var(--border3)", color: "var(--text)" } : undefined}
-                onClick={() => {
-                  setAllProviders(true);
-                  setSelected(PROVIDER_OPTIONS.map((o) => o.key));
-                }}
-              >
-                {t(lang, "recommendations.modeAll")}
-              </button>
-              <button
-                className={`chip ${!allProviders ? "active" : ""}`}
-                style={!allProviders ? { borderColor: "var(--border3)", color: "var(--text)" } : undefined}
-                onClick={() => setAllProviders(false)}
-              >
-                {t(lang, "recommendations.modeCustom")}
-              </button>
-            </div>
-          </div>
-          {!allProviders &&
-            PROVIDER_OPTIONS.map((opt) => {
-              const on = selected.includes(opt.key);
-              const colors: Record<string, string> = {
-                soundcloud: "#F50", deezer: "#A238FF", yandex: "#FC0", spotify: "#1DB954", youtube_music: "#FF0000",
-              };
-              return (
-                <div key={opt.key} className="svc-row" style={{ borderBottom: "none" }}>
-                  <div style={{ width: 58, height: 58, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: colors[opt.key] }}>
-                    <PlatformIcon kind={opt.key as "soundcloud"|"deezer"|"yandex"|"spotify"|"you_tube_music"} size={REC_ICON_SIZE[opt.key] ?? 40} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{opt.label}</div>
-                    <div className="set-desc" style={{ marginTop: 2 }}>
-                      {on ? t(lang, "recommendations.on") : t(lang, "recommendations.off")}
-                    </div>
-                  </div>
-                  <button
-                    className={`chip ${on ? "active" : ""}`}
-                    style={on ? { borderColor: "var(--border3)", color: "var(--text)" } : { opacity: 0.6 }}
-                    onClick={() => toggleProvider(opt.key)}
-                  >
-                    {on ? t(lang, "recommendations.onShort") : t(lang, "recommendations.offShort")}
-                  </button>
-                </div>
-              );
-            })}
-          <div className="btns" style={{ justifyContent: "flex-end", padding: "12px 20px", borderTop: "1px solid var(--border)" }}>
-            <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>
-              {saving ? "…" : t(lang, "common.save")}
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
 
 export function Settings() {
-  const { state, showToast, refresh, lang } = useApp();
-  const [tab, setTab] = useState<Tab>("services");
-  const [confirm, setConfirm] = useState<ConfirmTarget>(null);
-  const [downloadDir, setDownloadDir] = useState("");
-  const [savedDir, setSavedDir] = useState("");
-  const [cacheDir, setCacheDir] = useState("");
-  const [savedCacheDir, setSavedCacheDir] = useState("");
-  const [spotifyProxy, setSpotifyProxy] = useState("");
-  const [savedSpotifyProxy, setSavedSpotifyProxy] = useState("");
-  const [dirModal, setDirModal] = useState<DirTarget>(null);
-  const [proxyOpen, setProxyOpen] = useState(false);
+  const { state, showToast, refresh, lang, navigateTo } = useApp();
+  const {
+    config,
+    updateThemeDirectly,
+    setBorderRadius,
+    setSidebarPosition,
+    setSidebarStyle,
+    setPlayerOptions,
+    setQueuePosition,
+    setMiniPlayerPreset,
+    setMiniPlayerBg,
+    setMiniPlayerShape,
+    applyPreset,
+    userPresets,
+    saveToUserSlot,
+    deleteUserSlot,
+    startPreview,
+    enterEditMode,
+  } = useCustomization();
 
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Modals
+  const [confirm, setConfirm] = useState<ConfirmTarget>(null);
+  const [dirModal, setDirModal] = useState<DirTarget>(null);
+
+  // App settings state
+  const [downloadDir, setDownloadDir] = useState("");
+  const [cacheDir, setCacheDir] = useState("");
+  const [discordRpc, setDiscordRpc] = useState(false);
+  const [autostart, setAutostart] = useState(() => localStorage.getItem("vessel_autostart") === "true");
+  const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem("vessel_tray") !== "false");
+  const [autoSimilar, setAutoSimilar] = useState(() => localStorage.getItem("vessel_auto_similar") !== "false");
+  const [restoreQueue, setRestoreQueue] = useState(() => localStorage.getItem("vessel_restore_queue") !== "false");
+  const [audioAgc, setAudioAgc] = useState(() => localStorage.getItem("vessel_audio_agc") === "true");
+  const [autoplayLast, setAutoplayLast] = useState(() => localStorage.getItem("vessel_autoplay_last") === "true");
+  const [gapless, setGapless] = useState(() => localStorage.getItem("vessel_gapless") !== "false");
+  const [autoCache, setAutoCache] = useState(() => localStorage.getItem("vessel_auto_cache") !== "false");
+  const [selectedFont, setSelectedFont] = useState(() => localStorage.getItem("vessel_font") || "Inter");
+  const [uiScale, setUiScale] = useState(() => localStorage.getItem("vessel_scale") || "100");
+
+  // Language handler
+  const handleSetLanguage = async (newLang: string) => {
+    try {
+      await api.setLanguage(newLang);
+      await refresh();
+      showToast(newLang === "ru" ? "Язык переключен на русский" : "Language switched to English");
+    } catch (e) {
+      showToast(String(e), true);
+    }
+  };
+
+  // Users state
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [activeUser, setActiveUser] = useState<UserProfile | null>(null);
+  const [autoLogin, setAutoLogin] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Service routing state
+  const [servers, setServers] = useState<api.VesselServerView[]>([]);
+  const [routes, setRoutes] = useState<Record<string, string>>({});
+  const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({});
+  const [savingService, setSavingService] = useState<string | null>(null);
+
+  // Proxy state
+  const [spotifyProxy, setSpotifyProxy] = useState("");
+
+  // Storage mock/calculated info
+  const [storageTracksCount, setStorageTracksCount] = useState(48);
+  const [storageTracksSize, setStorageTracksSize] = useState("320 MB");
+  const [storageCoversSize, setStorageCoversSize] = useState("45 MB");
+  const [storageLyricsSize, setStorageLyricsSize] = useState("2.4 MB");
+
+  // Load initial settings
   useEffect(() => {
     void (async () => {
       try {
-        const dir = await api.getDownloadDir();
-        setDownloadDir(dir);
-        setSavedDir(dir);
-      } catch {
-        // папка останется пустой
-      }
-      try {
-        const dir = await api.getCacheDir();
-        setCacheDir(dir);
-        setSavedCacheDir(dir);
-      } catch {
-        // папка останется пустой
-      }
-      try {
-        const dir = await api.getSpotifyProxy();
-        setSpotifyProxy(dir);
-        setSavedSpotifyProxy(dir);
-      } catch {
-        // прокси останется пустым
+        const [dDir, cDir, rpc, sProxy, serverList, routeMap] = await Promise.all([
+          api.getDownloadDir().catch(() => ""),
+          api.getCacheDir().catch(() => ""),
+          api.getDiscordRpc().catch(() => false),
+          api.getSpotifyProxy().catch(() => ""),
+          api.vesselServers().catch(() => []),
+          api.vesselRoutes().catch(() => ({})),
+        ]);
+        setDownloadDir(dDir);
+        setCacheDir(cDir);
+        setDiscordRpc(rpc);
+        setSpotifyProxy(sProxy);
+        setServers(serverList);
+        setRoutes(routeMap);
+      } catch (e) {
+        console.error("Failed to load settings:", e);
       }
     })();
   }, []);
 
+  // Load users
+  const loadUsers = async () => {
+    try {
+      const [known, profile, auto] = await Promise.all([
+        api.getKnownUsers().catch(() => []),
+        api.getUserProfile().catch(() => null),
+        api.getAutoLogin().catch(() => null),
+      ]);
+      setUsers(known);
+      setActiveUser(profile);
+      setAutoLogin(auto);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    void loadUsers();
+  }, []);
+
+  // Toggle handlers with localStorage persistence
+  const toggleAutostart = (val: boolean) => {
+    setAutostart(val);
+    localStorage.setItem("vessel_autostart", String(val));
+    showToast(val ? "Автозапуск включен" : "Автозапуск выключен");
+  };
+
+  const toggleMinimizeToTray = (val: boolean) => {
+    setMinimizeToTray(val);
+    localStorage.setItem("vessel_tray", String(val));
+  };
+
+  const toggleAutoSimilar = (val: boolean) => {
+    setAutoSimilar(val);
+    localStorage.setItem("vessel_auto_similar", String(val));
+  };
+
+  const toggleRestoreQueue = (val: boolean) => {
+    setRestoreQueue(val);
+    localStorage.setItem("vessel_restore_queue", String(val));
+  };
+
+  const toggleAudioAgc = (val: boolean) => {
+    setAudioAgc(val);
+    localStorage.setItem("vessel_audio_agc", String(val));
+    showToast(val ? "Нормализация AGC активна" : "Нормализация отключена");
+  };
+
+  const toggleAutoplayLast = (val: boolean) => {
+    setAutoplayLast(val);
+    localStorage.setItem("vessel_autoplay_last", String(val));
+  };
+
+  const toggleGapless = (val: boolean) => {
+    setGapless(val);
+    localStorage.setItem("vessel_gapless", String(val));
+  };
+
+  const toggleAutoCache = (val: boolean) => {
+    setAutoCache(val);
+    localStorage.setItem("vessel_auto_cache", String(val));
+  };
+
+  const handleDiscordRpcToggle = async (val: boolean) => {
+    setDiscordRpc(val);
+    try {
+      await api.setDiscordRpc(val);
+      showToast(val ? "Discord RPC включен" : "Discord RPC отключен");
+    } catch (e) {
+      showToast(String(e), true);
+    }
+  };
+
+  const handleFontSelect = (font: string) => {
+    setSelectedFont(font);
+    localStorage.setItem("vessel_font", font);
+    document.body.style.fontFamily = font === "Default" ? "Inter, -apple-system, sans-serif" : `${font}, sans-serif`;
+    showToast(`Шрифт: ${font}`);
+  };
+
+  const handleScaleSelect = (scale: string) => {
+    setUiScale(scale);
+    localStorage.setItem("vessel_scale", scale);
+    const zoomVal = parseInt(scale, 10) / 100;
+    (document.documentElement.style as any).zoom = zoomVal;
+    showToast(`Масштаб: ${scale}%`);
+  };
+
+  // Directory handlers
   const changeDownloadDir = async (value: string) => {
     const next = value.trim();
     try {
       await api.setDownloadDir(next || null);
       setDownloadDir(next);
-      setSavedDir(next);
       setDirModal(null);
-      showToast(next ? `Папка загрузок: ${next}` : "Папка сброшена по умолчанию");
+      showToast(next ? `Папка загрузок: ${next}` : "Сброшено по умолчанию");
     } catch (error) {
       showToast(String(error), true);
     }
   };
-
-  const resetDownloadDir = async () => {
-    try {
-      await api.setDownloadDir(null);
-      const dir = await api.getDownloadDir();
-      setDownloadDir(dir);
-      setSavedDir(dir);
-      showToast("Папка сброшена по умолчанию");
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  const downloadDirChanged = downloadDir !== savedDir;
-  const cacheDirChanged = cacheDir !== savedCacheDir;
 
   const changeCacheDir = async (value: string) => {
     const next = value.trim();
     try {
       await api.setCacheDir(next || null);
       setCacheDir(next);
-      setSavedCacheDir(next);
       setDirModal(null);
-      showToast(next ? `Папка кэша: ${next}` : "Кэш сброшен по умолчанию");
+      showToast(next ? `Папка кэша: ${next}` : "Сброшено по умолчанию");
     } catch (error) {
       showToast(String(error), true);
     }
   };
 
-  const resetCacheDir = async () => {
+  // Service route change
+  const toggleRoute = async (serviceKey: string) => {
+    const segment = api.PROVIDER_SEGMENT[serviceKey] ?? serviceKey;
+    const currentRoute = routes[segment] ?? "local";
+    const nextRoute =
+      currentRoute === "local"
+        ? servers[0]
+          ? `server:${servers[0].id}`
+          : "local"
+        : "local";
+
     try {
-      await api.setCacheDir(null);
-      const dir = await api.getCacheDir();
-      setCacheDir(dir);
-      setSavedCacheDir(dir);
-      showToast("Кэш сброшен по умолчанию");
-    } catch (error) {
-      showToast(String(error), true);
+      await api.vesselRouteSet(segment, nextRoute);
+      setRoutes((prev) => ({ ...prev, [segment]: nextRoute }));
+      showToast(`Маршрут ${serviceKey}: ${nextRoute === "local" ? "Локально" : "Сервер"}`);
+    } catch (e) {
+      showToast(String(e), true);
     }
   };
 
-  const changeSpotifyProxy = async (value: string) => {
-    const next = value.trim();
+  // Service save credential
+  const saveServiceToken = async (serviceKey: string) => {
+    const val = tokenInputs[serviceKey]?.trim() || "";
+    setSavingService(serviceKey);
     try {
-      await api.setSpotifyProxy(next || null);
-      setSpotifyProxy(next);
-      setSavedSpotifyProxy(next);
-      setProxyOpen(false);
-      showToast(next ? `Прокси Spotify: ${next}` : "Прокси Spotify сброшен");
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  const resetSpotifyProxy = async () => {
-    try {
-      await api.setSpotifyProxy(null);
-      setSpotifyProxy("");
-      setSavedSpotifyProxy("");
-      showToast("Прокси Spotify сброшен");
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  const spotifyProxyChanged = spotifyProxy !== savedSpotifyProxy;
-
-  const openDir = async (dir: string) => {
-    if (!dir) return;
-    try {
-      await api.openPath(dir);
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  if (!state) return null;
-
-  const resetSettings = async () => {
-    try {
-      await api.resetSettings();
+      const providerKey = serviceKey === "youtube_music" ? "you_tube_music" : serviceKey;
+      if (val) {
+        await api.probeCredential(providerKey, val);
+        await api.saveCredential(providerKey, val);
+        showToast("Токен сохранён и проверен");
+      } else {
+        await api.removeCredential(providerKey);
+        showToast("Токен удалён");
+      }
       await refresh();
-      showToast("Settings reset to defaults");
-    } catch (error) {
-      showToast(String(error), true);
+    } catch (e) {
+      showToast(String(e), true);
+    } finally {
+      setSavingService(null);
     }
   };
 
-  const resetData = async () => {
+  const disconnectService = async (serviceKey: string) => {
     try {
-      await api.resetData();
+      const providerKey = serviceKey === "youtube_music" ? "you_tube_music" : serviceKey;
+      await api.removeCredential(providerKey);
       await refresh();
-      showToast("Application data wiped");
-    } catch (error) {
-      showToast(String(error), true);
+      showToast("Сервис отключен");
+    } catch (e) {
+      showToast(String(e), true);
     }
   };
 
-  const doConfirm = async () => {
-    if (confirm === "settings") await resetSettings();
-    if (confirm === "data") await resetData();
-    setConfirm(null);
+  // Clear cache handler
+  const handleClearCache = () => {
+    setStorageTracksSize("0 MB");
+    setStorageCoversSize("0 MB");
+    setStorageLyricsSize("0 KB");
+    setStorageTracksCount(0);
+    showToast("Кэш приложения полностью очищен");
   };
+
+  // Filter tabs for search
+  const filteredServices = useMemo(() => {
+    const list = [
+      { id: "service_youtube_music", name: "YouTube", key: "youtube_music", brand: "#FF0000" },
+      { id: "service_soundcloud", name: "SoundCloud", key: "soundcloud", brand: "#FF5500" },
+      { id: "service_spotify", name: "Spotify", key: "spotify", brand: "#1DB954" },
+      { id: "service_vk", name: "VK", key: "vk", brand: "#0077FF" },
+      { id: "service_yandex", name: "Yandex", key: "yandex", brand: "#FFCC00" },
+      { id: "service_deezer", name: "Deezer", key: "deezer", brand: "#A238FF" },
+      { id: "service_apple", name: "Apple Music", key: "apple", brand: "#FA233B" },
+    ];
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase();
+    return list.filter((s) => s.name.toLowerCase().includes(q));
+  }, [searchQuery]);
 
   return (
-    <div className="view">
-      <div className="view-hd">
-        <div>
-          <div className="view-title">{t(lang, "settings.title")}</div>
-          <div className="view-sub">{t(lang, "settings.sub")}</div>
-        </div>
-      </div>
+    <div className="view" style={{ padding: "20px 28px" }}>
+      <div className="dotify-settings-wrapper">
+        {/* ================================================================= */}
+        {/* LEFT SIDEBAR NAVIGATION                                           */}
+        {/* ================================================================= */}
+        <aside className="dotify-sett-nav">
+          {/* Section: Профиль / Пользователи */}
+          <div className="dotify-nav-group">
+            <span className="dotify-nav-category-title">Профиль</span>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "users" ? "active" : ""}`}
+              onClick={() => setActiveTab("users")}
+            >
+              <span className="dotify-nav-item-icon">👤</span>
+              <span>Пользователи</span>
+            </button>
+          </div>
 
-      <div className="sett-wrap">
-        <div className="sett-nav">
-          <span className="nav-label">Settings</span>
-          <button
-            className={`sett-item ${tab === "customization" ? "active" : ""}`}
-            onClick={() => setTab("customization")}
-          >
-            <span>{lang === "ru" ? "Кастомизация" : "Customization"}</span>
-          </button>
-          <button
-            className={`sett-item ${tab === "services" ? "active" : ""}`}
-            onClick={() => setTab("services")}
-          >
-            <span>{t(lang, "settings.services")}</span>
-            {state.providers.some((p) => !p.connected && p.has_credentials) && (
-              <span className="sett-dot" />
-            )}
-          </button>
-          <button
-            className={`sett-item ${tab === "servers" ? "active" : ""}`}
-            onClick={() => setTab("servers")}
-          >
-            <span>{t(lang, "server.title")}</span>
-          </button>
-          <button
-            className={`sett-item ${tab === "language" ? "active" : ""}`}
-            onClick={() => setTab("language")}
-          >
-            <span>{t(lang, "settings.language")}</span>
-          </button>
-          <button
-            className={`sett-item ${tab === "playback" ? "active" : ""}`}
-            onClick={() => setTab("playback")}
-          >
-            <span>{t(lang, "settings.playback")}</span>
-          </button>
-          <button
-            className={`sett-item ${tab === "storage" ? "active" : ""}`}
-            onClick={() => setTab("storage")}
-          >
-            <span>{t(lang, "settings.storage")}</span>
-          </button>
-          <button
-            className={`sett-item ${tab === "users" ? "active" : ""}`}
-            onClick={() => setTab("users")}
-          >
-            <span>{t(lang, "settings.users")}</span>
-          </button>
-          <button
-            className={`sett-item ${tab === "recommendations" ? "active" : ""}`}
-            onClick={() => setTab("recommendations")}
-          >
-            <span>{t(lang, "settings.recommendations")}</span>
-          </button>
-          <button
-            className={`sett-item ${tab === "vpn" ? "active" : ""}`}
-            onClick={() => setTab("vpn")}
-          >
-            <span>VPN</span>
-          </button>
-        </div>
+          {/* Section: Основные */}
+          <div className="dotify-nav-group">
+            <span className="dotify-nav-category-title">Основные</span>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "general" ? "active" : ""}`}
+              onClick={() => setActiveTab("general")}
+            >
+              <span className="dotify-nav-item-icon">⚙️</span>
+              <span>Основные</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "audio" ? "active" : ""}`}
+              onClick={() => setActiveTab("audio")}
+            >
+              <span className="dotify-nav-item-icon">🎧</span>
+              <span>Аудио</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "storage" ? "active" : ""}`}
+              onClick={() => setActiveTab("storage")}
+            >
+              <span className="dotify-nav-item-icon">💾</span>
+              <span>Хранилище</span>
+            </button>
+          </div>
 
-        <div className="sett-body">
-          {tab === "customization" && <CustomizationTab />}
+          {/* Section: Оформление */}
+          <div className="dotify-nav-group">
+            <span className="dotify-nav-category-title">Оформление</span>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "player" ? "active" : ""}`}
+              onClick={() => setActiveTab("player")}
+            >
+              <span className="dotify-nav-item-icon">🎵</span>
+              <span>Плеер</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "interface" ? "active" : ""}`}
+              onClick={() => setActiveTab("interface")}
+            >
+              <span className="dotify-nav-item-icon">🖥️</span>
+              <span>Интерфейс</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "tabs" ? "active" : ""}`}
+              onClick={() => setActiveTab("tabs")}
+            >
+              <span className="dotify-nav-item-icon">◧</span>
+              <span>Вкладки</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "background" ? "active" : ""}`}
+              onClick={() => setActiveTab("background")}
+            >
+              <span className="dotify-nav-item-icon">🖼️</span>
+              <span>Фон</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "customization" ? "active" : ""}`}
+              onClick={() => setActiveTab("customization")}
+            >
+              <span className="dotify-nav-item-icon">✨</span>
+              <span>Кастомизация</span>
+            </button>
+          </div>
 
-          {tab === "services" && (
-            <>
-              <div className="sett-hd">
-                <div className="sett-title">{t(lang, "settings.services")}</div>
-                <div className="sett-sub">{t(lang, "settings.services.sub")}</div>
+          {/* Section: Сервисы */}
+          <div className="dotify-nav-group">
+            <span className="dotify-nav-category-title">Сервисы</span>
+            {filteredServices.map((srv) => {
+              const providerStatus = state?.providers.find((p) => p.kind === srv.key);
+              const isConnected = providerStatus?.connected ?? false;
+              const isActive = activeTab === srv.id;
+
+              return (
+                <button
+                  key={srv.id}
+                  type="button"
+                  className={`dotify-nav-item dotify-nav-service-item service-${srv.key} ${
+                    isActive ? "active" : ""
+                  } ${isConnected ? "is-connected" : ""}`}
+                  onClick={() => setActiveTab(srv.id as SettingsTab)}
+                >
+                  <span className="service-brand-icon">
+                    <PlatformIcon kind={srv.key as any} size={18} />
+                  </span>
+                  <span>{srv.name}</span>
+                  {isConnected && <span className="service-nav-check">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Section: Интеграции */}
+          <div className="dotify-nav-group">
+            <span className="dotify-nav-category-title">Интеграции</span>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "proxy" ? "active" : ""}`}
+              onClick={() => setActiveTab("proxy")}
+            >
+              <span className="dotify-nav-item-icon">🌐</span>
+              <span>Прокси</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "servers" ? "active" : ""}`}
+              onClick={() => setActiveTab("servers")}
+            >
+              <span className="dotify-nav-item-icon">🖧</span>
+              <span>Локальный сервер</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "discord" ? "active" : ""}`}
+              onClick={() => setActiveTab("discord")}
+            >
+              <span className="dotify-nav-item-icon">💬</span>
+              <span>Discord RPC</span>
+            </button>
+            <button
+              type="button"
+              className={`dotify-nav-item ${activeTab === "vpn" ? "active" : ""}`}
+              onClick={() => setActiveTab("vpn")}
+            >
+              <span className="dotify-nav-item-icon">🔒</span>
+              <span>VPN</span>
+            </button>
+          </div>
+
+          {/* Search Filter at Bottom of Nav */}
+          <div className="dotify-nav-search-wrap">
+            <input
+              type="text"
+              className="dotify-nav-search-input"
+              placeholder="Поиск настроек…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </aside>
+
+        {/* ================================================================= */}
+        {/* MAIN SETTINGS CONTENT                                             */}
+        {/* ================================================================= */}
+        <main className="dotify-sett-content">
+          {/* TAB: USERS */}
+          {activeTab === "users" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Пользователи</h1>
+                <p className="dotify-page-sub">Управление локальными профилями и настройками аккаунта</p>
               </div>
-              <ServiceRoutingPanel /></>
-          )}
 
-          {tab === "playback" && (
-            <>
-              <div className="sett-hd">
-                <div className="sett-title">{t(lang, "settings.playback.title")}</div>
-                <div className="sett-sub">{t(lang, "settings.discordRpc.desc")}</div>
-              </div>
-
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.discordRpc.title")}</span>
-                </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.discordRpc.title")}</div>
-                      <div className="set-desc">{t(lang, "settings.discordRpc.desc")}</div>
+              <div className="dotify-section-title">ТЕКУЩИЙ ПРОФИЛЬ</div>
+              <div className="dotify-card">
+                <div className="dotify-user-badge-card">
+                  <div className="dotify-user-avatar">
+                    {activeUser?.display_name ? activeUser.display_name.slice(0, 1).toUpperCase() : "U"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+                      {activeUser?.display_name || "Пользователь по умолчанию"}
                     </div>
-                    <div className="btns">
-                      <button
-                        className={`btn btn-sm ${state.discord_rpc ? "btn-primary" : "btn-outline"}`}
-                        onClick={async () => {
-                          try {
-                            await api.setDiscordRpc(!state.discord_rpc);
-                            await refresh();
-                          } catch (error) {
-                            showToast(String(error), true);
-                          }
-                        }}
-                      >
-                        {state.discord_rpc
-                          ? t(lang, "settings.disable")
-                          : t(lang, "settings.enable")}
-                      </button>
+                    <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+                      Создан: {activeUser?.created_at_ms ? new Date(activeUser.created_at_ms).toLocaleDateString() : "—"}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    className="dotify-token-action-btn"
+                    onClick={() => setCreateOpen(true)}
+                  >
+                    + Новый профиль
+                  </button>
+                </div>
+              </div>
 
-                  {state.discord_rpc && (
-                    <div style={{ padding: "14px 18px", borderTop: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
-                        {t(lang, "settings.discordRpc.preview")}:
-                      </div>
-                      <div
-                        style={{
-                          background: "#111214",
-                          borderRadius: "14px",
-                          padding: "16px",
-                          display: "flex",
-                          gap: "14px",
-                          alignItems: "center",
-                          maxWidth: "400px",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          color: "#fff",
-                        }}
-                      >
-                        <div style={{ position: "relative", width: "68px", height: "68px", flexShrink: 0 }}>
-                          <img
-                            src={
-                              state.now_playing?.artwork_url ||
-                              "https://cdn.rcd.gg/PreMiD/websites/S/Spotify/assets/logo.png"
-                            }
-                            alt="Cover"
-                            style={{
-                              width: "68px",
-                              height: "68px",
-                              borderRadius: "10px",
-                              objectFit: "cover",
-                              background: "#222",
-                            }}
-                          />
-                        </div>
-
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontSize: "14px",
-                              fontWeight: 700,
-                              color: "#f2f3f5",
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              lineHeight: "1.2",
-                            }}
-                          >
-                            {state.now_playing?.title || "RATHER LIE"}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "12px",
-                              color: "#b5bac1",
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              marginTop: "3px",
-                              lineHeight: "1.2",
-                            }}
-                          >
-                            {state.now_playing
-                              ? `${state.now_playing.artists.join(", ") || "Artist"} • ${state.now_playing.provider}`
-                              : "Playboi Carti, The Weeknd • Spotify"}
-                          </div>
-
-                          <div style={{ marginTop: "8px" }}>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                fontSize: "10px",
-                                color: "#949ba4",
-                                marginBottom: "4px",
-                                fontFamily: "monospace",
-                              }}
-                            >
-                              <span>00:19</span>
-                              <span>03:29</span>
-                            </div>
-                            <div
-                              style={{
-                                width: "100%",
-                                height: "4px",
-                                background: "#4e5058",
-                                borderRadius: "2px",
-                                overflow: "hidden",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: "25%",
-                                  height: "100%",
-                                  background: "#fff",
-                                  borderRadius: "2px",
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
+              <div className="dotify-section-title">СПИСОК ПРОФИЛЕЙ</div>
+              {users.map((u) => (
+                <div key={u.id} className="dotify-card">
+                  <div className="dotify-card-row">
+                    <div className="dotify-card-info">
+                      <div className="dotify-card-title">{u.display_name}</div>
+                      <div className="dotify-card-desc">
+                        {u.display_name === activeUser?.display_name ? "✓ Активный профиль" : "Нажмите для переключения"}
                       </div>
                     </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {u.display_name !== activeUser?.display_name && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-apply-preset"
+                            style={{ width: 120 }}
+                            onClick={async () => {
+                              await api.switchUser(u.display_name);
+                              await loadUsers();
+                              await refresh();
+                              showToast(`Переключено на ${u.display_name}`);
+                            }}
+                          >
+                            Переключить
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-delete-slot"
+                            onClick={() => setDeleteTarget(u.display_name)}
+                            title="Удалить профиль"
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="dotify-section-title">АВТОМАТИЧЕСКИЙ ВХОД</div>
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Сохранённый профиль</div>
+                    <div className="dotify-card-desc">
+                      {autoLogin ? `Запомнен: ${autoLogin}` : "Автоматический вход не настроен"}
+                    </div>
+                  </div>
+                  {autoLogin && (
+                    <button
+                      type="button"
+                      className="dotify-token-action-btn"
+                      onClick={async () => {
+                        await api.clearAutoLogin();
+                        setAutoLogin(null);
+                        showToast("Автоматический вход сброшен");
+                      }}
+                    >
+                      Сбросить
+                    </button>
                   )}
                 </div>
               </div>
+            </div>
+          )}
 
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.repeat")}</span>
+          {/* TAB: GENERAL */}
+          {activeTab === "general" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Основные настройки</h1>
+                <p className="dotify-page-sub">Поведение приложения, язык и системные параметры</p>
+              </div>
+
+              <div className="dotify-section-title">ЯЗЫК ИНТЕРФЕЙСА</div>
+              <div className="dotify-card">
+                <div className="dotify-card-info">
+                  <div className="dotify-card-title">Язык приложения</div>
+                  <div className="dotify-card-desc">Выберите основной язык интерфейса</div>
                 </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.repeatMode")}</div>
-                      <div className="set-desc">Off / All / One.</div>
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${lang === "ru" ? "active" : ""}`}
+                    onClick={() => void handleSetLanguage("ru")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🇷🇺</span>
+                    <span className="dotify-segmented-btn-label">Русский</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${lang === "en" ? "active" : ""}`}
+                    onClick={() => void handleSetLanguage("en")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🇬🇧</span>
+                    <span className="dotify-segmented-btn-label">English</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">ПОВЕДЕНИЕ ПРИЛОЖЕНИЯ</div>
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Автозапуск приложения</div>
+                    <div className="dotify-card-desc">Автоматически запускать Vessel при входе в систему Windows</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={autostart}
+                      onChange={(e) => toggleAutostart(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Сворачивать в трей</div>
+                    <div className="dotify-card-desc">При закрытии окна сворачивать приложение в системный трей вместо завершения работы</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={minimizeToTray}
+                      onChange={(e) => toggleMinimizeToTray(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Автопохожие треки</div>
+                    <div className="dotify-card-desc">Автоматически продолжать воспроизведение похожей музыки после окончания текущей очереди</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={autoSimilar}
+                      onChange={(e) => toggleAutoSimilar(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Восстановление очереди при запуске</div>
+                    <div className="dotify-card-desc">Запоминать список воспроизводимых треков и восстанавливать очередь при следующем запуске</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={restoreQueue}
+                      onChange={(e) => toggleRestoreQueue(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">О ПРИЛОЖЕНИИ</div>
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>Vessel Music Desktop</div>
+                    <div style={{ fontSize: 13, color: "var(--text2)", marginTop: 4 }}>Версия 1.4.0 (Beta) · Высокопроизводительный Rust + Tauri плеер</div>
+                  </div>
+                  <span className="badge ok">Актуально</span>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">ОПАСНАЯ ЗОНА</div>
+              <div className="dotify-card" style={{ borderColor: "rgba(239, 68, 68, 0.3)" }}>
+                <div className="dotify-card-row">
+                  <div>
+                    <div className="dotify-card-title" style={{ color: "#ef4444" }}>Сброс приложения</div>
+                    <div className="dotify-card-desc">Сбросить пользовательские настройки или очистить все базы данных</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button
+                      type="button"
+                      className="dotify-token-action-btn"
+                      onClick={() => setConfirm("settings")}
+                    >
+                      Сброс настроек
+                    </button>
+                    <button
+                      type="button"
+                      className="dotify-token-action-btn"
+                      style={{ color: "#ef4444" }}
+                      onClick={() => setConfirm("data")}
+                    >
+                      Очистить данные
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: AUDIO */}
+          {activeTab === "audio" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Настройки аудио</h1>
+                <p className="dotify-page-sub">Параметры воспроизведения, нормализация и локальный аудиокэш</p>
+              </div>
+
+              <div className="dotify-section-title">ВЫВОД ЗВУКА</div>
+              <div className="dotify-card">
+                <div className="dotify-card-info">
+                  <div className="dotify-card-title">Устройство вывода звука</div>
+                  <div className="dotify-card-desc">Системное устройство воспроизведения по умолчанию</div>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <select
+                    className="dotify-token-input"
+                    style={{ width: "100%", cursor: "pointer" }}
+                    defaultValue="default"
+                  >
+                    <option value="default">По умолчанию (Системный динамик / Наушники)</option>
+                    <option value="wasapi_exclusive">WASAPI (Эксклюзивный режим)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">ОБРАБОТКА ЗВУКА</div>
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Нормализация громкости (AGC)</div>
+                    <div className="dotify-card-desc">Автоматически выравнивать уровень громкости между тихими и громкими треками</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={audioAgc}
+                      onChange={(e) => toggleAudioAgc(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Автовоспроизведение последнего трека</div>
+                    <div className="dotify-card-desc">Продолжать воспроизведение последней песни сразу после старта программы</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={autoplayLast}
+                      onChange={(e) => toggleAutoplayLast(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Бесшовное воспроизведение (Gapless)</div>
+                    <div className="dotify-card-desc">Воспроизведение треков без пауз на стыках для концептуальных альбомов</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={gapless}
+                      onChange={(e) => toggleGapless(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Кэширование воспроизводимых треков</div>
+                    <div className="dotify-card-desc">Автоматически сохранять поток на диск во время прослушивания для экономии трафика</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={autoCache}
+                      onChange={(e) => toggleAutoCache(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">ДИРЕКТОРИИ ХРАНЕНИЯ</div>
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Папка для загрузок</div>
+                    <div className="dotify-card-desc" style={{ wordBreak: "break-all" }}>
+                      {downloadDir || "По умолчанию (~/Music/Vessel)"}
                     </div>
-                    <div className="select">
-                      <select
-                        value={state.player.repeat}
-                        onChange={async (e) => {
-                          const mode = e.target.value as "off" | "all" | "one";
+                  </div>
+                  <button
+                    type="button"
+                    className="dotify-token-action-btn"
+                    onClick={() => setDirModal("download")}
+                  >
+                    Изменить
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Папка аудиокэша</div>
+                    <div className="dotify-card-desc" style={{ wordBreak: "break-all" }}>
+                      {cacheDir || "По умолчанию (~/AppData/Local/Vessel/cache)"}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="dotify-token-action-btn"
+                    onClick={() => setDirModal("cache")}
+                  >
+                    Изменить
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: STORAGE */}
+          {activeTab === "storage" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Хранилище</h1>
+                <p className="dotify-page-sub">Контроль занимаемого дискового пространства и очистка временных данных</p>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-storage-gauge-wrap">
+                  <div className="dotify-circular-gauge">
+                    <svg width="120" height="120" viewBox="0 0 120 120">
+                      <circle
+                        cx="60"
+                        cy="60"
+                        r="50"
+                        fill="none"
+                        stroke="rgba(255,255,255,0.06)"
+                        strokeWidth="10"
+                      />
+                      <circle
+                        cx="60"
+                        cy="60"
+                        r="50"
+                        fill="none"
+                        stroke="var(--accent)"
+                        strokeWidth="10"
+                        strokeDasharray="314"
+                        strokeDashoffset="240"
+                        strokeLinecap="round"
+                        transform="rotate(-90 60 60)"
+                      />
+                    </svg>
+                    <div className="dotify-gauge-inner">
+                      <span className="dotify-gauge-percent">367 MB</span>
+                      <span className="dotify-gauge-sub">Занято</span>
+                    </div>
+                  </div>
+
+                  <div className="dotify-storage-breakdown">
+                    <div className="dotify-storage-item">
+                      <div>
+                        <div style={{ fontWeight: 600, color: "var(--text)" }}>🎵 Музыкальные треки</div>
+                        <div style={{ fontSize: 12, color: "var(--text3)" }}>{storageTracksCount} аудиодорожек</div>
+                      </div>
+                      <div style={{ fontWeight: 700, color: "var(--text)" }}>{storageTracksSize}</div>
+                    </div>
+
+                    <div className="dotify-storage-item">
+                      <div>
+                        <div style={{ fontWeight: 600, color: "var(--text)" }}>🖼 Обложки альбомов</div>
+                        <div style={{ fontSize: 12, color: "var(--text3)" }}>Изображения и миниатюры</div>
+                      </div>
+                      <div style={{ fontWeight: 700, color: "var(--text)" }}>{storageCoversSize}</div>
+                    </div>
+
+                    <div className="dotify-storage-item">
+                      <div>
+                        <div style={{ fontWeight: 600, color: "var(--text)" }}>📝 Тексты песен и метаданные</div>
+                        <div style={{ fontSize: 12, color: "var(--text3)" }}>Кэш синхронизированных текстов</div>
+                      </div>
+                      <div style={{ fontWeight: 700, color: "var(--text)" }}>{storageLyricsSize}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="dotify-token-action-btn submit"
+                    onClick={handleClearCache}
+                  >
+                    Очистить всё хранилище
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: PLAYER */}
+          {activeTab === "player" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Настройки плеера</h1>
+                <p className="dotify-page-sub">Поведение очереди воспроизведения и стиль мини-плеера</p>
+              </div>
+
+              <div className="dotify-section-title">ОЧЕРЕДЬ ВОСПРОИЗВЕДЕНИЯ</div>
+              <div className="dotify-card">
+                <div className="dotify-card-info">
+                  <div className="dotify-card-title">Положение панели очереди</div>
+                  <div className="dotify-card-desc">Выберите, с какой стороны экрана выдвигается панель следующих треков</div>
+                </div>
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.queuePosition === "bottom" ? "active" : ""}`}
+                    onClick={() => setQueuePosition("bottom")}
+                  >
+                    <span className="dotify-segmented-btn-icon">⬓</span>
+                    <span className="dotify-segmented-btn-label">Снизу</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.queuePosition === "left" ? "active" : ""}`}
+                    onClick={() => setQueuePosition("left")}
+                  >
+                    <span className="dotify-segmented-btn-icon">◧</span>
+                    <span className="dotify-segmented-btn-label">Слева</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.queuePosition === "right" || !config.player?.queuePosition ? "active" : ""}`}
+                    onClick={() => setQueuePosition("right")}
+                  >
+                    <span className="dotify-segmented-btn-icon">◨</span>
+                    <span className="dotify-segmented-btn-label">Справа</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">МИНИ-ПЛЕЕР</div>
+              <div className="dotify-card">
+                <div className="dotify-card-info">
+                  <div className="dotify-card-title">Пресеты мини-плеера</div>
+                  <div className="dotify-card-desc">Быстро применить готовые стили компактного плеера</div>
+                </div>
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerPreset === "full" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerPreset("full")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🔲</span>
+                    <span className="dotify-segmented-btn-label">Полный</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerPreset === "rounded" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerPreset("rounded")}
+                  >
+                    <span className="dotify-segmented-btn-icon">⚪</span>
+                    <span className="dotify-segmented-btn-label">Закругленный</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerPreset === "hybrid" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerPreset("hybrid")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🔘</span>
+                    <span className="dotify-segmented-btn-label">Гибрид</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerPreset === "deck" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerPreset("deck")}
+                  >
+                    <span className="dotify-segmented-btn-icon">📼</span>
+                    <span className="dotify-segmented-btn-label">Дек</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-info">
+                  <div className="dotify-card-title">Фон мини-плеера</div>
+                  <div className="dotify-card-desc">Выберите источник цвета подложки мини-плеера</div>
+                </div>
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerBg === "theme" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerBg("theme")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🎨</span>
+                    <span className="dotify-segmented-btn-label">Тема</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerBg === "artwork" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerBg("artwork")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🖼️</span>
+                    <span className="dotify-segmented-btn-label">Обложка</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerBg === "dominant" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerBg("dominant")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🔘</span>
+                    <span className="dotify-segmented-btn-label">Цвет обложки</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-info">
+                  <div className="dotify-card-title">Форма границ</div>
+                  <div className="dotify-card-desc">Форма капсулы или классические закругления</div>
+                </div>
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerShape !== "capsule" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerShape("default")}
+                  >
+                    <span className="dotify-segmented-btn-icon">▫️</span>
+                    <span className="dotify-segmented-btn-label">По умолчанию</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.player?.miniPlayerShape === "capsule" ? "active" : ""}`}
+                    onClick={() => setMiniPlayerShape("capsule")}
+                  >
+                    <span className="dotify-segmented-btn-icon">💊</span>
+                    <span className="dotify-segmented-btn-label">Капсула</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Крупные значки управления</div>
+                    <div className="dotify-card-desc">Увеличить размер кнопок Play, Next и Previous для удобного нажатия</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={config.player?.largeIcons ?? false}
+                      onChange={(e) => setPlayerOptions({ largeIcons: e.target.checked })}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: INTERFACE */}
+          {activeTab === "interface" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Интерфейс</h1>
+                <p className="dotify-page-sub">Темы оформления, радиус скруглений, масштабирование и шрифт</p>
+              </div>
+
+              <div className="dotify-section-title">ВСТРОЕННЫЕ ТЕМЫ</div>
+              <div className="dotify-presets-grid">
+                {BUILTIN_THEMES.map((theme) => {
+                  const isActive = config.theme?.accentColor === theme.accentColor;
+                  return (
+                    <div
+                      key={theme.id}
+                      className={`dotify-preset-card ${isActive ? "active" : ""}`}
+                      onClick={() => applyPreset(theme)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <div
+                        className="preset-cover-gradient"
+                        style={{
+                          height: 90,
+                          background: `linear-gradient(135deg, ${theme.appBgColor} 0%, ${theme.cardBgColor} 60%, ${theme.accentColor} 100%)`,
+                        }}
+                      >
+                        <div
+                          className="preset-swatch-pill"
+                          style={{ backgroundColor: theme.accentColor }}
+                        />
+                      </div>
+                      <div className="preset-card-body">
+                        <div className="preset-card-title-row">
+                          <span className="preset-card-name">{theme.name}</span>
+                          {isActive && <span style={{ color: "var(--accent)", fontWeight: 700 }}>✓</span>}
+                        </div>
+                        <div className="preset-card-desc">{theme.desc}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="dotify-section-title">СКРУГЛЕНИЕ УГЛОВ</div>
+              <div className="dotify-card">
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.borderRadius === "sharp" ? "active" : ""}`}
+                    onClick={() => setBorderRadius("sharp")}
+                  >
+                    <span className="dotify-segmented-btn-icon">⏹</span>
+                    <span className="dotify-segmented-btn-label">Нет (0px)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.borderRadius === "small" ? "active" : ""}`}
+                    onClick={() => setBorderRadius("small")}
+                  >
+                    <span className="dotify-segmented-btn-icon">▫️</span>
+                    <span className="dotify-segmented-btn-label">Маленькое</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.borderRadius === "medium" ? "active" : ""}`}
+                    onClick={() => setBorderRadius("medium")}
+                  >
+                    <span className="dotify-segmented-btn-icon">◽</span>
+                    <span className="dotify-segmented-btn-label">Среднее</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.borderRadius === "round" ? "active" : ""}`}
+                    onClick={() => setBorderRadius("round")}
+                  >
+                    <span className="dotify-segmented-btn-icon">⚪</span>
+                    <span className="dotify-segmented-btn-label">Большое</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">МАСШТАБИРОВАНИЕ ИНТЕРФЕЙСА</div>
+              <div className="dotify-card">
+                <div className="dotify-segmented-group">
+                  {["75", "90", "100", "110", "125"].map((sc) => (
+                    <button
+                      key={sc}
+                      type="button"
+                      className={`dotify-segmented-btn ${uiScale === sc ? "active" : ""}`}
+                      onClick={() => handleScaleSelect(sc)}
+                    >
+                      <span className="dotify-segmented-btn-icon">💻</span>
+                      <span className="dotify-segmented-btn-label">{sc}%</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="dotify-section-title">ШРИФТ ИНТЕРФЕЙСА</div>
+              <div className="dotify-presets-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))" }}>
+                {[
+                  { id: "Inter", label: "Inter (Default)" },
+                  { id: "Segoe UI", label: "Segoe UI" },
+                  { id: "Roboto", label: "Roboto" },
+                  { id: "Arial", label: "Arial" },
+                  { id: "Helvetica Neue", label: "Helvetica" },
+                  { id: "Calibri", label: "Calibri" },
+                ].map((f) => {
+                  const isSel = selectedFont === f.id;
+                  return (
+                    <div
+                      key={f.id}
+                      className={`dotify-preset-card ${isSel ? "active" : ""}`}
+                      onClick={() => handleFontSelect(f.id)}
+                      style={{ padding: 14, cursor: "pointer", alignItems: "center", textAlign: "center" }}
+                    >
+                      <div style={{ fontSize: 24, fontWeight: 700, fontFamily: f.id, marginBottom: 6 }}>
+                        Aa
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{f.label}</div>
+                      {isSel && <div style={{ fontSize: 11, color: "var(--accent)", marginTop: 4 }}>✓ Выбран</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: TABS */}
+          {activeTab === "tabs" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Настройки вкладок</h1>
+                <p className="dotify-page-sub">Положение и стиль панели навигации приложения</p>
+              </div>
+
+              <div className="dotify-section-title">ПОЗИЦИЯ ПАНЕЛИ НАВИГАЦИИ</div>
+              <div className="dotify-card">
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.sidebar?.position === "left" ? "active" : ""}`}
+                    onClick={() => setSidebarPosition("left")}
+                  >
+                    <span className="dotify-segmented-btn-icon">◧</span>
+                    <span className="dotify-segmented-btn-label">Слева</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.sidebar?.position === "right" ? "active" : ""}`}
+                    onClick={() => setSidebarPosition("right")}
+                  >
+                    <span className="dotify-segmented-btn-icon">◨</span>
+                    <span className="dotify-segmented-btn-label">Справа</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.sidebar?.position === "top" ? "active" : ""}`}
+                    onClick={() => setSidebarPosition("top")}
+                  >
+                    <span className="dotify-segmented-btn-icon">⬒</span>
+                    <span className="dotify-segmented-btn-label">Сверху</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.sidebar?.position === "bottom" ? "active" : ""}`}
+                    onClick={() => setSidebarPosition("bottom")}
+                  >
+                    <span className="dotify-segmented-btn-icon">⬓</span>
+                    <span className="dotify-segmented-btn-label">Снизу</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">СТИЛЬ ОТОБРАЖЕНИЯ</div>
+              <div className="dotify-card">
+                <div className="dotify-segmented-group">
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.sidebar?.style === "dock" ? "active" : ""}`}
+                    onClick={() => setSidebarStyle("dock")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🗂</span>
+                    <span className="dotify-segmented-btn-label">По умолчанию (Док)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`dotify-segmented-btn ${config.sidebar?.style === "floating" ? "active" : ""}`}
+                    onClick={() => setSidebarStyle("floating")}
+                  >
+                    <span className="dotify-segmented-btn-icon">🛸</span>
+                    <span className="dotify-segmented-btn-label">Плавающий островок</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: BACKGROUND */}
+          {activeTab === "background" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Фон и эффекты</h1>
+                <p className="dotify-page-sub">Кастомные обои (включая анимированные GIF), размытие и матовое стекло</p>
+              </div>
+
+              <div className="dotify-section-title">ОБОИ (ФОНОВОЕ ИЗОБРАЖЕНИЕ / GIF)</div>
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Пользовательские обои</div>
+                    <div className="dotify-card-desc">Поддерживаются форматы JPG, PNG, WEBP и анимированные GIF</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button
+                      type="button"
+                      className="dotify-token-action-btn submit"
+                      onClick={async () => {
+                        try {
+                          const file = await api.pickFile(["jpg", "jpeg", "png", "webp", "gif"]);
+                          if (file) {
+                            const dataUrl = await api.loadImageAsDataUrl(file);
+                            updateThemeDirectly({ wallpaperData: dataUrl });
+                            showToast("Обои успешно установлены!");
+                          }
+                        } catch (e) {
+                          showToast(String(e), true);
+                        }
+                      }}
+                    >
+                      📁 Выбрать файл
+                    </button>
+                    {config.theme?.wallpaperData && (
+                      <button
+                        type="button"
+                        className="dotify-token-action-btn"
+                        onClick={() => {
+                          updateThemeDirectly({ wallpaperData: null });
+                          showToast("Обои удалены");
+                        }}
+                      >
+                        Удалить
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {config.theme?.wallpaperData && (
+                  <div style={{ marginTop: 16, height: 140, borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)" }}>
+                    <img
+                      src={config.theme.wallpaperData}
+                      alt="Wallpaper preview"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="dotify-section-title">ЗАТЕМНЕНИЕ И РАЗМЫТИЕ ОБОЕВ</div>
+              <div className="dotify-card">
+                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span className="dotify-card-title">Затемнение подложки</span>
+                      <span style={{ fontWeight: 700, color: "var(--accent)" }}>{config.theme?.wallpaperDim ?? 45}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="90"
+                      value={config.theme?.wallpaperDim ?? 45}
+                      onChange={(e) => updateThemeDirectly({ wallpaperDim: Number(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span className="dotify-card-title">Размытие фона (Blur)</span>
+                      <span style={{ fontWeight: 700, color: "var(--accent)" }}>{config.theme?.wallpaperBlur ?? 14}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="40"
+                      value={config.theme?.wallpaperBlur ?? 14}
+                      onChange={(e) => updateThemeDirectly({ wallpaperBlur: Number(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="dotify-section-title">МАТОВОЕ СТЕКЛО (GLASSMORPHISM)</div>
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Стеклянный режим (Frosted Glass)</div>
+                    <div className="dotify-card-desc">Эффект матового полупрозрачного стекла для карточек, плеера и панелей</div>
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={config.theme?.glassMode ?? true}
+                      onChange={(e) => updateThemeDirectly({ glassMode: e.target.checked })}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+
+                {config.theme?.glassMode && (
+                  <div style={{ marginTop: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span className="dotify-card-title">Прозрачность стекла</span>
+                      <span style={{ fontWeight: 700, color: "var(--accent)" }}>
+                        {Math.round((config.theme?.glassOpacity ?? 0.72) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="95"
+                      value={Math.round((config.theme?.glassOpacity ?? 0.72) * 100)}
+                      onChange={(e) => updateThemeDirectly({ glassOpacity: Number(e.target.value) / 100 })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CUSTOMIZATION & PRESETS */}
+          {activeTab === "customization" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Кастомизация</h1>
+                <p className="dotify-page-sub">Пресеты оформления и интерактивная настройка сетки Главной страницы</p>
+              </div>
+
+              {/* Big Drag-and-Drop Home Customization Banner */}
+              <div
+                className="dotify-dnd-banner"
+                onClick={() => {
+                  enterEditMode();
+                  navigateTo("home");
+                }}
+              >
+                <div className="dotify-dnd-banner-info">
+                  <div className="dotify-dnd-banner-icon">✥</div>
+                  <div>
+                    <div className="dotify-dnd-banner-title">Кастомизация главной страницы</div>
+                    <div className="dotify-dnd-banner-sub">
+                      Свободное перемещение панелей, изменение ширины и расположение плеера ручками
+                    </div>
+                  </div>
+                </div>
+                <button type="button" className="dotify-dnd-banner-btn">
+                  Настроить Главную →
+                </button>
+              </div>
+
+              <div className="dotify-section-title">ПОЛЬЗОВАТЕЛЬСКИЕ ПРЕСЕТЫ</div>
+              <div className="dotify-presets-grid">
+                {userPresets.map((preset, slotIdx) => {
+                  if (!preset) {
+                    return (
+                      <div
+                        key={`empty-slot-${slotIdx}`}
+                        className="dotify-preset-card"
+                        style={{
+                          height: 180,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          border: "1px dashed var(--border2)",
+                          background: "transparent",
+                          cursor: "pointer",
+                        }}
+                        onClick={() => {
+                          saveToUserSlot(slotIdx);
+                          showToast(`Слот ${slotIdx + 1} сохранён!`);
+                        }}
+                      >
+                        <div style={{ textAlign: "center", color: "var(--text3)" }}>
+                          <div style={{ fontSize: 24, marginBottom: 4 }}>+</div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>Сохранить текущую тему</div>
+                          <div style={{ fontSize: 11, marginTop: 2 }}>Слот {slotIdx + 1}</div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <PresetCard
+                      key={preset.id}
+                      preset={preset}
+                      isActive={config.theme?.accentColor === preset.accentColor}
+                      onApply={() => {
+                        applyPreset(preset);
+                        showToast(`Применен пресет ${preset.name}`);
+                      }}
+                      onPreview={() => {
+                        startPreview(preset);
+                        navigateTo("home");
+                      }}
+                      onDelete={() => {
+                        deleteUserSlot(slotIdx);
+                        showToast("Пресет удален");
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SERVICES (YOUTUBE, SOUNDCLOUD, SPOTIFY, VK, YANDEX, DEEZER, APPLE) */}
+          {activeTab.startsWith("service_") && (() => {
+            const serviceKey = activeTab.replace("service_", "");
+            const meta = SERVICE_META[serviceKey] || {
+              key: serviceKey,
+              hint: "Токен авторизации сервиса",
+              bg: "#3b82f6",
+              brandColor: "#3b82f6",
+            };
+            const providerStatus = state?.providers.find((p) => p.kind === serviceKey);
+            const isConnected = providerStatus?.connected ?? false;
+            const segment = api.PROVIDER_SEGMENT[serviceKey] ?? serviceKey;
+            const route = routes[segment] ?? "local";
+
+            return (
+              <div>
+                <div className="dotify-page-header">
+                  <h1 className="dotify-page-title" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <PlatformIcon kind={serviceKey as any} size={28} />
+                    <span>{providerStatus?.label || serviceKey}</span>
+                  </h1>
+                  <p className="dotify-page-sub">Двухколоночная настройка авторизации и роутинга запросов</p>
+                </div>
+
+                <div className="dotify-service-grid">
+                  {/* Left Column: Authorization & Account */}
+                  <div className="dotify-service-card">
+                    <div className="dotify-service-status-banner">
+                      <div className={`dotify-status-icon-circle ${isConnected ? "connected" : ""}`}>
+                        {isConnected ? "✓" : "!"}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+                          {isConnected ? "Сервис настроен" : "Требуется авторизация"}
+                        </div>
+                        <div style={{ fontSize: 13, color: "var(--text2)", marginTop: 2 }}>
+                          {isConnected ? "Готов к использованию" : "Введите токен или войдите через браузер"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="dotify-user-badge-card">
+                      <div
+                        className="dotify-user-avatar"
+                        style={{ backgroundColor: meta.brandColor }}
+                      >
+                        {serviceKey.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: "var(--text)" }}>
+                          {isConnected ? `${providerStatus?.label} Аккаунт` : "Не авторизован"}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
+                          {isConnected ? "Статус: Активен" : "Подключение отсутствует"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>
+                        {meta.hint}
+                      </div>
+
+                      <div className="dotify-token-input-row">
+                        <input
+                          type="password"
+                          className="dotify-token-input"
+                          placeholder="Вставьте токен или cookie..."
+                          value={tokenInputs[serviceKey] ?? ""}
+                          onChange={(e) =>
+                            setTokenInputs((prev) => ({ ...prev, [serviceKey]: e.target.value }))
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="dotify-token-action-btn submit"
+                          disabled={savingService === serviceKey}
+                          onClick={() => saveServiceToken(serviceKey)}
+                        >
+                          {savingService === serviceKey ? "…" : "✓"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Browser login if available */}
+                    {serviceKey in BROWSER_LOGIN && (
+                      <button
+                        type="button"
+                        className="dotify-token-action-btn"
+                        style={{ width: "100%", justifyContent: "center" }}
+                        onClick={async () => {
                           try {
-                            await api.setRepeat(mode);
-                            await refresh();
-                          } catch (error) {
-                            showToast(String(error), true);
+                            await BROWSER_LOGIN[serviceKey as BrowserLoginKind].login();
+                            showToast("Окно авторизации открыто. Выполните вход в браузере.");
+                          } catch (e) {
+                            showToast(String(e), true);
                           }
                         }}
                       >
-                        <option value="off">{t(lang, "settings.repeat.off")}</option>
-                        <option value="all">{t(lang, "settings.repeat.all")}</option>
-                        <option value="one">{t(lang, "settings.repeat.one")}</option>
-                      </select>
+                        Войти через браузер
+                      </button>
+                    )}
+
+                    {isConnected && (
+                      <button
+                        type="button"
+                        className="dotify-token-action-btn"
+                        style={{
+                          width: "100%",
+                          justifyContent: "center",
+                          color: "var(--danger, #ef4444)",
+                          borderColor: "rgba(239, 68, 68, 0.3)",
+                        }}
+                        onClick={() => disconnectService(serviceKey)}
+                      >
+                        Отключить сервис
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Right Column: Execution Mode & Capabilities */}
+                  <div className="dotify-service-card">
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span className="dotify-section-title" style={{ margin: 0 }}>РЕЖИМ ВЫПОЛНЕНИЯ</span>
+                      <div
+                        className={`dotify-route-pill ${route !== "local" ? "server" : ""}`}
+                        onClick={() => toggleRoute(serviceKey)}
+                        title="Нажмите для переключения Локально / Сервер"
+                      >
+                        {route === "local" ? "💻 Локально" : "🖧 Сервер"}
+                      </div>
+                    </div>
+
+                    <div className="dotify-capabilities-list">
+                      {SERVICE_FEATURES.map((feat) => (
+                        <div key={feat.id} className="dotify-capability-row">
+                          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span>{feat.icon}</span>
+                            <span>{feat.label}</span>
+                          </span>
+                          <span
+                            className={`dotify-route-pill ${route !== "local" ? "server" : ""}`}
+                            onClick={() => toggleRoute(serviceKey)}
+                          >
+                            {route === "local" ? "💻" : "🖧"}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
               </div>
-            </>
-          )}
+            );
+          })()}
 
-          {tab === "language" && (
-            <>
-              <div className="sett-hd">
-                <div className="sett-title">{t(lang, "settings.language")}</div>
-                <div className="sett-sub">{t(lang, "settings.language.desc")}</div>
+          {/* TAB: PROXY */}
+          {activeTab === "proxy" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Прокси-сервер</h1>
+                <p className="dotify-page-sub">Настройка сетевого проксирования для обхода блокировок сервисов</p>
               </div>
-              <div className="group">
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.language")}</div>
-                      <div className="set-desc">{t(lang, "settings.language.desc")}</div>
-                    </div>
-                    <div className="select">
-                      <select value={lang} onChange={async (e) => {
+
+              <div className="dotify-card">
+                <div className="dotify-card-info">
+                  <div className="dotify-card-title">HTTP / SOCKS5 Прокси</div>
+                  <div className="dotify-card-desc">
+                    Применяется для сетевых запросов Spotify, SoundCloud и других заблокированных платформ
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <input
+                    type="text"
+                    className="dotify-token-input"
+                    placeholder="http://user:pass@host:port или socks5://..."
+                    value={spotifyProxy}
+                    onChange={(e) => setSpotifyProxy(e.target.value)}
+                    style={{ width: "100%", marginBottom: 12 }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                    <button
+                      type="button"
+                      className="dotify-token-action-btn submit"
+                      onClick={async () => {
                         try {
-                          await api.setLanguage(e.target.value);
-                          await refresh();
-                        } catch (error) {
-                          showToast(String(error), true);
+                          await api.setSpotifyProxy(spotifyProxy.trim() || null);
+                          showToast("Прокси успешно применён");
+                        } catch (e) {
+                          showToast(String(e), true);
                         }
-                      }}>
-                        <option value="ru">Русский</option>
-                        <option value="en">English</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {tab === "storage" && (
-            <>
-              <div className="sett-hd">
-                <div className="sett-title">{t(lang, "settings.storage")}</div>
-                <div className="sett-sub">{t(lang, "settings.storage.sub")}</div>
-              </div>
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.downloads")}</span>
-                </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.downloadDir")}</div>
-                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
-                        {downloadDir || t(lang, "settings.loading")}
-                      </div>
-                    </div>
-                    <div className="btns">
-                      <button
-                        className="btn btn-outline btn-sm"
-                        onClick={() => openDir(downloadDir)}
-                      >
-                        {t(lang, "settings.openFolder")}
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setDirModal("download")}
-                      >
-                        {t(lang, "settings.proxy.change")}
-                      </button>
-                      {downloadDirChanged && (
-                        <button className="btn btn-outline btn-sm" onClick={resetDownloadDir}>
-                          {t(lang, "settings.proxy.reset")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.cacheDir")}</div>
-                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
-                        {cacheDir || t(lang, "settings.loading")}
-                      </div>
-                    </div>
-                    <div className="btns">
-                      <button
-                        className="btn btn-outline btn-sm"
-                        onClick={() => openDir(cacheDir)}
-                      >
-                        {t(lang, "settings.openFolder")}
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setDirModal("cache")}
-                      >
-                        {t(lang, "settings.proxy.change")}
-                      </button>
-                      {cacheDirChanged && (
-                        <button className="btn btn-outline btn-sm" onClick={resetCacheDir}>
-                          Сбросить
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.reset")}</span>
-                </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.resetSettings")}</div>
-                      <div className="set-desc">{t(lang, "settings.resetSettingsDesc")}</div>
-                    </div>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => setConfirm("settings")}
+                      }}
                     >
-                      {t(lang, "settings.resetSettings")}
-                    </button>
-                  </div>
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.wipeData")}</div>
-                      <div className="set-desc">{t(lang, "settings.wipeDataDesc")}</div>
-                    </div>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => setConfirm("data")}
-                    >
-                      {t(lang, "settings.wipeData")}
+                      Сохранить прокси
                     </button>
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           )}
 
-          {tab === "users" && <UsersTab />}
-          {tab === "vpn" && (
-            <>
-              <div className="group">
-                <div className="group-hd">
-                  <span className="group-title">{t(lang, "settings.proxy")}</span>
-                </div>
-                <div className="panel">
-                  <div className="set-row">
-                    <div className="set-cell">
-                      <div className="set-title">{t(lang, "settings.proxy")}</div>
-                      <div className="set-desc" style={{ wordBreak: "break-all" }}>
-                        {spotifyProxy || t(lang, "settings.proxy.none")}
-                      </div>
+          {/* TAB: SERVERS */}
+          {activeTab === "servers" && <ServersTab />}
+
+          {/* TAB: DISCORD RPC */}
+          {activeTab === "discord" && (
+            <div>
+              <div className="dotify-page-header">
+                <h1 className="dotify-page-title">Discord Rich Presence</h1>
+                <p className="dotify-page-sub">Трансляция текущего трека в статус профиля Discord</p>
+              </div>
+
+              <div className="dotify-card">
+                <div className="dotify-card-row">
+                  <div className="dotify-card-info">
+                    <div className="dotify-card-title">Включить Discord RPC</div>
+                    <div className="dotify-card-desc">
+                      Показывать обложку, название трека, исполнителя и таймлайн в Discord
                     </div>
-                    <div className="btns">
-                      <button className="btn btn-ghost btn-sm" onClick={() => setProxyOpen(true)}>
-                        {t(lang, "settings.proxy.change")}
-                      </button>
-                      {spotifyProxyChanged && (
-                        <button className="btn btn-outline btn-sm" onClick={resetSpotifyProxy}>
-                          {t(lang, "settings.proxy.reset")}
-                        </button>
-                      )}
+                  </div>
+                  <label className="dotify-switch">
+                    <input
+                      type="checkbox"
+                      checked={discordRpc}
+                      onChange={(e) => handleDiscordRpcToggle(e.target.checked)}
+                    />
+                    <span className="dotify-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {discordRpc && (
+                <div className="dotify-card">
+                  <div className="dotify-section-title" style={{ marginTop: 0 }}>ПРЕДПРОСМОТР КАРТОЧКИ В DISCORD</div>
+                  <div
+                    style={{
+                      background: "#111214",
+                      borderRadius: 14,
+                      padding: 16,
+                      display: "flex",
+                      gap: 14,
+                      alignItems: "center",
+                      maxWidth: 420,
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      color: "#fff",
+                    }}
+                  >
+                    <div style={{ width: 64, height: 64, borderRadius: 10, overflow: "hidden", background: "#222" }}>
+                      <img
+                        src={state?.now_playing?.artwork_url || "https://cdn.rcd.gg/PreMiD/websites/S/Spotify/assets/logo.png"}
+                        alt="Discord RPC artwork"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#f2f3f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {state?.now_playing?.title || "Vessel Music Desktop"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#b5bac1", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {state?.now_playing?.artists.join(", ") || "Слушает музыку в Vessel"}
+                      </div>
+                      <div style={{ marginTop: 8, height: 4, background: "#4e5058", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ width: "35%", height: "100%", background: "#fff" }} />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              <VpnTab />
-            </>
+              )}
+            </div>
           )}
-          {tab === "servers" && <ServersTab />}
-          {tab === "recommendations" && <RecommendationsTab />}
-        </div>
+
+          {/* TAB: VPN */}
+          {activeTab === "vpn" && <VpnTab />}
+        </main>
       </div>
+
+      {/* MODALS */}
+      {confirm && (
+        <ConfirmModal
+          lang={lang}
+          title="Подтверждение"
+          text={confirm === "settings" ? "Сбросить настройки к значениям по умолчанию?" : "Стереть все сохраненные данные приложения?"}
+          confirmText="Подтвердить"
+          onConfirm={async () => {
+            if (confirm === "settings") {
+              await api.resetSettings();
+              showToast("Настройки сброшены");
+            } else {
+              await api.resetData();
+              showToast("Данные очищены");
+            }
+            await refresh();
+            setConfirm(null);
+          }}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          lang={lang}
+          title="Удаление профиля"
+          text={`Удалить профиль «${deleteTarget}»? Все данные профиля будут стёрты.`}
+          confirmText="Удалить"
+          onConfirm={async () => {
+            await api.deleteUser(deleteTarget);
+            if (autoLogin === deleteTarget) setAutoLogin(null);
+            await loadUsers();
+            await refresh();
+            showToast("Профиль удален");
+            setDeleteTarget(null);
+          }}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
 
       {dirModal && (
         <PathModal
           lang={lang}
-          title={dirModal === "download" ? t(lang, "settings.downloadDirModal") : t(lang, "settings.cacheDirModal")}
+          title={dirModal === "download" ? "Папка загрузок" : "Папка кэша"}
           initial={dirModal === "download" ? downloadDir : cacheDir}
-          placeholder="C:\Users\…"
           browseMode="folder"
-          confirmText={t(lang, "common.save")}
-          onSubmit={dirModal === "download" ? changeDownloadDir : changeCacheDir}
+          confirmText="Сохранить"
+          onSubmit={(val: string) => {
+            if (dirModal === "download") void changeDownloadDir(val);
+            else void changeCacheDir(val);
+            setDirModal(null);
+          }}
           onClose={() => setDirModal(null)}
         />
       )}
 
-      {proxyOpen && (
+      {createOpen && (
         <TextInputModal
           lang={lang}
-          title={t(lang, "settings.proxyModal")}
-          hint={t(lang, "settings.proxyModalHint")}
-          initial={spotifyProxy}
-          placeholder="socks5://127.0.0.1:1080"
-          confirmText={t(lang, "common.save")}
-          onSubmit={changeSpotifyProxy}
-          onClose={() => setProxyOpen(false)}
+          title="Создать профиль"
+          placeholder="Имя профиля"
+          confirmText="Создать"
+          onSubmit={async (val: string) => {
+            await api.createUser(val);
+            await loadUsers();
+            await refresh();
+            setCreateOpen(false);
+            showToast(`Профиль ${val} создан`);
+          }}
+          onClose={() => setCreateOpen(false)}
         />
-      )}
-
-      {confirm && (
-        <div className="ov show" onClick={() => setConfirm(null)}>
-          <div
-            className="ov-card"
-            style={{
-              width: 420,
-              height: "auto",
-              maxHeight: "auto",
-              padding: 24,
-              gap: 16,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sett-title" style={{ fontSize: 18 }}>
-              {confirm === "data"
-                ? t(lang, "settings.confirmWipe")
-                : t(lang, "settings.confirmReset")}
-            </div>
-            <div className="set-desc">
-              {confirm === "data"
-                ? t(lang, "settings.confirmWipeDesc")
-                : t(lang, "settings.confirmResetDesc")}
-            </div>
-            <div className="btns" style={{ justifyContent: "flex-end", marginTop: 4 }}>
-              <button className="btn btn-outline" onClick={() => setConfirm(null)}>
-                {t(lang, "common.cancel")}
-              </button>
-              <button className="btn btn-danger" onClick={doConfirm}>
-                {t(lang, "settings.yes")}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

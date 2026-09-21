@@ -55,6 +55,10 @@ export interface CustomizationConfig {
     widthPercent?: number; // default 100, min 50, max 100
     largeIcons: boolean;
     hideDetails: boolean;
+    queuePosition?: "right" | "left" | "bottom";
+    miniPlayerPreset?: "full" | "rounded" | "hybrid" | "deck";
+    miniPlayerBg?: "theme" | "artwork" | "dominant";
+    miniPlayerShape?: "default" | "capsule";
   };
   home: {
     blockOrder: string[];
@@ -81,6 +85,10 @@ export interface ThemePreset {
   textColor: string;
   glassMode: boolean;
   glassOpacity: number;
+  wallpaperData?: string | null;
+  wallpaperBlur?: number;
+  wallpaperDim?: number;
+  borderRadius?: BorderRadiusPreset;
 }
 
 export const BUILTIN_THEMES: ThemePreset[] = [
@@ -181,6 +189,10 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
     widthPercent: 100,
     largeIcons: false,
     hideDetails: false,
+    queuePosition: "right",
+    miniPlayerPreset: "full",
+    miniPlayerBg: "theme",
+    miniPlayerShape: "default",
   },
   home: {
     blockOrder: ["header", "wave", "playlists", "recent", "library"],
@@ -315,6 +327,26 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       : 100;
   const playerLargeIcons = Boolean(raw.player?.largeIcons);
   const playerHideDetails = Boolean(raw.player?.hideDetails);
+
+  const validQueuePositions = ["right", "left", "bottom"] as const;
+  const queuePosition = validQueuePositions.includes(raw.player?.queuePosition)
+    ? raw.player.queuePosition
+    : "right";
+
+  const validMiniPlayerPresets = ["full", "rounded", "hybrid", "deck"] as const;
+  const miniPlayerPreset = validMiniPlayerPresets.includes(raw.player?.miniPlayerPreset)
+    ? raw.player.miniPlayerPreset
+    : "full";
+
+  const validMiniPlayerBgs = ["theme", "artwork", "dominant"] as const;
+  const miniPlayerBg = validMiniPlayerBgs.includes(raw.player?.miniPlayerBg)
+    ? raw.player.miniPlayerBg
+    : "theme";
+
+  const validMiniPlayerShapes = ["default", "capsule"] as const;
+  const miniPlayerShape = validMiniPlayerShapes.includes(raw.player?.miniPlayerShape)
+    ? raw.player.miniPlayerShape
+    : "default";
 
   const defaultOrder = ["header", "wave", "recent", "playlists", "library"];
   let blockOrder: string[] = [];
@@ -463,6 +495,10 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       widthPercent: playerWidthPercent,
       largeIcons: playerLargeIcons,
       hideDetails: playerHideDetails,
+      queuePosition,
+      miniPlayerPreset,
+      miniPlayerBg,
+      miniPlayerShape,
     },
     home: {
       blockOrder,
@@ -522,7 +558,20 @@ export interface CustomizationContextType {
   userPresets: (ThemePreset | null)[];
   saveToUserSlot: (slotIndex: number, customName?: string) => void;
   loadFromUserSlot: (slotIndex: number) => void;
+  deleteUserSlot: (slotIndex: number) => void;
   resetToDefaults: () => void;
+  isQueueOpen: boolean;
+  setIsQueueOpen: (open: boolean) => void;
+  toggleQueue: () => void;
+  setQueuePosition: (pos: "right" | "left" | "bottom") => void;
+  setMiniPlayerPreset: (preset: "full" | "rounded" | "hybrid" | "deck") => void;
+  setMiniPlayerBg: (bg: "theme" | "artwork" | "dominant") => void;
+  setMiniPlayerShape: (shape: "default" | "capsule") => void;
+  isPreviewActive: boolean;
+  previewPreset: ThemePreset | null;
+  startPreview: (preset: ThemePreset) => void;
+  applyPreview: () => void;
+  cancelPreview: () => void;
   activeDragTarget: "sidebar" | "player" | null;
   setActiveDragTarget: (target: "sidebar" | "player" | null) => void;
   activeDropZone: "left" | "right" | "top" | "bottom" | null;
@@ -562,6 +611,14 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     return [null, null, null];
   });
 
+  // Queue drawer state
+  const [isQueueOpen, setIsQueueOpen] = useState(false);
+  const toggleQueue = () => setIsQueueOpen((prev) => !prev);
+
+  // Fullscreen theme preview state
+  const [previewPreset, setPreviewPreset] = useState<ThemePreset | null>(null);
+  const [prePreviewConfig, setPrePreviewConfig] = useState<CustomizationConfig | null>(null);
+
   const activeConfig = sanitizeConfig(isEditMode ? draftConfig : savedConfig);
 
   // Dynamically inject CSS variables into document.documentElement
@@ -595,8 +652,8 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     root.style.setProperty("--player-height", `${player.height || 82}px`);
     root.style.setProperty("--player-width", `${player.widthPercent || 100}%`);
 
-    const isGlass = theme.glassMode || theme.glassOpacity < 0.98;
-    const alpha = isGlass ? Math.max(0.1, Math.min(0.95, theme.glassOpacity)) : 1;
+    const isGlass = Boolean(theme.glassMode);
+    const alpha = isGlass ? Math.max(0.1, Math.min(0.95, theme.glassOpacity ?? 0.72)) : 1;
 
     root.style.setProperty("--bg", theme.wallpaperData ? "transparent" : theme.appBgColor);
     root.style.setProperty("--panel", hexToRgba(theme.sidebarBgColor, alpha));
@@ -737,6 +794,34 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         ...(options.largeIcons !== undefined ? { largeIcons: options.largeIcons } : {}),
         ...(options.hideDetails !== undefined ? { hideDetails: options.hideDetails } : {}),
       },
+    }));
+  };
+
+  const setQueuePosition = (pos: "right" | "left" | "bottom") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, queuePosition: pos },
+    }));
+  };
+
+  const setMiniPlayerPreset = (preset: "full" | "rounded" | "hybrid" | "deck") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, miniPlayerPreset: preset },
+    }));
+  };
+
+  const setMiniPlayerBg = (bg: "theme" | "artwork" | "dominant") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, miniPlayerBg: bg },
+    }));
+  };
+
+  const setMiniPlayerShape = (shape: "default" | "capsule") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, miniPlayerShape: shape },
     }));
   };
 
@@ -1194,7 +1279,13 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       textColor: preset.textColor,
       glassMode: preset.glassMode,
       glassOpacity: preset.glassOpacity,
+      ...(preset.wallpaperData !== undefined ? { wallpaperData: preset.wallpaperData } : {}),
+      ...(preset.wallpaperBlur !== undefined ? { wallpaperBlur: preset.wallpaperBlur } : {}),
+      ...(preset.wallpaperDim !== undefined ? { wallpaperDim: preset.wallpaperDim } : {}),
     });
+    if (preset.borderRadius) {
+      setBorderRadius(preset.borderRadius);
+    }
   };
 
   const saveToUserSlot = (slotIndex: number, customName?: string) => {
@@ -1212,6 +1303,10 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       textColor: activeConfig.theme.textColor,
       glassMode: activeConfig.theme.glassMode,
       glassOpacity: activeConfig.theme.glassOpacity,
+      wallpaperData: activeConfig.theme.wallpaperData,
+      wallpaperBlur: activeConfig.theme.wallpaperBlur,
+      wallpaperDim: activeConfig.theme.wallpaperDim,
+      borderRadius: activeConfig.borderRadius,
     };
 
     const nextPresets = [...userPresets];
@@ -1222,9 +1317,46 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     } catch {}
   };
 
+  const deleteUserSlot = (slotIndex: number) => {
+    if (slotIndex < 0 || slotIndex >= 3) return;
+    const nextPresets = [...userPresets];
+    nextPresets[slotIndex] = null;
+    setUserPresets(nextPresets);
+    try {
+      localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(nextPresets));
+    } catch {}
+  };
+
   const loadFromUserSlot = (slotIndex: number) => {
     const p = userPresets[slotIndex];
     if (p) applyPreset(p);
+  };
+
+  const isPreviewActive = previewPreset !== null;
+
+  const startPreview = (preset: ThemePreset) => {
+    setPrePreviewConfig(JSON.parse(JSON.stringify(savedConfig)));
+    setPreviewPreset(preset);
+    applyPreset(preset);
+  };
+
+  const applyPreview = () => {
+    if (previewPreset) {
+      applyPreset(previewPreset);
+    }
+    setPreviewPreset(null);
+    setPrePreviewConfig(null);
+  };
+
+  const cancelPreview = () => {
+    if (prePreviewConfig) {
+      setSavedConfig(prePreviewConfig);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(prePreviewConfig));
+      } catch {}
+    }
+    setPreviewPreset(null);
+    setPrePreviewConfig(null);
   };
 
   const resetToDefaults = () => {
@@ -1255,6 +1387,18 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         setPlayerHeight,
         setPlayerWidthPercent,
         setPlayerOptions,
+        setQueuePosition,
+        setMiniPlayerPreset,
+        setMiniPlayerBg,
+        setMiniPlayerShape,
+        isQueueOpen,
+        setIsQueueOpen,
+        toggleQueue,
+        isPreviewActive,
+        previewPreset,
+        startPreview,
+        applyPreview,
+        cancelPreview,
         setBorderRadius,
         setBlockWidth,
         setBlockAlign,
@@ -1281,6 +1425,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         userPresets,
         saveToUserSlot,
         loadFromUserSlot,
+        deleteUserSlot,
         resetToDefaults,
         activeDragTarget,
         setActiveDragTarget,

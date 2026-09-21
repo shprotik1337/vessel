@@ -62,6 +62,8 @@ export function BottomPlayer() {
     setPlayerWidthPercent,
     setActiveDragTarget,
     setActiveDropZone,
+    isQueueOpen,
+    toggleQueue,
   } = useCustomization();
   const seekBarRef = useRef<HTMLDivElement>(null);
   const volBarRef = useRef<HTMLDivElement>(null);
@@ -351,7 +353,11 @@ export function BottomPlayer() {
         config.player?.style === "floating" ? "floating-island" : "full-dock"
       } ${
         config.player?.largeIcons ? "large-icons" : ""
-      } ${config.player?.hideDetails ? "hide-details" : ""}`}
+      } ${config.player?.hideDetails ? "hide-details" : ""} ${
+        config.player?.miniPlayerShape === "capsule" ? "shape-capsule" : ""
+      } ${
+        config.player?.miniPlayerPreset ? `preset-${config.player.miniPlayerPreset}` : ""
+      }`}
       style={
         isVertical
           ? {
@@ -508,6 +514,33 @@ export function BottomPlayer() {
         </div>
       </div>
       <div className="pl-right">
+        <button
+          className={`ctrl-btn pl-queue-btn ${isQueueOpen ? "active" : ""}`}
+          onClick={toggleQueue}
+          title={lang === "ru" ? "Очередь воспроизведения" : "Queue"}
+          aria-label="Play queue"
+        >
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="8" y1="6" x2="21" y2="6" />
+            <line x1="8" y1="12" x2="21" y2="12" />
+            <line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" />
+            <line x1="3" y1="12" x2="3.01" y2="12" />
+            <line x1="3" y1="18" x2="3.01" y2="18" />
+          </svg>
+          {state?.queue && state.queue.length > 0 && (
+            <span className="queue-pill-badge">{state.queue.length}</span>
+          )}
+        </button>
         <button
           className={`pl-fullscreen-btn ${fullscreenOpen ? "active" : ""}`}
           onClick={() => setFullscreenOpen(!fullscreenOpen)}
