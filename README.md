@@ -88,6 +88,10 @@ Vessel подключает только включённые и настрое�
 
 > Vessel не является официальным клиентом перечисленных сервисов. Для работы провайдеров нужен действующий доступ к соответствующим площадкам.
 
+## Установка
+
+Скачай установщик `Vessel_1.4.0_x64-setup.exe` из [Releases](https://github.com/shprotik1337/vessel/releases/latest) и запусти — NSIS-инсталлятор (~38 МБ) сделает всё сам. Инсталлятор включает всё необходимое для работы.
+
 ## Системные требования
 
 - Windows 10/11 x64 с WebView2 Runtime (предустановлен в актуальных Windows 10/11);
@@ -99,10 +103,10 @@ Vessel подключает только включённые и настрое�
 git clone https://github.com/shprotik1337/vessel.git
 cd vessel/apps/vessel-gui
 npm install
-npm run tauri build -- --no-bundle
+npm run tauri build
 ```
 
-Готовый исполняемый файл появится в `target/release/vessel.exe`.
+Готовый NSIS-инсталлятор появится в `target/release/bundle/nsis/Vessel_1.4.0_x64-setup.exe`. Для сборки автономного бинарника без инсталлятора используйте `npm run tauri build -- --no-bundle`.
 
 Режим разработки с горячей перезагрузкой:
 
