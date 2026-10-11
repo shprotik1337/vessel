@@ -13,6 +13,26 @@ use crate::{
     user::UserProfile,
 };
 
+pub fn shuffle_slice<T>(slice: &mut [T]) {
+    if slice.len() <= 1 {
+        return;
+    }
+    let mut seed = [0u8; 16];
+    let u = uuid::Uuid::new_v4();
+    seed.copy_from_slice(u.as_bytes());
+    let mut state = u128::from_le_bytes(seed);
+    if state == 0 {
+        state = 0x853c49e6748fea9b;
+    }
+    for i in (1..slice.len()).rev() {
+        state ^= state << 23;
+        state ^= state >> 17;
+        state ^= state ^ (state >> 26);
+        let j = (state as usize) % (i + 1);
+        slice.swap(i, j);
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaybackStatus {
@@ -75,6 +95,7 @@ pub struct App {
     pub status_message: String,
     pub user_profile: Option<UserProfile>,
     pub user_dirty: bool,
+    pub unshuffled_queue: Option<Vec<TrackRef>>,
     onboarding_result: Option<OnboardingResult>,
     effects: Vec<AppEffect>,
     /// Треки, для которых уже был перезапуск из-за обрезанного кэш-файла
@@ -115,9 +136,10 @@ impl App {
             queue_dirty: false,
             config_dirty: false,
             playlists_dirty: false,
-            status_message: "Готово".to_string(),
+            status_message: "Готово к работе".to_string(),
             user_profile: None,
             user_dirty: false,
+            unshuffled_queue: None,
             onboarding_result: None,
             effects: Vec::new(),
             retried_corrupt_cache: std::collections::HashSet::new(),
@@ -161,8 +183,7 @@ impl App {
                 }
             }
             Action::ToggleShuffle => {
-                self.player.shuffle = !self.player.shuffle;
-                self.queue_dirty = true;
+                self.gui_set_shuffle(!self.player.shuffle);
             }
             Action::CycleRepeat => {
                 self.player.repeat = match self.player.repeat {
@@ -416,6 +437,9 @@ impl App {
         } else if current + 1 < self.queue.len() {
             current + 1
         } else if self.player.repeat == RepeatMode::All {
+            if self.player.shuffle && self.queue.len() > 1 {
+                shuffle_slice(&mut self.queue);
+            }
             0
         } else {
             self.player.status = PlaybackStatus::Stopped;
@@ -476,14 +500,24 @@ impl App {
 // ── GUI-методы ──────────────────────────────────────────────────────────────
 
 impl App {
-    pub fn gui_play_tracks(&mut self, tracks: Vec<TrackRef>, start: usize) -> bool {
+    pub fn gui_play_tracks(&mut self, mut tracks: Vec<TrackRef>, start: usize) -> bool {
         if tracks.is_empty() {
             return false;
         }
         let index = start.min(tracks.len() - 1);
-        self.queue = tracks;
-        self.queue_index = Some(index);
-        let track = self.queue[index].clone();
+        if self.player.shuffle {
+            self.unshuffled_queue = Some(tracks.clone());
+            let selected = tracks.remove(index);
+            shuffle_slice(&mut tracks);
+            tracks.insert(0, selected);
+            self.queue = tracks;
+            self.queue_index = Some(0);
+        } else {
+            self.unshuffled_queue = None;
+            self.queue = tracks;
+            self.queue_index = Some(index);
+        }
+        let track = self.queue[self.queue_index.unwrap()].clone();
         self.now_playing = Some(track.clone());
         self.player.position_ms = 0;
         self.player.buffered_ms = 0;
@@ -564,10 +598,63 @@ impl App {
     }
 
     pub fn gui_set_shuffle(&mut self, on: bool) {
-        if self.player.shuffle != on {
-            self.player.shuffle = on;
-            self.queue_dirty = true;
+        if self.player.shuffle == on {
+            return;
         }
+        self.player.shuffle = on;
+        if on {
+            if self.unshuffled_queue.is_none() {
+                self.unshuffled_queue = Some(self.queue.clone());
+            }
+            if !self.queue.is_empty() {
+                if let Some(current) = self.queue_index {
+                    if current + 1 < self.queue.len() {
+                        shuffle_slice(&mut self.queue[current + 1..]);
+                    }
+                } else {
+                    shuffle_slice(&mut self.queue);
+                }
+            }
+        } else {
+            if let Some(orig) = self.unshuffled_queue.take() {
+                if let Some(now) = &self.now_playing {
+                    let key = now.provider_key();
+                    if let Some(orig_idx) = orig.iter().position(|t| t.provider_key() == key) {
+                        self.queue = orig;
+                        self.queue_index = Some(orig_idx);
+                    } else {
+                        self.queue = orig;
+                    }
+                } else {
+                    self.queue = orig;
+                }
+            }
+        }
+        self.queue_dirty = true;
+    }
+
+    pub fn gui_apply_smart_shuffle(&mut self, mut recommendations: Vec<TrackRef>) -> Vec<TrackRef> {
+        if self.unshuffled_queue.is_none() {
+            self.unshuffled_queue = Some(self.queue.clone());
+        }
+
+        if let Some(current) = self.queue_index {
+            if current + 1 < self.queue.len() {
+                shuffle_slice(&mut self.queue[current + 1..]);
+
+                for r in &mut recommendations {
+                    r.origin = crate::model::TrackOrigin::SmartShuffle;
+                }
+
+                let unplayed = self.queue[current + 1..].to_vec();
+                let shuffle_res = crate::wave::SmartShuffleInterleaver::interleave(&unplayed, &recommendations, 2);
+
+                self.queue.truncate(current + 1);
+                self.queue.extend(shuffle_res.interleaved_queue);
+            }
+        }
+        self.queue_dirty = true;
+        self.queue.clone()
     }
 
     pub fn gui_set_repeat(&mut self, mode: RepeatMode) {
@@ -683,6 +770,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: crate::model::TrackOrigin::Original,
         }
     }
 

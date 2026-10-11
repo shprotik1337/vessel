@@ -74,7 +74,6 @@ function ColorPickerItem({ label, description, value, onChange }: ColorPickerIte
 export function CustomizationTab() {
   const {
     config,
-    enterEditMode,
     updateThemeDirectly,
     setSidebarStyle,
     setPlayerStyle,
@@ -87,7 +86,7 @@ export function CustomizationTab() {
     resetToDefaults,
   } = useCustomization();
 
-  const { navigateTo, showToast } = useApp();
+  const { showToast } = useApp();
   const [subTab, setSubTab] = useState<"colors" | "wallpaper" | "style" | "presets">("colors");
   const [loadingWallpaper, setLoadingWallpaper] = useState(false);
   const [savingSlot, setSavingSlot] = useState<number | null>(null);
@@ -110,11 +109,6 @@ export function CustomizationTab() {
     }
   };
 
-  const handleEnterVisualMode = () => {
-    enterEditMode();
-    navigateTo("home");
-  };
-
   const RADIUS_OPTIONS: { key: BorderRadiusPreset; name: string; desc: string; px: string }[] = [
     { key: "sharp", name: "Квадратные", desc: "Строгие прямые углы", px: "0px" },
     { key: "small", name: "Небольшое", desc: "Легкое скругление", px: "6px" },
@@ -131,14 +125,6 @@ export function CustomizationTab() {
             Настройте форму, стили, цветовую палитру, матовое стекло и фоновые обои
           </p>
         </div>
-
-        <button className="btn-enter-edit-mode" onClick={handleEnterVisualMode}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
-          Войти в режим Drag & Drop
-        </button>
       </div>
 
       {/* Live Preview Widget */}

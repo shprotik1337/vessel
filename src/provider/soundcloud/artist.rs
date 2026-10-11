@@ -69,7 +69,7 @@ pub(super) async fn artist_profile(
         )
         .await
         .context("SoundCloud не отдал релизы артиста")?;
-    let releases = sets
+    let mut releases: Vec<CollectionItem> = sets
         .collection
         .into_iter()
         .filter_map(|playlist| {
@@ -100,6 +100,12 @@ pub(super) async fn artist_profile(
             })
         })
         .collect();
+
+    if releases.is_empty() {
+        if let Ok(searched) = super::search::search_albums(client, &name).await {
+            releases = searched;
+        }
+    }
 
     Ok(ArtistProfile {
         name,

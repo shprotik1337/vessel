@@ -1,16 +1,55 @@
-import { useRef, useState } from "react";
+import { useState, useRef } from "react";
 
 import { useApp } from "../store";
 import { artistLabel, formatTime, trackKey, providerLabel } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "../components/Artwork";
+import { PlatformIcon } from "../components/PlatformIcon";
+import { VirtualTrackList } from "../components/VirtualTrackList";
+import { IconSparkle, IconInfinity, IconWaveStream } from "../components/Icons";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
 export function Queue() {
-  const { state, playTracks, showToast, refresh, lang } = useApp();
-  const drag = useRef<{ from: number; startY: number; moved: boolean } | null>(null);
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const { state, playTracks, showToast, refresh, lang, smartTrackKeys } = useApp();
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragStartRef = useRef<{ index: number; startY: number; isDragging: boolean } | null>(null);
+
+  const renderOriginBadge = (t: TrackRef) => {
+    const isSmart = t.origin === "smart_shuffle" || smartTrackKeys?.has(trackKey(t));
+    if (isSmart) {
+      return (
+        <span
+          className="queue-origin-icon queue-origin-smart"
+          title={lang === "ru" ? "Умное перемешивание" : "Smart Shuffle"}
+        >
+          <IconSparkle size={12} />
+        </span>
+      );
+    }
+    if (t.origin === "autoplay") {
+      return (
+        <span
+          className="queue-origin-icon queue-origin-autoplay"
+          title={lang === "ru" ? "Автопохожие треки" : "Autoplay"}
+        >
+          <IconInfinity size={13} />
+        </span>
+      );
+    }
+    if (t.origin === "my_wave") {
+      return (
+        <span
+          className="queue-origin-icon queue-origin-wave"
+          title={lang === "ru" ? "Моя волна" : "My Wave"}
+        >
+          <IconWaveStream size={12} />
+        </span>
+      );
+    }
+    return null;
+  };
 
   if (!state) return null;
 
@@ -52,33 +91,83 @@ export function Queue() {
     }
   };
 
-  const onMouseDown = (e: React.MouseEvent, i: number) => {
+  const handlePointerDown = (e: React.PointerEvent, index: number) => {
     if (e.button !== 0) return;
-    drag.current = { from: i, startY: e.clientY, moved: false };
-    setHoverIdx(i);
-  };
-
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!drag.current) return;
-    if (!drag.current.moved && Math.abs(e.clientY - drag.current.startY) > 3) {
-      drag.current.moved = true;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("button, a, .art, .queue-play-btn, .qx")) {
+      return;
     }
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const row = el?.closest?.("[data-qi]");
-    const idx = row ? Number(row.getAttribute("data-qi")) : null;
-    if (idx != null && hoverIdx !== idx) setHoverIdx(idx);
+    dragStartRef.current = { index, startY: e.clientY, isDragging: false };
   };
 
-  const onMouseUp = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (d && d.moved && hoverIdx != null && d.from !== hoverIdx) {
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragStartRef.current) return;
+    if (!dragStartRef.current.isDragging) {
+      if (Math.abs(e.clientY - dragStartRef.current.startY) > 6) {
+        dragStartRef.current.isDragging = true;
+        setDragIndex(dragStartRef.current.index);
+      }
+    }
+    if (dragStartRef.current.isDragging) {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const row = el?.closest("[data-qi]");
+      if (row) {
+        const targetIdx = Number(row.getAttribute("data-qi"));
+        if (!isNaN(targetIdx) && targetIdx !== dragOverIndex) {
+          setDragOverIndex(targetIdx);
+        }
+      }
+    }
+  };
+
+  const handlePointerUp = () => {
+    if (dragStartRef.current?.isDragging && dragIndex !== null && dragOverIndex !== null && dragIndex !== dragOverIndex) {
       const ordered = [...queue];
-      const [moved] = ordered.splice(d.from, 1);
-      ordered.splice(hoverIdx, 0, moved);
+      const [moved] = ordered.splice(dragIndex, 1);
+      ordered.splice(dragOverIndex, 0, moved);
+      setDragIndex(null);
+      setDragOverIndex(null);
+      dragStartRef.current = null;
       void applyOrder(ordered);
+      return;
     }
-    setHoverIdx(null);
+    setDragIndex(null);
+    setDragOverIndex(null);
+    dragStartRef.current = null;
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+    setDragIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === dropIndex) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const ordered = [...queue];
+    const [moved] = ordered.splice(dragIndex, 1);
+    ordered.splice(dropIndex, 0, moved);
+    setDragIndex(null);
+    setDragOverIndex(null);
+    void applyOrder(ordered);
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
   };
 
   const queue = state.queue;
@@ -87,7 +176,7 @@ export function Queue() {
 
   const qrowStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "40px 1fr auto 50px 22px",
+    gridTemplateColumns: "40px 1fr 140px 50px 22px",
     gap: 12,
     alignItems: "center",
     height: 48,
@@ -101,42 +190,58 @@ export function Queue() {
     <div
       key={trackKey(track) + realIndex}
       data-qi={realIndex}
-      onMouseDown={(e) => onMouseDown(e, realIndex)}
+      draggable={true}
+      onDragStart={(e) => handleDragStart(e, realIndex)}
+      onDragOver={(e) => handleDragOver(e, realIndex)}
+      onDrop={(e) => handleDrop(e, realIndex)}
+      onDragEnd={handleDragEnd}
+      onPointerDown={(e) => handlePointerDown(e, realIndex)}
       style={{
         ...qrowStyle,
-        cursor: "grab",
+        cursor: dragIndex !== null ? "grabbing" : "grab",
         userSelect: "none",
-        ...(hoverIdx === realIndex && drag.current?.moved
-          ? { boxShadow: "inset 0 2px 0 0 var(--text)" }
+        opacity: dragIndex === realIndex ? 0.4 : 1,
+        ...(dragOverIndex === realIndex && dragIndex !== realIndex
+          ? { boxShadow: "inset 0 2px 0 0 var(--accent, #6366f1)" }
           : {}),
       }}
       className="qrow"
-      onDoubleClick={() => playOne(track)}
     >
-      <Artwork
-        url={track.artwork_url}
-        alt={track.title}
-        size={40}
-        seed={realIndex}
-        className="t-art"
-        onPlayClick={async () => {
-          if (realIndex === currentIndex && isLive) {
-            try { await api.togglePlayback(); } catch {}
-          } else {
-            playOne(track);
-          }
-        }}
-        isPlaying={realIndex === currentIndex && isLive}
-      />
+        <Artwork
+          url={track.artwork_url}
+          alt={track.title}
+          size={40}
+          seed={realIndex}
+          className="t-art"
+          onPlayClick={async () => {
+            if (realIndex === currentIndex && isLive) {
+              try { void api.togglePlayback(); } catch {}
+            } else {
+              playOne(track);
+            }
+          }}
+          isPlaying={realIndex === currentIndex && isLive}
+        />
       <div className="c-title" style={{ minWidth: 0 }}>
-        <span className="ttl">{track.title}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <span className="ttl" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.title}</span>
+          {renderOriginBadge(track)}
+        </div>
         <span className="sub">{artistLabel(track.artists)}</span>
       </div>
-      <span className="pl-src">{providerLabel(track.provider)}</span>
+      <span className="c-platform" title={providerLabel(track.provider)}>
+        <span className="platform-icon-wrap">
+          <PlatformIcon kind={track.provider} size={15} />
+        </span>
+        <span className="platform-name">{providerLabel(track.provider)}</span>
+      </span>
       <span className="c-time">{formatTime(track.duration_ms)}</span>
       <span
         className="qx"
-        onClick={() => removeAt(realIndex)}
+        onClick={(e) => {
+          e.stopPropagation();
+          void removeAt(realIndex);
+        }}
         title={t(lang, "queue.remove")}
         style={{ cursor: "pointer", color: "var(--text3)", fontSize: 15, textAlign: "center" }}
       >
@@ -177,13 +282,12 @@ export function Queue() {
               <div
                 style={{
                   ...qrowStyle,
-                  gridTemplateColumns: "40px 1fr auto 50px",
+                  gridTemplateColumns: "40px 1fr 140px 50px",
                   background: "var(--elev)",
                   boxShadow: "inset 2px 0 0 0 var(--text)",
                   borderRadius: 6,
                 }}
                 className="qrow now"
-                onDoubleClick={() => current && playOne(current)}
               >
                 <Artwork
                   url={current.artwork_url}
@@ -191,14 +295,24 @@ export function Queue() {
                   size={40}
                   seed={currentIndex ?? 0}
                   className="t-art"
-                  onPlayClick={async () => { try { await api.togglePlayback(); } catch {} }}
+                  onPlayClick={async () => {
+                    try { void api.togglePlayback(); } catch {}
+                  }}
                   isPlaying={isLive}
                 />
                 <div className="c-title" style={{ minWidth: 0 }}>
-                  <span className="ttl">{current.title}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <span className="ttl" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{current.title}</span>
+                    {renderOriginBadge(current)}
+                  </div>
                   <span className="sub">{artistLabel(current.artists)}</span>
                 </div>
-                <span className="pl-src">{providerLabel(current.provider)}</span>
+                <span className="c-platform" title={providerLabel(current.provider)}>
+                  <span className="platform-icon-wrap">
+                    <PlatformIcon kind={current.provider} size={15} />
+                  </span>
+                  <span className="platform-name">{providerLabel(current.provider)}</span>
+                </span>
                 <span className="c-time">{formatTime(current.duration_ms)}</span>
               </div>
             ) : (
@@ -206,26 +320,24 @@ export function Queue() {
             )}
           </div>
 
-          <div className="queue-sec">
+          <div
+            className="queue-sec"
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+          >
             <div className="qsec-hd">
               <span className="qsec-title">{t(lang, "queue.upNext")}</span>
               <span style={{ fontSize: 12, color: "var(--text3)" }}>
                 {queue.length - (currentIndex != null ? 1 : 0)} {t(lang, "common.tracks")}
               </span>
             </div>
-            <div
+            <VirtualTrackList
+              items={queue}
+              itemHeight={50}
+              className="queue-tracklist"
               style={{ display: "flex", flexDirection: "column", gap: 2 }}
-              onMouseMove={onMouseMove}
-              onMouseUp={onMouseUp}
-              onMouseLeave={() => {
-                if (drag.current) drag.current = null;
-                setHoverIdx(null);
-              }}
-            >
-              {queue.map((track, i) =>
-                i === currentIndex ? null : renderRow(track, i),
-              )}
-            </div>
+              renderItem={(track, i) => (i === currentIndex ? null : renderRow(track, i))}
+            />
           </div>
         </>
       )}

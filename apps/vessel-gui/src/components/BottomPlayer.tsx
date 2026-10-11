@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 
-import { useApp } from "../store";
+import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
 import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
+import { IconSparkle } from "./Icons";
 import * as api from "../api/commands";
+
 
 const HEART_SVG = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
@@ -28,11 +30,16 @@ const REPEAT_SVG = (
 );
 
 const PLAY_SVG = (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l14 8-14 8V4z"/></svg>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="#000000" style={{ fill: "#000000", color: "#000000", display: "block" }}>
+    <polygon points="7 4 19 12 7 20" />
+  </svg>
 );
 
 const PAUSE_SVG = (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="#000000" style={{ fill: "#000000", color: "#000000", display: "block" }}>
+    <rect x="6" y="4" width="4" height="16" rx="1.5" />
+    <rect x="14" y="4" width="4" height="16" rx="1.5" />
+  </svg>
 );
 
 const VOLUME_SVG = (
@@ -53,15 +60,22 @@ const FULLSCREEN_SVG = (
 );
 
 export function BottomPlayer() {
-  const { state, showToast, refresh, navigateTo, lang, fullscreenOpen, setFullscreenOpen } = useApp();
   const {
-    isEditMode,
+    state,
+    showToast,
+    refresh,
+    navigateTo,
+    setExternalPlaylist,
+    lang,
+    fullscreenOpen,
+    setFullscreenOpen,
+    smartShuffle,
+    cycleShuffleMode,
+    playNextTrack,
+  } = useApp();
+  const progress = usePlaybackProgress();
+  const {
     config,
-    setPlayerPosition,
-    setPlayerHeight,
-    setPlayerWidthPercent,
-    setActiveDragTarget,
-    setActiveDropZone,
     isQueueOpen,
     toggleQueue,
   } = useCustomization();
@@ -73,128 +87,23 @@ export function BottomPlayer() {
 
   const isVertical = config.player?.position === "left" || config.player?.position === "right";
 
-  const onDragPlayerPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const handleEl = e.currentTarget as HTMLElement;
-    handleEl.setPointerCapture(e.pointerId);
-    setActiveDragTarget("player");
-
-    const onPointerMove = (ev: PointerEvent) => {
-      const x = ev.clientX;
-      const y = ev.clientY;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-
-      const distLeft = x;
-      const distRight = w - x;
-      const distTop = y;
-      const distBottom = h - y;
-
-      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
-      let targetZone: "left" | "right" | "top" | "bottom" = "bottom";
-      if (minDist === distLeft) targetZone = "left";
-      else if (minDist === distRight) targetZone = "right";
-      else if (minDist === distTop) targetZone = "top";
-      else targetZone = "bottom";
-
-      setActiveDropZone(targetZone);
-    };
-
-    const onPointerUp = (ev: PointerEvent) => {
-      try {
-        handleEl.releasePointerCapture(ev.pointerId);
-      } catch {}
-      handleEl.removeEventListener("pointermove", onPointerMove);
-      handleEl.removeEventListener("pointerup", onPointerUp);
-
-      const x = ev.clientX;
-      const y = ev.clientY;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const distLeft = x;
-      const distRight = w - x;
-      const distTop = y;
-      const distBottom = h - y;
-      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
-      let targetZone: "left" | "right" | "top" | "bottom" = "bottom";
-      if (minDist === distLeft) targetZone = "left";
-      else if (minDist === distRight) targetZone = "right";
-      else if (minDist === distTop) targetZone = "top";
-      else targetZone = "bottom";
-
-      setPlayerPosition(targetZone);
-      setActiveDragTarget(null);
-      setActiveDropZone(null);
-    };
-
-    handleEl.addEventListener("pointermove", onPointerMove);
-    handleEl.addEventListener("pointerup", onPointerUp);
-  };
-
-  const onResizeHeightPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const handleEl = e.currentTarget as HTMLElement;
-    handleEl.setPointerCapture(e.pointerId);
-    const startY = e.clientY;
-    const startH = config.player?.height || 82;
-    const isTop = config.player?.position === "top";
-
-    const onPointerMove = (ev: PointerEvent) => {
-      const delta = isTop ? ev.clientY - startY : startY - ev.clientY;
-      setPlayerHeight(startH + delta);
-    };
-
-    const onPointerUp = (ev: PointerEvent) => {
-      try {
-        handleEl.releasePointerCapture(ev.pointerId);
-      } catch {}
-      handleEl.removeEventListener("pointermove", onPointerMove);
-      handleEl.removeEventListener("pointerup", onPointerUp);
-    };
-
-    handleEl.addEventListener("pointermove", onPointerMove);
-    handleEl.addEventListener("pointerup", onPointerUp);
-  };
-
-  const onResizeWidthPointerDown = (e: React.PointerEvent, side: "left" | "right") => {
-    e.preventDefault();
-    const handleEl = e.currentTarget as HTMLElement;
-    handleEl.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const startW = config.player?.widthPercent || 100;
-
-    const onPointerMove = (ev: PointerEvent) => {
-      const deltaPx = side === "left" ? startX - ev.clientX : ev.clientX - startX;
-      const deltaPct = (deltaPx / window.innerWidth) * 160;
-      setPlayerWidthPercent(startW + deltaPct);
-    };
-
-    const onPointerUp = (ev: PointerEvent) => {
-      try {
-        handleEl.releasePointerCapture(ev.pointerId);
-      } catch {}
-      handleEl.removeEventListener("pointermove", onPointerMove);
-      handleEl.removeEventListener("pointerup", onPointerUp);
-    };
-
-    handleEl.addEventListener("pointermove", onPointerMove);
-    handleEl.addEventListener("pointerup", onPointerUp);
-  };
-
   if (!state) return null;
 
   const track = state.now_playing;
   const player = state.player;
   const fav = track ? isFavorite(state.library, track) : false;
 
+  const durationMs = progress.duration_ms || player.duration_ms || track?.duration_ms || 0;
+  const currentPosMs = progress.position_ms || player.position_ms || 0;
+
   const percent =
-    player.duration_ms > 0
-      ? Math.min(100, Math.max(0, (player.position_ms / player.duration_ms) * 100))
+    durationMs > 0
+      ? Math.min(100, Math.max(0, (currentPosMs / durationMs) * 100))
       : 0;
   const shownPercent = dragPercent ?? percent;
-  const shownMs = dragPercent != null && player.duration_ms > 0
-    ? (dragPercent / 100) * player.duration_ms
-    : player.position_ms;
+  const shownMs = dragPercent != null && durationMs > 0
+    ? (dragPercent / 100) * durationMs
+    : currentPosMs;
 
   const seekFromEvent = async (clientX: number, commit: boolean) => {
     if (!seekBarRef.current) return;
@@ -205,11 +114,11 @@ export function BottomPlayer() {
       setDragPercent(pct);
       return;
     }
-    if (!player.duration_ms) {
+    if (!durationMs) {
       setDragPercent(null);
       return;
     }
-    const ms = Math.round(ratio * player.duration_ms);
+    const ms = Math.round(ratio * durationMs);
     try {
       await api.seek(ms);
       await refresh();
@@ -270,12 +179,7 @@ export function BottomPlayer() {
   };
 
   const handleNext = async () => {
-    try {
-      await api.next();
-      await refresh();
-    } catch (error) {
-      showToast(String(error), true);
-    }
+    await playNextTrack();
   };
 
   const handlePrev = async () => {
@@ -291,15 +195,6 @@ export function BottomPlayer() {
     if (!track) return;
     try {
       await api.toggleFavorite(track);
-      await refresh();
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
-  const handleShuffle = async () => {
-    try {
-      await api.setShuffle(!player.shuffle);
       await refresh();
     } catch (error) {
       showToast(String(error), true);
@@ -332,6 +227,50 @@ export function BottomPlayer() {
     }
   };
 
+  const handleTitleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!track) return;
+
+    showToast(lang === "ru" ? "Загрузка релиза…" : "Loading release…", false, 2000);
+
+    const primaryArtist = track.artists?.[0] || "";
+    const cleanTitle = track.title.replace(/\s*\([^)]*\)|\s*\[[^\]]*\]/g, "").trim();
+    const query = `${cleanTitle} ${primaryArtist}`.trim();
+
+    try {
+      const albums = await api.searchCollections(query, "albums");
+      const matched = albums.find(
+        (a) => a.provider === track.provider && a.web_url
+      ) || albums.find((a) => a.web_url) || albums[0];
+
+      if (matched && matched.web_url) {
+        const pl = await api.previewPlaylistUrl(matched.web_url);
+        if (pl && pl.tracks && pl.tracks.length > 0) {
+          setExternalPlaylist(pl);
+          navigateTo("playlist", { playlistId: "external" });
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Release search failed:", err);
+    }
+
+    if (track.web_url) {
+      try {
+        const pl = await api.previewPlaylistUrl(track.web_url);
+        if (pl && pl.tracks && pl.tracks.length > 0) {
+          setExternalPlaylist(pl);
+          navigateTo("playlist", { playlistId: "external" });
+          return;
+        }
+      } catch {}
+    }
+
+    if (primaryArtist) {
+      navigateTo("artist", { artist: primaryArtist, provider: track.provider });
+    }
+  };
+
   const playing = player.status === "playing" || player.status === "buffering";
   const failed = player.status === "error";
   // Текст ошибки: сначала failed-статус плеера, затем последнее уведомление
@@ -357,6 +296,10 @@ export function BottomPlayer() {
         config.player?.miniPlayerShape === "capsule" ? "shape-capsule" : ""
       } ${
         config.player?.miniPlayerPreset ? `preset-${config.player.miniPlayerPreset}` : ""
+      } ${
+        config.player?.miniPlayerBg && config.player.miniPlayerBg !== "blur"
+          ? `bg-${config.player.miniPlayerBg}`
+          : "bg-theme"
       }`}
       style={
         isVertical
@@ -365,55 +308,22 @@ export function BottomPlayer() {
               minWidth: `${config.player?.height ? config.player.height * 2.8 : 240}px`,
             }
           : {
-              height: `${config.player?.height || 82}px`,
-              minHeight: `${config.player?.height || 82}px`,
-              maxHeight: `${config.player?.height || 82}px`,
+              height: `${config.player?.height || 96}px`,
+              minHeight: `${config.player?.height || 96}px`,
+              maxHeight: `${config.player?.height || 96}px`,
               width: config.player?.widthPercent && config.player.widthPercent < 100
                 ? `${config.player.widthPercent}%`
                 : undefined,
             }
       }
     >
-      {isEditMode && !isVertical && (
-        <>
-          <div
-            className={`player-resize-handle ${config.player?.position === "top" ? "resize-bottom" : "resize-top"}`}
-            onPointerDown={onResizeHeightPointerDown}
-            title="Потяните мышкой для изменения высоты плеера"
-          />
-          <div
-            className="player-resize-handle-width resize-left"
-            onPointerDown={(e) => onResizeWidthPointerDown(e, "left")}
-            title="Потяните мышкой для изменения ширины плеера"
-          />
-          <div
-            className="player-resize-handle-width resize-right"
-            onPointerDown={(e) => onResizeWidthPointerDown(e, "right")}
-            title="Потяните мышкой для изменения ширины плеера"
-          />
-        </>
-      )}
-
-      {isEditMode && isVertical && (
+      {config.player?.miniPlayerBg === "artwork" && track?.artwork_url && (
         <div
-          className={`player-resize-handle-vert ${config.player?.position === "left" ? "resize-right" : "resize-left"}`}
-          onPointerDown={onResizeHeightPointerDown}
-          title="Потяните мышкой для изменения ширины вертикального плеера"
+          className="player-artwork-backdrop"
+          style={{ backgroundImage: `url("${track.artwork_url}")` }}
         />
       )}
 
-      {isEditMode && (
-        <div className={`player-grip-bar ${isVertical ? "vertical-grip" : ""}`}>
-          <div
-            className="player-drag-grip"
-            onPointerDown={onDragPlayerPointerDown}
-            title="Зажмите мышкой и перетащите плеер к любому краю экрана"
-          >
-            <span className="grip-icon">⠿</span>
-            <span className="grip-label">Перетащить</span>
-          </div>
-        </div>
-      )}
 
       {errText && (
         <div className="err-banner">
@@ -423,17 +333,28 @@ export function BottomPlayer() {
       )}
       <div className="pl-left">
         {track ? (
-          <Artwork
-            url={track.artwork_url}
-            alt={track.title}
-            className="pl-art"
-            seed={track.id.length}
-          />
+          <div
+            onClick={() => navigateTo("player")}
+            style={{ cursor: "pointer", flexShrink: 0 }}
+            title={lang === "ru" ? "Открыть плеер" : "Open player"}
+          >
+            <Artwork
+              url={track.artwork_url}
+              alt={track.title}
+              className="pl-art"
+              seed={track.id.length}
+            />
+          </div>
         ) : (
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
         <div className="pl-meta">
-          <span className="ttl" title={track?.title ?? ""}>
+          <span
+            className="ttl pl-title-link"
+            title={track?.title ?? ""}
+            onClick={handleTitleClick}
+            style={{ cursor: track ? "pointer" : "default" }}
+          >
             {track?.title ?? t(lang, "bottom.noTrack")}
           </span>
           <div className="pl-sub" title={filterValidArtists(track?.artists).join(", ")}>
@@ -478,12 +399,20 @@ export function BottomPlayer() {
       <div className="pl-center">
         <div className="pl-controls">
           <button
-            className={`ctrl-btn ${player.shuffle ? "active" : "muted"}`}
-            onClick={handleShuffle}
-            title={t(lang, "bottom.shuffle")}
+            className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player.shuffle ? "active" : "muted"}`}
+            style={smartShuffle ? { color: "#1db954" } : undefined}
+            onClick={() => void cycleShuffleMode()}
+            title={
+              smartShuffle
+                ? (lang === "ru" ? "Умное перемешивание (включено)" : "Smart Shuffle (On)")
+                : player.shuffle
+                ? (lang === "ru" ? "Перемешивание (нажмите для Умного)" : "Shuffle (Click for Smart)")
+                : t(lang, "bottom.shuffle")
+            }
             aria-label="Shuffle"
           >
             {SHUFFLE_SVG}
+            {smartShuffle && <span className="smart-sparkle-badge"><IconSparkle size={10} /></span>}
           </button>
           <button className="ctrl-btn" onClick={handlePrev} title={t(lang, "bottom.previous")} aria-label="Previous">
             {PREV_SVG}
@@ -510,7 +439,7 @@ export function BottomPlayer() {
             <div className="fill" style={{ width: `${shownPercent}%` }} />
             <div className="knob" style={{ left: `${shownPercent}%` }} />
           </div>
-          <span className="pl-time">{formatTime(player.duration_ms)}</span>
+          <span className="pl-time">{formatTime(durationMs)}</span>
         </div>
       </div>
       <div className="pl-right">
@@ -520,26 +449,25 @@ export function BottomPlayer() {
           title={lang === "ru" ? "Очередь воспроизведения" : "Queue"}
           aria-label="Play queue"
         >
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="8" y1="6" x2="21" y2="6" />
-            <line x1="8" y1="12" x2="21" y2="12" />
-            <line x1="8" y1="18" x2="21" y2="18" />
-            <line x1="3" y1="6" x2="3.01" y2="6" />
-            <line x1="3" y1="12" x2="3.01" y2="12" />
-            <line x1="3" y1="18" x2="3.01" y2="18" />
-          </svg>
-          {state?.queue && state.queue.length > 0 && (
-            <span className="queue-pill-badge">{state.queue.length}</span>
-          )}
+          <div style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="8" y1="6" x2="21" y2="6" />
+              <line x1="8" y1="12" x2="21" y2="12" />
+              <line x1="8" y1="18" x2="21" y2="18" />
+              <line x1="3" y1="6" x2="3.01" y2="6" />
+              <line x1="3" y1="12" x2="3.01" y2="12" />
+              <line x1="3" y1="18" x2="3.01" y2="18" />
+            </svg>
+          </div>
         </button>
         <button
           className={`pl-fullscreen-btn ${fullscreenOpen ? "active" : ""}`}

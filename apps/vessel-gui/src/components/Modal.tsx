@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import * as api from "../api/commands";
 import { t, type Lang } from "../i18n";
@@ -40,7 +41,7 @@ export function TextInputModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
+  return createPortal(
     <div className="ov show" onMouseDown={stop}>
       <div className="ov-card" style={{ width: 440, height: "auto", padding: 24, gap: 14 }} onClick={stop}>
         <div className="sett-title" style={{ fontSize: 18 }}>{title}</div>
@@ -66,7 +67,8 @@ export function TextInputModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -92,7 +94,7 @@ export function ConfirmModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
+  return createPortal(
     <div className="ov show" onMouseDown={stop}>
       <div className="ov-card" style={{ width: 420, height: "auto", padding: 24, gap: 16 }} onClick={stop}>
         <div className="sett-title" style={{ fontSize: 18 }}>{title}</div>
@@ -111,7 +113,8 @@ export function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -163,7 +166,7 @@ export function PathModal({
     }
   };
 
-  return (
+  return createPortal(
     <div className="ov show" onMouseDown={stop}>
       <div className="ov-card" style={{ width: 480, height: "auto", padding: 24, gap: 14 }} onClick={stop}>
         <div className="sett-title" style={{ fontSize: 18 }}>{title}</div>
@@ -192,6 +195,7 @@ export function PathModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

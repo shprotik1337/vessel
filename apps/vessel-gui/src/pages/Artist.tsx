@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
+import { VirtualTrackList } from "../components/VirtualTrackList";
 import { Artwork } from "../components/Artwork";
 import { PlaylistCover } from "../components/PlaylistCover";
-import { trackKey, providerLabel, formatDuration, artistLabel, filterValidArtists } from "../lib/utils";
+import { trackKey, providerLabel, formatDuration, artistLabel, filterValidArtists, dedupe } from "../lib/utils";
 import { t } from "../i18n";
 import type { ArtistProfile, CollectionItem, Playlist, TrackRef } from "../api/types";
 import * as api from "../api/commands";
@@ -20,7 +21,7 @@ interface ArtistProps {
 }
 
 export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
-  const { state, playTracks, showToast, goBack, navigateTo, refresh, lang } = useApp();
+  const { state, playTracks, showToast, goBack, navigateTo, refresh, lang, setExternalPlaylist } = useApp();
   const [profile, setProfile] = useState<ArtistProfile | null>(null);
   const [allTracks, setAllTracks] = useState<TrackRef[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,8 +33,16 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
   } | null>(null);
   const [previewSort, setPreviewSort] = useState<"custom" | "title" | "artist">("custom");
   const [previewDir, setPreviewDir] = useState<"asc" | "desc">("asc");
+  const [sortOpen, setSortOpen] = useState(false);
   const requested = useRef<string | null>(null);
   const tracksRequested = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!sortOpen) return;
+    const close = () => setSortOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [sortOpen]);
 
   const previewTracks = (tracks: TrackRef[]): TrackRef[] => {
     if (previewSort === "custom") return tracks;
@@ -58,53 +67,126 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
     setProfile(null);
     void (async () => {
       try {
-        let target = provider && artistId ? { provider, id: artistId } : null;
-        if (!target) {
-          const found = await api.searchCollections(artist, "artists");
+        let loadedProfile: ArtistProfile | null = null;
+        let activeTarget: { provider: string; id: string } | null = null;
+
+        // 1. If explicit provider and id were passed, attempt loading it first
+        if (provider && artistId) {
+          try {
+            loadedProfile = await api.artistProfile(provider, artistId);
+            activeTarget = { provider, id: artistId };
+          } catch {
+            loadedProfile = null;
+          }
+        }
+
+        // 2. If not loaded, search for artist across all providers
+        if (!loadedProfile) {
+          const found = await api.searchCollections(artist, "artists").catch(() => []);
           if (cancelled) return;
-          const lower = artist.toLowerCase();
-          const candidates = provider
-            ? found.filter((a) => a.provider === provider)
-            : found;
-          // Точное совпадение имени важнее всего, иначе берём первого (самого популярного)
-          const match =
-            candidates.find((a) => a.title.toLowerCase() === lower) ??
-            candidates[0] ??
-            null;
-          target = match ? { provider: match.provider, id: match.id } : null;
-          if (!target && found.length === 0) {
-            setError(t(lang, "artist.notFound"));
+          const lower = artist.toLowerCase().trim();
+
+          const candidates = [...found].sort((a, b) => {
+            const aExact = a.title.toLowerCase().trim() === lower ? 1 : 0;
+            const bExact = b.title.toLowerCase().trim() === lower ? 1 : 0;
+            if (aExact !== bExact) return bExact - aExact;
+            if (provider) {
+              const aProv = a.provider === provider ? 1 : 0;
+              const bProv = b.provider === provider ? 1 : 0;
+              if (aProv !== bProv) return bProv - aProv;
+            }
+            return 0;
+          });
+
+          for (const cand of candidates) {
+            if (cancelled) return;
+            try {
+              const p = await api.artistProfile(cand.provider, cand.id);
+              if (p && (p.name || (p.popular_tracks && p.popular_tracks.length > 0))) {
+                loadedProfile = p;
+                activeTarget = { provider: cand.provider, id: cand.id };
+                break;
+              }
+            } catch {}
           }
         }
-        if (!target) return;
-        const profile = await api.artistProfile(target.provider, target.id);
+
+        // 3. Fallback: if no platform profile exists (e.g. underground SoundCloud, Lil Zivert, etc.),
+        // build a dynamic profile from search tracks so the user NEVER sees "Артист не найден"!
+        if (!loadedProfile) {
+          try {
+            let searchRes = await api.search(artist, provider || undefined).catch(() => null);
+            if (!searchRes || !searchRes.tracks || searchRes.tracks.length === 0) {
+              searchRes = await api.search(artist, undefined).catch(() => null);
+            }
+            if (cancelled) return;
+            const qLower = artist.toLowerCase().trim();
+            const matchedTracks = (searchRes?.tracks || []).filter((t) => {
+              const aLower = (t.artists || []).map((a) => a.toLowerCase().trim());
+              return aLower.some((a) => a.includes(qLower) || qLower.includes(a));
+            });
+            let fallbackTracks = matchedTracks.length > 0 ? matchedTracks : (searchRes?.tracks || []);
+
+            // Check library & history if search was empty or sparse
+            if (fallbackTracks.length < 5) {
+              const localTracks = [...(state?.library || []), ...(state?.history || []).map((h) => h.track).filter(Boolean)].filter((t) => {
+                const aLower = (t?.artists || []).map((a: string) => a.toLowerCase().trim());
+                return aLower.some((a: string) => a.includes(qLower) || qLower.includes(a));
+              }) as TrackRef[];
+              fallbackTracks = dedupe([...fallbackTracks, ...localTracks]);
+            }
+
+            if (fallbackTracks.length > 0) {
+              loadedProfile = {
+                name: artist,
+                avatar_url: fallbackTracks[0]?.artwork_url ?? null,
+                popular_tracks: fallbackTracks.slice(0, 20),
+                releases: [],
+              };
+              setAllTracks(fallbackTracks);
+            }
+          } catch {}
+        }
+
         if (cancelled) return;
-        if (profile?.popular_tracks) {
-          for (const t of profile.popular_tracks) {
-            const valid = filterValidArtists(t.artists);
-            t.artists = valid.length > 0 ? valid : (profile.name ? [profile.name] : []);
+
+        if (!loadedProfile) {
+          const localTracks = [...(state?.library || []), ...(state?.history || []).map((h) => h.track).filter(Boolean)].filter((t) => {
+            const aLower = (t?.artists || []).map((a: string) => a.toLowerCase().trim());
+            return aLower.some((a: string) => a.includes(artist.toLowerCase().trim()));
+          }) as TrackRef[];
+          if (localTracks.length > 0) {
+            loadedProfile = {
+              name: artist,
+              avatar_url: localTracks[0]?.artwork_url ?? null,
+              popular_tracks: localTracks,
+              releases: [],
+            };
+            setAllTracks(localTracks);
+          } else {
+            setError(t(lang, "artist.notFound"));
+            return;
           }
         }
-        setProfile(profile);
-        // Профиль показываем сразу, треки грузим в фоне (могут быть десятки
-        // browse-запросов — не блокируем карточку артиста).
-        // Для YouTube Music секции «Вся музыка» нет — только популярное и релизы.
+
+        if (loadedProfile.popular_tracks) {
+          for (const t of loadedProfile.popular_tracks) {
+            const valid = filterValidArtists(t.artists);
+            t.artists = valid.length > 0 ? valid : (loadedProfile.name ? [loadedProfile.name] : []);
+          }
+        }
+        setProfile(loadedProfile);
         setLoading(false);
-        const isYtMusic = target.provider === "you_tube_music";
-        if (!isYtMusic && (mode === "tracks" || mode === "profile")) {
-          const tracksKey = `${target.provider}|${target.id}`;
+
+        // Background load all tracks if official provider supported
+        if (activeTarget && (mode === "tracks" || mode === "profile")) {
+          const tracksKey = `${activeTarget.provider}|${activeTarget.id}`;
           if (tracksRequested.current === tracksKey) return;
           tracksRequested.current = tracksKey;
           try {
-            const tracks = await api.artistAllTracks(target.provider, target.id);
-            if (!cancelled) setAllTracks(tracks);
-          } catch (err) {
-            if (!cancelled) {
-              // Ошибка — показываем честный «пусто», а не вечные скелетоны
-              setAllTracks([]);
-              showToast(String(err), true);
-            }
-          }
+            const tracks = await api.artistAllTracks(activeTarget.provider, activeTarget.id);
+            if (!cancelled && tracks && tracks.length > 0) setAllTracks(tracks);
+          } catch {}
         }
       } catch (err) {
         if (!cancelled) setError(String(err));
@@ -135,7 +217,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
     const totalMs = pl?.tracks.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0) ?? 0;
     const owned = pl?.source_url ? isOwned(pl.source_url) : false;
     return (
-      <div className="view">
+      <div className="view artist-view">
         <div style={{ marginBottom: 18 }}>
           <button className="btn btn-outline btn-sm" onClick={() => setPreview(null)}>
             {t(lang, "common.back")}
@@ -149,84 +231,115 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
             <div className="skel" />
           </div>
         ) : (
-          <div className="panel">
-            <div className="playlist-hd">
-              <PlaylistCover tracks={pl.tracks} coverUrl={pl.cover_url} size={148} />
+          <div className="page-panel">
+            {pl.cover_url || pl.tracks[0]?.artwork_url ? (
               <div
+                className="page-ambient-glow"
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  gap: 8,
-                  minWidth: 0,
+                  backgroundImage: `url("${pl.cover_url || pl.tracks[0]?.artwork_url}")`,
                 }}
-              >
-                <span className="kicker">
-                  {preview.provider
-                    ? providerLabel(preview.provider)
-                    : t(lang, "artist.playlist")}
-                </span>
-                <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
-                  {pl.title}
+              />
+            ) : (
+              <div className="page-ambient-glow-fallback" />
+            )}
+            <div className="page-panel-header">
+              <div className="hero-ref">
+                <div className="hero-ref-cover">
+                  <PlaylistCover tracks={pl.tracks} coverUrl={pl.cover_url} size={260} borderRadius={20} />
                 </div>
-                <div className="meta-line">
-                  <span>{pl.tracks.length} {t(lang, "common.tracks")}</span>
-                  <span className="meta-sep">·</span>
-                  <span>{formatDuration(totalMs)}</span>
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  {pl.tracks.length > 0 && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => void playTracks(pl.tracks, 0)}
-                    >
-                      ▶ {t(lang, "artist.play")}
-                    </button>
-                  )}
-                  {pl.source_url && !owned && (
-                    <button className="btn btn-ghost btn-sm" onClick={addPreviewed}>
-                      {t(lang, "artist.addToLibrary")}
-                    </button>
-                  )}
-                  {owned && (
-                    <span className="badge ok" style={{ padding: "6px 10px" }}>
-                      ✓ {t(lang, "artist.alreadyInLibrary")}
-                    </span>
-                  )}
+                <div className="hero-ref-info">
+                  <div className="hero-ref-title">{pl.title}</div>
+                  <div className="hero-ref-subtitle">
+                    {profile?.name || (preview.provider ? providerLabel(preview.provider) : t(lang, "artist.playlist"))}
+                  </div>
+                  <div className="hero-ref-meta">
+                    <span>{pl.tracks.length} {t(lang, "common.tracks")}</span>
+                    <span>·</span>
+                    <span>{formatDuration(totalMs)}</span>
+                  </div>
+                  <div className="hero-ref-actions">
+                    {pl.tracks.length > 0 && (
+                      <button
+                        className="btn-pill btn-pill-primary"
+                        onClick={() => void playTracks(previewTracks(pl.tracks), 0)}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <span>{t(lang, "artist.play")}</span>
+                      </button>
+                    )}
+                    {pl.tracks.length > 0 && (
+                      <button
+                        className="btn-pill"
+                        onClick={() => {
+                          const arr = [...pl.tracks].sort(() => Math.random() - 0.5);
+                          void playTracks(arr, 0);
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                        <span>{t(lang, "favorites.shuffle")}</span>
+                      </button>
+                    )}
+                    {pl.source_url && !owned && (
+                      <button className="btn-pill" onClick={addPreviewed}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        <span>{t(lang, "artist.addToLibrary")}</span>
+                      </button>
+                    )}
+                    {owned && (
+                      <span className="btn-pill btn-pill-active" style={{ cursor: "default" }}>
+                        ✓ {t(lang, "artist.alreadyInLibrary")}
+                      </span>
+                    )}
+                    <div className="sort-dropdown-wrap" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className={`btn-pill ${previewSort !== "custom" ? "btn-pill-active" : ""}`}
+                        onClick={() => setSortOpen((v) => !v)}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>
+                        <span>
+                          {previewSort === "custom"
+                            ? (lang === "ru" ? "Сортировка" : "Sort")
+                            : (previewSort === "title" ? t(lang, "artist.titleSort") : t(lang, "artist.artistSort"))}
+                          {previewSort !== "custom" && (previewDir === "asc" ? " ↑" : " ↓")}
+                        </span>
+                        <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>▾</span>
+                      </button>
+                      {sortOpen && (
+                        <div className="sort-dropdown-menu">
+                          {[
+                            { mode: "custom", label: t(lang, "artist.customOrder") },
+                            { mode: "title", label: t(lang, "artist.titleSort") },
+                            { mode: "artist", label: t(lang, "artist.artistSort") },
+                          ].map((opt) => (
+                            <div
+                              key={opt.mode}
+                              className={`sort-dropdown-item ${previewSort === opt.mode ? "active" : ""}`}
+                              onClick={() => {
+                                if (previewSort === opt.mode) {
+                                  setPreviewDir((d) => (d === "asc" ? "desc" : "asc"));
+                                } else {
+                                  setPreviewSort(opt.mode as any);
+                                  setPreviewDir("asc");
+                                }
+                                setSortOpen(false);
+                              }}
+                            >
+                              <span>{opt.label}</span>
+                              {previewSort === opt.mode && (
+                                <span className="sort-dropdown-badge">
+                                  {previewDir === "asc" ? "↑" : "↓"}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="playlist-bar" style={{ padding: "12px 24px" }}>
-              <div className="chips">
-                {(["custom", "title", "artist"] as const).map((opt) => (
-                  <button
-                    key={opt}
-                    className="chip"
-                    style={
-                      previewSort === opt
-                        ? { borderColor: "var(--border3)", color: "var(--text)" }
-                        : undefined
-                    }
-                    onClick={() => {
-                      if (previewSort === opt) {
-                        setPreviewDir((d) => (d === "asc" ? "desc" : "asc"));
-                      } else {
-                        setPreviewSort(opt);
-                        setPreviewDir("asc");
-                      }
-                    }}
-                  >
-                    {opt === "custom"
-                      ? t(lang, "artist.customOrder")
-                      : opt === "title"
-                        ? t(lang, "artist.titleSort")
-                        : t(lang, "artist.artistSort")}
-                    {previewSort === opt && opt !== "custom" && (previewDir === "asc" ? " ↑" : " ↓")}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ padding: "12px 8px" }}>
+            <div className="page-panel-body">
               {pl.tracks.length === 0 ? (
                 <div className="empty">
                   <div className="ico">♫</div>
@@ -307,7 +420,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
   );
 
   return (
-    <div className="view">
+    <div className="view artist-view">
       {mode === "profile" && (
         <>
           <div style={{ marginBottom: 18 }}>
@@ -335,47 +448,36 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
 
           {!loading && profile && (
             <>
-              <div
-                className="playlist-hd"
-                style={{ paddingLeft: 0, paddingRight: 0, borderBottom: "none" }}
-              >
-                <div
-                  style={{
-                    width: 160,
-                    height: 160,
-                    borderRadius: 80,
-                    overflow: "hidden",
-                    flexShrink: 0,
-                    border: "1px solid var(--border2)",
-                    background: "var(--elev)",
-                  }}
-                >
-                  <Artwork
-                    url={profile.avatar_url}
-                    alt={profile.name}
-                    square={false}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      borderRadius: 80,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
+              <div className="artist-hero-card">
+                {profile.avatar_url ? (
+                  <div
+                    className="page-ambient-glow"
+                    style={{ backgroundImage: `url("${profile.avatar_url}")` }}
                   />
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    gap: 8,
-                    minWidth: 0,
-                  }}
-                >
-                  <span className="kicker">{t(lang, "artist.artist")}</span>
-                  <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
-                    {profile.name}
+                ) : (
+                  <div className="page-ambient-glow-fallback" />
+                )}
+                <div className="artist-hero-content">
+                  <div className="artist-avatar-wrap">
+                    <Artwork
+                      url={profile.avatar_url}
+                      alt={profile.name}
+                      square={false}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    />
+                  </div>
+                  <div className="artist-hero-info">
+                    <span className="kicker">{t(lang, "artist.artist")}</span>
+                    <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
+                      {profile.name}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -421,9 +523,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 </div>
               )}
 
-              {/* В YouTube Music секции «Вся музыка» нет — только популярное и релизы */}
-              {provider !== "you_tube_music" &&
-                (allTracks == null || allTracks.length > 0) && (
+              {(allTracks == null || allTracks.length > 0) && (
                 <div className="section">
                   <div className="sec-head">
                     <span className="sec-title">{t(lang, "artist.music")}</span>
@@ -470,9 +570,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
 
               {popular.length === 0 &&
                 releases.length === 0 &&
-                (provider === "you_tube_music" ||
-                  allTracks == null ||
-                  allTracks.length === 0) &&
+                (allTracks == null || allTracks.length === 0) &&
                 !loading && (
                   <div className="empty">
                     <div className="ico">♫</div>
@@ -514,8 +612,9 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
             </div>
           )}
           {!loading && allTracks && allTracks.length > 0 && (
-            <div className="tracklist">
-              {allTracks.map((track, i) => (
+            <VirtualTrackList
+              items={allTracks}
+              renderItem={(track, i) => (
                 <TrackRow
                   key={trackKey(track) + i}
                   track={track}
@@ -529,8 +628,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                     navigateTo("artist", { artist: name, provider: prov })
                   }
                 />
-              ))}
-            </div>
+              )}
+            />
           )}
         </>
       )}
@@ -551,6 +650,21 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
   }
 
   async function openReleasePreview(release: CollectionItem) {
+    if (release.web_url) {
+      showToast(lang === "ru" ? "Загрузка…" : "Loading…", false, 2000);
+      try {
+        const pl = await api.previewPlaylistUrl(release.web_url);
+        if (pl && pl.tracks && pl.tracks.length > 0) {
+          sanitizeTracks(pl.tracks, profile?.name);
+          setExternalPlaylist(pl);
+          navigateTo("playlist", { playlistId: "external" });
+          return;
+        }
+      } catch (err) {
+        showToast(String(err), true);
+        return;
+      }
+    }
     setPreview({ playlist: null, loading: true, provider: release.provider });
     try {
       const pl = await api.previewPlaylistUrl(release.web_url);

@@ -80,6 +80,8 @@ pub struct ScPlaylist {
     #[serde(default)]
     pub artwork_url: Option<String>,
     #[serde(default)]
+    pub track_count: Option<usize>,
+    #[serde(default)]
     pub tracks: Vec<ScTrack>,
 }
 

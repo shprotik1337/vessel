@@ -36,7 +36,14 @@ pub(super) fn spawn_playback(
             }
         };
 
-        // 3. Отдаём источник воспроизведения для потокового стриминга через HttpRangeSource / HlsSource
+        // 3. Фоновое сохранение потока в кэш для экономии трафика и мгновенного повтора
+        let cache_track = track.clone();
+        let cache_source = source.clone();
+        tokio::spawn(async move {
+            let _ = crate::provider::cache::download_track_to_cache(&cache_track, &cache_source).await;
+        });
+
+        // 4. Отдаём источник воспроизведения для потокового стриминга через HttpRangeSource / HlsSource
         let _ = sender.send(RuntimeMessage::PlaybackReady {
             generation,
             source,

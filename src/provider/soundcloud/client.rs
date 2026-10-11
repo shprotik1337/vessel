@@ -3,10 +3,13 @@ use reqwest::{Client, ClientBuilder};
 use serde::de::DeserializeOwned;
 use url::Url;
 
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
 #[derive(Clone)]
 pub(super) struct SoundCloudClient {
     http: Client,
-    client_id: String,
+    client_id: Arc<RwLock<String>>,
     oauth_token: Option<String>,
     api_v2: Url,
 }
@@ -36,7 +39,7 @@ impl SoundCloudClient {
     ) -> Result<Self> {
         Ok(Self {
             http,
-            client_id,
+            client_id: Arc::new(RwLock::new(client_id)),
             oauth_token,
             api_v2,
         })
@@ -54,15 +57,26 @@ impl SoundCloudClient {
 
     async fn effective_client_id(&self, force_refresh: bool) -> Result<String> {
         static CACHED_ID: tokio::sync::Mutex<Option<String>> = tokio::sync::Mutex::const_new(None);
-        if !self.client_id.trim().is_empty() && !force_refresh {
-            return Ok(self.client_id.clone());
-        }
-        let mut guard = CACHED_ID.lock().await;
-        if !force_refresh && let Some(id) = guard.as_ref() {
-            return Ok(id.clone());
+        if !force_refresh {
+            let current = self.client_id.read().await;
+            if !current.trim().is_empty() {
+                return Ok(current.clone());
+            }
+            drop(current);
+            let guard = CACHED_ID.lock().await;
+            if let Some(id) = guard.as_ref() {
+                return Ok(id.clone());
+            }
         }
         let discovered = super::discover::discover_client_id().await?;
-        *guard = Some(discovered.clone());
+        {
+            let mut guard = CACHED_ID.lock().await;
+            *guard = Some(discovered.clone());
+        }
+        {
+            let mut current = self.client_id.write().await;
+            *current = discovered.clone();
+        }
         Ok(discovered)
     }
 
@@ -71,60 +85,87 @@ impl SoundCloudClient {
         T: DeserializeOwned,
     {
         let mut client_id = self.effective_client_id(false).await?;
-        let mut req = self
-            .http
-            .get(url.clone())
-            .query(query)
-            .query(&[("client_id", client_id.as_str())]);
+        const MAX_ATTEMPTS: usize = 3;
 
-        if let Some(token) = &self.oauth_token {
-            let auth_header = if token.to_ascii_lowercase().starts_with("oauth ") {
-                token.clone()
-            } else {
-                format!("OAuth {token}")
-            };
-            req = req.header(reqwest::header::AUTHORIZATION, auth_header);
-        }
-
-        let resp = req
-            .send()
-            .await
-            .context("SoundCloud не ответил")?;
-
-        let resp = if resp.status() == reqwest::StatusCode::UNAUTHORIZED
-            || resp.status() == reqwest::StatusCode::FORBIDDEN
-        {
-            // Протухший или невалидный ключ — форсированно сканируем новый
-            crate::dlog!("[SoundCloud] client_id вернул {}, пробуем обновить...", resp.status());
-            client_id = self.effective_client_id(true).await?;
-            let mut req2 = self
+        for attempt in 0..MAX_ATTEMPTS {
+            let mut req = self
                 .http
-                .get(url)
+                .get(url.clone())
                 .query(query)
                 .query(&[("client_id", client_id.as_str())]);
+
             if let Some(token) = &self.oauth_token {
                 let auth_header = if token.to_ascii_lowercase().starts_with("oauth ") {
                     token.clone()
                 } else {
                     format!("OAuth {token}")
                 };
-                req2 = req2.header(reqwest::header::AUTHORIZATION, auth_header);
+                req = req.header(reqwest::header::AUTHORIZATION, auth_header);
             }
-            req2
-                .send()
-                .await
-                .context("SoundCloud не ответил при повторном запросе")?
-        } else {
-            resp
-        };
 
-        let response = resp
-            .error_for_status()
-            .context("SoundCloud отклонил запрос")?;
-        response
-            .json()
-            .await
-            .context("SoundCloud вернул непонятный JSON")
+            let resp = match req.send().await {
+                Ok(r) => r,
+                Err(err) => {
+                    if attempt + 1 < MAX_ATTEMPTS {
+                        crate::dlog!(
+                            "[SoundCloud] сетевая ошибка: {}, попытка {}/{}...",
+                            err,
+                            attempt + 1,
+                            MAX_ATTEMPTS
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(300 * (attempt as u64 + 1))).await;
+                        continue;
+                    }
+                    return Err(err).context("SoundCloud не ответил");
+                }
+            };
+
+            let status = resp.status();
+            if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+                // Протухший или невалидный ключ — форсированно сканируем новый
+                crate::dlog!(
+                    "[SoundCloud] client_id вернул {}, попытка {}/{}, обновляем ключ...",
+                    status,
+                    attempt + 1,
+                    MAX_ATTEMPTS
+                );
+                if attempt + 1 < MAX_ATTEMPTS {
+                    if let Ok(new_id) = self.effective_client_id(true).await {
+                        client_id = new_id;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    continue;
+                }
+            } else if status.is_server_error() {
+                // 500, 502, 503, 504 от api-v2.soundcloud.com
+                crate::dlog!(
+                    "[SoundCloud] серверная ошибка {} ({}), попытка {}/{}...",
+                    status,
+                    url,
+                    attempt + 1,
+                    MAX_ATTEMPTS
+                );
+                if attempt + 1 < MAX_ATTEMPTS {
+                    if attempt > 0 {
+                        if let Ok(new_id) = self.effective_client_id(true).await {
+                            client_id = new_id;
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(350 * (attempt as u64 + 1))).await;
+                    continue;
+                }
+            }
+
+            let response = resp
+                .error_for_status()
+                .context("SoundCloud отклонил запрос")?;
+            return response
+                .json()
+                .await
+                .context("SoundCloud вернул непонятный JSON");
+        }
+
+        anyhow::bail!("SoundCloud: превышено число попыток запроса")
     }
 }
 

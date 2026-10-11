@@ -64,10 +64,8 @@ pub fn build_provider(
                 anyhow::anyhow!("Yandex Music: не передан OAuth-токен пользователя")
             })?,
         )?),
-        ProviderKind::Deezer => Box::new(DeezerProvider::new(
-            creds.deezer_arl.clone().ok_or_else(|| {
-                anyhow::anyhow!("Deezer: не передан ARL пользователя")
-            })?,
+        ProviderKind::Deezer => Box::new(DeezerProvider::with_optional_arl(
+            creds.deezer_arl.as_deref(),
         )?),
         ProviderKind::Spotify => Box::new(SpotifyProvider::with_proxy(
             creds.spotify_sp_dc.clone().ok_or_else(|| {
@@ -125,11 +123,10 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: b
         }
     }
 
-    if config.deezer_enabled
-        && let Some(arl) = load_secret(secrets, SecretKey::DeezerArl, &mut notices)
-            .filter(|value| !value.trim().is_empty())
-    {
-        match DeezerProvider::new(arl) {
+    if config.deezer_enabled {
+        let arl = load_secret(secrets, SecretKey::DeezerArl, &mut notices)
+            .filter(|value| !value.trim().is_empty());
+        match DeezerProvider::with_optional_arl(arl.as_deref()) {
             Ok(provider) => registry.register(provider),
             Err(error) => notices.push(format!("Deezer не настроен: {error}")),
         }
@@ -195,20 +192,28 @@ fn apply_provider_routing(
             notices.push(format!("Маршрут «{segment}»: Vessel Server «{server_id}» не найден — остался локальный режим"));
             continue;
         };
-        let token = secrets
+        let mut token = secrets
             .get_named(&format!("vessel-server:{server_id}"))
             .ok()
             .flatten()
             .unwrap_or_default();
+        if token.trim().is_empty() && server_id == crate::config::OFFICIAL_SERVER_ID {
+            token = crate::config::OFFICIAL_SERVER_TOKEN.to_string();
+        }
         if token.trim().is_empty() {
             notices.push(format!(
                 "Vessel Server «{server_id}»: токен доступа не найден — добавь сервер заново или впиши токен (Настройки → Сервер)"
             ));
             continue;
         }
-        match ServerClient::with_secrets(&server.url, &token, Some(secrets.clone())) {
+        let server_url = if server_id == crate::config::OFFICIAL_SERVER_ID {
+            crate::config::OFFICIAL_SERVER_URL
+        } else {
+            &server.url
+        };
+        match ServerClient::with_secrets(server_url, &token, Some(secrets.clone())) {
             Ok(client) => {
-                crate::dlog!("[routing] {} -> ServerProvider ({} @ {})", kind.label(), server_id, server.url);
+                crate::dlog!("[routing] {} -> ServerProvider ({} @ {})", kind.label(), server_id, server_url);
                 registry.register(ServerProvider::new(kind, client));
             }
             Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),

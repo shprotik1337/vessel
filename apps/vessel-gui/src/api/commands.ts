@@ -1,15 +1,26 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  AccountState,
   ArtistProfile,
+  AuthResult,
+  CaptchaChallenge,
   CollectionItem,
+  ExploreContent,
   FullState,
   HistoryEntry,
+  LoginRequest,
+  MixItem,
   Playlist,
   ProviderStatus,
+  QueueContext,
+  RegisterRequest,
   RepeatMode,
   SearchOutcome,
+  SmartShuffleResult,
   TrackRef,
+  UpdateProfileRequest,
+  UserInfo,
   UserProfile,
 } from "./types";
 
@@ -24,8 +35,9 @@ export async function search(query: string, provider?: string): Promise<SearchOu
 export async function searchCollections(
   query: string,
   kind: "playlists" | "albums" | "artists",
+  provider?: string,
 ): Promise<CollectionItem[]> {
-  return invoke<CollectionItem[]>("search_collections", { query, kind });
+  return invoke<CollectionItem[]>("search_collections", { query, kind, provider });
 }
 
 export async function artistProfile(
@@ -63,11 +75,19 @@ export async function previous(): Promise<void> {
 }
 
 export async function seek(positionMs: number): Promise<void> {
-  return invoke("seek", { positionMs });
+  return invoke("seek", { positionMs: Math.max(0, Math.round(positionMs)) });
 }
 
 export async function setVolume(volumePercent: number): Promise<void> {
   return invoke("set_volume", { volumePercent });
+}
+
+export async function setCrossfade(durationMs: number): Promise<void> {
+  return invoke("set_crossfade", { durationMs: Math.max(0, Math.round(durationMs)) });
+}
+
+export async function setAudioAgc(enabled: boolean): Promise<void> {
+  return invoke("set_audio_agc", { enabled });
 }
 
 export async function stopPlayback(): Promise<void> {
@@ -358,6 +378,54 @@ export async function setRecommendationProviders(providers: string): Promise<voi
   return invoke("set_recommendation_providers", { providers });
 }
 
+export async function getIncludePlaylistsInRecommendations(): Promise<boolean> {
+  return invoke<boolean>("get_include_playlists_in_recommendations");
+}
+
+export async function setIncludePlaylistsInRecommendations(enabled: boolean): Promise<void> {
+  return invoke("set_include_playlists_in_recommendations", { enabled });
+}
+
+export async function getExcludedRecommendationPlaylists(): Promise<string[]> {
+  return invoke<string[]>("get_excluded_recommendation_playlists");
+}
+
+export async function togglePlaylistTasteExclusion(playlistId: string): Promise<boolean> {
+  return invoke<boolean>("toggle_playlist_taste_exclusion", { playlistId });
+}
+
+export async function getPersonalMixes(forceRefresh?: boolean, providers?: string): Promise<MixItem[]> {
+  return invoke<MixItem[]>("get_personal_mixes", { forceRefresh, providers });
+}
+
+export async function getExploreContent(forceRefresh?: boolean, providers?: string): Promise<ExploreContent> {
+  return invoke<ExploreContent>("get_explore_content", { forceRefresh, providers });
+}
+
+export async function getHomeRecommendations(
+  size?: number,
+  forceRefresh?: boolean,
+  providers?: string,
+): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("get_home_recommendations", { size, forceRefresh, providers });
+}
+
+export async function getNextAutoplayChunk(
+  context: QueueContext,
+  size?: number,
+  providers?: string,
+): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("get_next_autoplay_chunk", { context, size, providers });
+}
+
+export async function applySmartShuffle(
+  currentQueue: TrackRef[],
+  currentIndex: number,
+  providers?: string,
+): Promise<SmartShuffleResult> {
+  return invoke<SmartShuffleResult>("apply_smart_shuffle", { currentQueue, currentIndex, providers });
+}
+
 export async function resetSettings(): Promise<void> {
   return invoke("reset_settings");
 }
@@ -434,8 +502,34 @@ export async function pickFile(extensions?: string[]): Promise<string | null> {
   return invoke<string | null>("pick_file", { extensions: extensions ?? null });
 }
 
+export async function saveFileAs(
+  defaultName?: string,
+  extensions?: string[],
+): Promise<string | null> {
+  return invoke<string | null>("save_file_as", {
+    defaultName: defaultName ?? null,
+    extensions: extensions ?? null,
+  });
+}
+
 export async function openPath(path: string): Promise<void> {
   return invoke("open_path", { path });
+}
+
+export async function getDataDir(): Promise<string> {
+  return invoke<string>("get_data_dir");
+}
+
+export async function getDatabasePath(): Promise<string> {
+  return invoke<string>("get_database_path");
+}
+
+export async function writeTextFile(path: string, content: string): Promise<void> {
+  return invoke("write_text_file", { path, content });
+}
+
+export async function readTextFile(path: string): Promise<string> {
+  return invoke<string>("read_text_file", { path });
 }
 
 export async function getUsersDir(): Promise<string> {
@@ -515,4 +609,57 @@ export async function windowStartDragging(): Promise<void> {
 
 export async function loadImageAsDataUrl(path: string): Promise<string> {
   return invoke<string>("load_image_as_data_url", { path });
+}
+
+// ---------------------------------------------------------------------------
+// Vessel Account & Auth Commands
+// ---------------------------------------------------------------------------
+
+export async function authGetCaptcha(): Promise<CaptchaChallenge> {
+  return invoke<CaptchaChallenge>("auth_get_captcha");
+}
+
+export async function authRegister(req: RegisterRequest): Promise<AuthResult> {
+  return invoke<AuthResult>("auth_register", { req });
+}
+
+export async function authLogin(req: LoginRequest): Promise<AuthResult> {
+  return invoke<AuthResult>("auth_login", { req });
+}
+
+export async function authLogout(): Promise<void> {
+  return invoke("auth_logout");
+}
+
+export async function authContinueGuest(): Promise<void> {
+  return invoke("auth_continue_guest");
+}
+
+export async function authMigrateData(): Promise<void> {
+  return invoke("auth_migrate_data");
+}
+
+export interface CloudSyncResult {
+  tracks_count: number;
+  playlists_count: number;
+}
+
+export async function authDownloadCloudData(): Promise<CloudSyncResult> {
+  return invoke<CloudSyncResult>("auth_download_cloud_data");
+}
+
+export async function importTracksBatch(tracks: TrackRef[]): Promise<number> {
+  return invoke<number>("import_tracks_batch", { tracks });
+}
+
+export async function authGetAccountState(): Promise<AccountState> {
+  return invoke<AccountState>("auth_get_account_state");
+}
+
+export async function authGetProfile(): Promise<UserInfo> {
+  return invoke<UserInfo>("auth_get_profile");
+}
+
+export async function authUpdateProfile(req: UpdateProfileRequest): Promise<UserInfo> {
+  return invoke<UserInfo>("auth_update_profile", { req });
 }

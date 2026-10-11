@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::model::ProviderKind;
+use crate::model::{ProviderKind, TrackRef};
 
 use super::{RankedWaveTrack, WaveBucket, WaveMode, WaveQueueQuotas, WaveSettings, WaveSourceMode};
 
@@ -24,13 +24,24 @@ pub fn select_ranked(
     } else {
         0
     };
+    let max_per_artist = if settings.size < 10 {
+        settings.size
+    } else {
+        match settings.mode {
+            WaveMode::Discovery => 1,
+            WaveMode::Favorites => ((settings.size as f64) * 0.06).ceil().clamp(2.0, 3.0) as usize,
+            _ => ((settings.size as f64) * 0.05).ceil().clamp(2.0, 3.0) as usize,
+        }
+    };
     let rules = SelectionRules {
         queue_size: settings.size,
         max_artist_streak: settings.max_artist_streak,
+        max_per_artist,
         target_new_tracks: quotas.discovery,
         liked_exact_cap,
         languages: &settings.language_rotation,
         mixed_providers: settings.mixed_providers,
+        allowed_providers: settings.provider_order(),
     };
     for (bucket, count) in [
         (Some(WaveBucket::Favorites), quotas.favorites),
@@ -56,10 +67,12 @@ struct SelectionState {
 struct SelectionRules<'a> {
     queue_size: usize,
     max_artist_streak: usize,
+    max_per_artist: usize,
     target_new_tracks: usize,
     liked_exact_cap: usize,
     languages: &'a [String],
     mixed_providers: bool,
+    allowed_providers: Vec<ProviderKind>,
 }
 
 fn pick_from_pool(
@@ -83,50 +96,86 @@ fn pick_from_pool(
         // чей провайдер наименее представлен в финальной очереди — чтобы
         // SoundCloud не забивал всё, а провайдеры чередовались.
         let mut candidates: Vec<(usize, usize)> = Vec::new();
-        for require_language in [true, false] {
-            if rules.mixed_providers && !candidates.is_empty() {
+        for cap_offset in [0usize, 1] {
+            if !candidates.is_empty() {
                 break;
             }
-            for (index, item) in state.pool.iter().enumerate() {
-                if target_bucket.is_some_and(|bucket| item.bucket != bucket)
-                    || !artist_streak_allowed(&state.final_tracks, item, rules.max_artist_streak)
-                    || item.is_liked_exact
-                        && (state.liked_exact_picked >= rules.liked_exact_cap
-                            || state
-                                .final_tracks
-                                .last()
-                                .is_some_and(|track| track.is_liked_exact))
-                    || target_bucket == Some(WaveBucket::Discovery)
-                        && state.picked_new_tracks.saturating_add(1) <= rules.target_new_tracks
-                        && !item.is_new_artist
-                    || require_language
-                        && preferred_language.is_some_and(|language| {
-                            detect_language(&item.track.title, &item.track.display_artist())
-                                != language
-                        })
-                {
-                    continue;
-                }
-                let picks = state
-                    .provider_picks
-                    .get(&item.track.provider)
-                    .copied()
-                    .unwrap_or(0);
-                candidates.push((index, picks));
-                if !rules.mixed_providers {
+            let effective_cap = rules.max_per_artist + cap_offset;
+            for require_language in [true, false] {
+                if rules.mixed_providers && !candidates.is_empty() {
                     break;
                 }
-            }
-            if !rules.mixed_providers && !candidates.is_empty() {
-                break;
+                for (index, item) in state.pool.iter().enumerate() {
+                    if target_bucket.is_some_and(|bucket| item.bucket != bucket)
+                        || (!rules.allowed_providers.is_empty() && !rules.allowed_providers.contains(&item.track.provider))
+                        || !artist_streak_allowed(&state.final_tracks, item, rules.max_artist_streak)
+                        || !artist_cap_allowed(&state.final_tracks, item, effective_cap)
+                        || item.is_liked_exact
+                            && (state.liked_exact_picked >= rules.liked_exact_cap
+                                || state
+                                    .final_tracks
+                                    .last()
+                                    .is_some_and(|track| track.is_liked_exact))
+                        || target_bucket == Some(WaveBucket::Discovery)
+                            && state.picked_new_tracks.saturating_add(1) <= rules.target_new_tracks
+                            && !item.is_new_artist
+                        || require_language
+                            && preferred_language.is_some_and(|language| {
+                                detect_language(&item.track.title, &item.track.display_artist())
+                                    != language
+                            })
+                    {
+                        continue;
+                    }
+                    let picks = state
+                        .provider_picks
+                        .get(&item.track.provider)
+                        .copied()
+                        .unwrap_or(0);
+                    candidates.push((index, picks));
+                    if !rules.mixed_providers {
+                        break;
+                    }
+                }
+                if !rules.mixed_providers && !candidates.is_empty() {
+                    break;
+                }
             }
         }
 
         let pick_index = if rules.mixed_providers {
-            candidates
+            let last_provider = state.final_tracks.last().map(|t| t.track.provider);
+            let streak = state
+                .final_tracks
                 .iter()
-                .min_by_key(|(_, picks)| *picks)
-                .map(|(index, _)| *index)
+                .rev()
+                .take_while(|t| Some(t.track.provider) == last_provider)
+                .count();
+
+            let min_picks = candidates.iter().map(|(_, p)| *p).min().unwrap_or(0);
+            let viable: Vec<&(usize, usize)> = candidates
+                .iter()
+                .filter(|(_, picks)| *picks <= min_picks + 1)
+                .collect();
+
+            let keep_run = streak < 2
+                && viable
+                    .iter()
+                    .any(|(idx, _)| Some(state.pool[*idx].track.provider) == last_provider);
+
+            if keep_run && streak > 0 {
+                viable
+                    .iter()
+                    .find(|(idx, _)| Some(state.pool[*idx].track.provider) == last_provider)
+                    .map(|(index, _)| *index)
+            } else {
+                viable
+                    .iter()
+                    .filter(|(idx, _)| Some(state.pool[*idx].track.provider) != last_provider)
+                    .min_by_key(|(_, picks)| *picks)
+                    .or_else(|| viable.first())
+                    .map(|(index, _)| *index)
+            }
         } else {
             candidates.first().map(|(index, _)| *index)
         };
@@ -149,23 +198,78 @@ fn pick_from_pool(
     }
 }
 
+fn normalize_artist_name(s: &str) -> String {
+    s.trim()
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect()
+}
+
+fn track_has_shared_artist(a: &TrackRef, b: &TrackRef) -> bool {
+    let mut a_artists: Vec<String> = a
+        .artists
+        .iter()
+        .map(|s| normalize_artist_name(s))
+        .filter(|s| s.len() >= 2)
+        .collect();
+    if a_artists.is_empty() {
+        let d = normalize_artist_name(&a.display_artist());
+        if !d.is_empty() {
+            a_artists.push(d);
+        }
+    }
+    let mut b_artists: Vec<String> = b
+        .artists
+        .iter()
+        .map(|s| normalize_artist_name(s))
+        .filter(|s| s.len() >= 2)
+        .collect();
+    if b_artists.is_empty() {
+        let d = normalize_artist_name(&b.display_artist());
+        if !d.is_empty() {
+            b_artists.push(d);
+        }
+    }
+    for a_art in &a_artists {
+        for b_art in &b_artists {
+            if a_art == b_art {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn artist_streak_allowed(
     current: &[RankedWaveTrack],
     item: &RankedWaveTrack,
     max_artist_streak: usize,
 ) -> bool {
-    let Some(last_artist) = current.last().map(|track| track.artist_id.as_str()) else {
+    let Some(last) = current.last() else {
         return true;
     };
-    if last_artist != item.artist_id {
+    if !track_has_shared_artist(&last.track, &item.track) {
         return true;
     }
     current
         .iter()
         .rev()
-        .take_while(|track| track.artist_id == last_artist)
+        .take_while(|track| track_has_shared_artist(&track.track, &item.track))
         .count()
         < max_artist_streak
+}
+
+fn artist_cap_allowed(
+    current: &[RankedWaveTrack],
+    item: &RankedWaveTrack,
+    max_per_artist: usize,
+) -> bool {
+    let count = current
+        .iter()
+        .filter(|track| track_has_shared_artist(&track.track, &item.track))
+        .count();
+    count < max_per_artist
 }
 
 fn detect_language(title: &str, artist: &str) -> &'static str {

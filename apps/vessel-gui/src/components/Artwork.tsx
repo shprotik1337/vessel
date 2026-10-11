@@ -47,6 +47,7 @@ export function Artwork({
     background: tone(seed ?? 0),
     position: "relative",
     ...(square ? { width: size, height: size } : {}),
+    ...(onPlayClick ? { cursor: "pointer" } : {}),
     ...extraStyle,
   };
 
@@ -67,7 +68,14 @@ export function Artwork({
       className={className}
       style={style}
       aria-label={alt}
-      onClick={onClick}
+      onClick={(e) => {
+        if (onPlayClick) {
+          e.stopPropagation();
+          onPlayClick();
+        } else if (onClick) {
+          onClick(e);
+        }
+      }}
       onMouseEnter={() => onPlayClick && setHover(true)}
       onMouseLeave={() => setHover(false)}
     >

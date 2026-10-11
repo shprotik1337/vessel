@@ -93,6 +93,16 @@ impl ProviderKind {
             Self::YouTubeMusic => "YouTube Music",
         }
     }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SoundCloud => "soundcloud",
+            Self::YandexMusic => "yandex",
+            Self::Deezer => "deezer",
+            Self::Spotify => "spotify",
+            Self::YouTubeMusic => "youtube_music",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -118,6 +128,16 @@ impl PlaybackCapability {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackOrigin {
+    #[default]
+    Original,
+    SmartShuffle,
+    Autoplay,
+    MyWave,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrackRef {
     pub provider: ProviderKind,
@@ -137,6 +157,9 @@ pub struct TrackRef {
     /// Международный стандартный код записи (ISRC) — главный ключ матчинга.
     #[serde(default)]
     pub isrc: Option<String>,
+    /// Происхождение трека в очереди воспроизведения
+    #[serde(default)]
+    pub origin: TrackOrigin,
 }
 
 impl TrackRef {
@@ -242,6 +265,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: TrackOrigin::Original,
         }
     }
 

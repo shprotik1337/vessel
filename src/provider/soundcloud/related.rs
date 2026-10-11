@@ -94,6 +94,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: crate::model::TrackOrigin::Original,
         };
         let tracks = related_tracks(&client, &track, 5).await.unwrap();
         server.join().unwrap();

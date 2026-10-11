@@ -3,6 +3,25 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 
+// Restore font and UI scale on application startup
+try {
+  const savedFont = localStorage.getItem("vessel_font");
+  if (savedFont && savedFont !== "Default") {
+    document.body.style.fontFamily = `${savedFont}, sans-serif`;
+  }
+  const savedScale = localStorage.getItem("vessel_scale");
+  if (savedScale) {
+    const zoomVal = parseInt(savedScale, 10) / 100;
+    if (zoomVal > 0) {
+      (document.documentElement.style as any).zoom = String(zoomVal);
+      document.documentElement.style.setProperty("--ui-scale", String(zoomVal));
+      document.documentElement.style.fontSize = `${14 * zoomVal}px`;
+    }
+  }
+} catch {
+  // ignore storage errors
+}
+
 // Global error handlers so runtime errors are visible on screen
 window.addEventListener("error", (e) => {
   console.error("Window Error:", e);

@@ -16,7 +16,7 @@ export function PresetCard({
   onDelete,
 }: PresetCardProps) {
   return (
-    <div className={`dotify-preset-card ${isActive ? "active" : ""}`}>
+    <div className={`theme-preset-card ${isActive ? "active" : ""}`}>
       {/* Visual Cover Preview */}
       <div className="preset-card-cover">
         {preset.wallpaperData ? (

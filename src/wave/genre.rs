@@ -23,6 +23,10 @@ impl WaveGenreProfile {
         Self { weights }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.weights.is_empty()
+    }
+
     pub fn similarity(&self, track: &TrackRef) -> f64 {
         if self.weights.is_empty() {
             return 0.0;
@@ -38,10 +42,63 @@ impl WaveGenreProfile {
             .sum::<f64>();
         (matched_weight / total_weight * 4.0).clamp(0.0, 1.0)
     }
+
+    /// Штраф за чужеродные жанры, которых нет в профиле пользователя (например, Hardstyle/Frenchcore)
+    pub fn alien_penalty(&self, track: &TrackRef) -> f64 {
+        if self.weights.is_empty() {
+            return 0.0;
+        }
+        let tags = track_tags(track);
+        let mut pen = 0.0;
+        for tag in tags {
+            if !self.weights.contains_key(&tag) {
+                if tag == "hardstyle" {
+                    pen += 2.5;
+                } else if tag == "techno" || tag == "metal" {
+                    pen += 0.8;
+                }
+            }
+        }
+        pen
+    }
 }
 
-fn track_tags(track: &TrackRef) -> HashSet<String> {
-    extract_tags(&format!(" {} {} ", track.title, track.display_artist()))
+pub(crate) fn track_tags(track: &TrackRef) -> HashSet<String> {
+    let artist_norm = normalize_search_text(&track.display_artist());
+    let mut tags = extract_tags(&format!(" {} {} ", track.title, track.display_artist()));
+
+    // Добавляем жанры из метаданных самого трека, если провайдер их вернул
+    for g in &track.genres {
+        for t in extract_tags(&format!(" {} ", normalize_search_text(g))) {
+            tags.insert(t);
+        }
+    }
+
+    // Если артист относится к хип-хоп / трэп сцене — гарантированно добавляем тег рэпа
+    if is_known_hiphop_artist(&artist_norm) {
+        tags.insert("rap".to_string());
+        tags.insert("trap".to_string());
+        // Убираем ложные теги метала и рока из метафор в названиях (например, "Heavy Metal" Kai Angel)
+        tags.remove("metal");
+        tags.remove("rock");
+    }
+
+    tags
+}
+
+fn is_known_hiphop_artist(artist_norm: &str) -> bool {
+    const HIPHOP_ARTISTS: &[&str] = &[
+        "kai angel", "9mice", "playboi carti", "carti", "travis scott", "drake",
+        "kendrick lamar", "future", "21 savage", "lil uzi vert", "yeat", "ken carson",
+        "destroy lonely", "big baby tape", "kizaru", "og buda", "scally milano",
+        "heronwater", "mayot", "toxi$", "toxis", "obladaet", "saluki", "pharaoh",
+        "boulevard depo", "yanix", "gone.fludd", "rocket", "lizer", "friendly thug",
+        "alblak 52", "bushido zho", "платина", "макан", "macan", "shadowraze",
+        "zxcursed", "sqwoz bab", "трилл пилл", "thrill pill", "juice wrld",
+        "xxxtentacion", "lil peep", "trippie redd", "gunna", "young thug",
+        "baby keem", "asap rocky", "a$ap rocky", "metro boomin", "don toliver",
+    ];
+    HIPHOP_ARTISTS.iter().any(|&a| artist_norm.contains(a))
 }
 
 fn extract_tags(value: &str) -> HashSet<String> {
@@ -55,20 +112,44 @@ fn extract_tags(value: &str) -> HashSet<String> {
     insert_if_any(
         "rap",
         &[
-            " rap ",
+            " rap",
             " рэп",
             " hip hop",
             " hip-hop",
+            " hiphop",
             " хип хоп",
             " хип-хоп",
+            " trap",
+            " трэп",
+            " треп",
+            " rage",
+            " рейдж",
+            " drill",
+            " дрилл",
+            " дрил",
+            " plug",
+            " плаг",
+            " cloud rap",
+            " клауд",
         ],
     );
-    insert_if_any("rock", &[" рок", " rock", " grunge"]);
-    insert_if_any("metal", &[" metal", " метал"]);
+    insert_if_any("rock", &[" рок", " rock", " grunge", " панк"]);
+    insert_if_any("metal", &[" metal", " метал", " deathcore"]);
     insert_if_any("pop", &[" pop", " поп"]);
     insert_if_any(
         "electronic",
         &[" electro", " электро", " edm", " electronic"],
+    );
+    insert_if_any(
+        "hardstyle",
+        &[
+            " hardstyle",
+            " хардстайл",
+            " gymstyle",
+            " frenchcore",
+            " rawstyle",
+            " gym hardstyle",
+        ],
     );
     insert_if_any("house", &[" house", " хаус"]);
     insert_if_any("techno", &[" techno", " техно"]);

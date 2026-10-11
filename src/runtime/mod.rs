@@ -350,14 +350,18 @@ impl Runtime {
                             .duration_since(SystemTime::UNIX_EPOCH)
                             .map(|d| d.as_millis() as i64)
                             .unwrap_or_default();
-                        if let Err(error) = self.storage.record_history(&HistoryEntry {
-                            track: self.current_track.clone().unwrap(),
-                            played_at_ms: played_at,
-                            completed: false,
-                            skipped: false,
-                        }) {
-                            self.notices.push(format!("Не удалось сохранить историю: {error}"));
-                        }
+                        let storage = self.storage.clone();
+                        let track = self.current_track.clone().unwrap();
+                        std::thread::spawn(move || {
+                            if let Err(error) = storage.record_history(&HistoryEntry {
+                                track,
+                                played_at_ms: played_at,
+                                completed: false,
+                                skipped: false,
+                            }) {
+                                crate::dlog!("[vessel] record_history error: {error}");
+                            }
+                        });
                     }
                     self.current_track_started = true;
                 }
@@ -601,6 +605,10 @@ impl Runtime {
             }
 
             let requested_source = self.playback_resolver.source();
+            let is_remote_deezer = self
+                .providers
+                .get(crate::model::ProviderKind::Deezer)
+                .map_or(false, |p| p.is_remote());
             let has_deezer_arl = self
                 .secrets
                 .get(crate::secrets::SecretKey::DeezerArl)
@@ -612,7 +620,10 @@ impl Runtime {
                 .chain()
                 .into_iter()
                 .filter(|source| {
-                    if *source == playback_resolver::PlaybackSourceKind::Deezer && !has_deezer_arl {
+                    if *source == playback_resolver::PlaybackSourceKind::Deezer
+                        && !has_deezer_arl
+                        && !is_remote_deezer
+                    {
                         return false;
                     }
                     self.playback_resolver.source_available(*source)
@@ -776,6 +787,18 @@ impl Runtime {
                                     candidates.len()
                                 );
 
+                                let cache_track = foreign_track.clone();
+                                let cache_orig = track.clone();
+                                let cache_source = source_stream.clone();
+                                tokio::spawn(async move {
+                                    let _ = crate::provider::cache::download_track_to_cache_with_alias(
+                                        &cache_track,
+                                        Some(&cache_orig),
+                                        &cache_source,
+                                    )
+                                    .await;
+                                });
+
                                 let _ = sender.send(RuntimeMessage::PlaybackReady {
                                     generation,
                                     source: source_stream,
@@ -860,6 +883,12 @@ impl Runtime {
         self.wave_generation = self.wave_generation.wrapping_add(1);
         let primary_provider = if self
             .providers
+            .get(crate::model::ProviderKind::Spotify)
+            .is_some()
+        {
+            crate::model::ProviderKind::Spotify
+        } else if self
+            .providers
             .get(crate::model::ProviderKind::YandexMusic)
             .is_some()
         {
@@ -870,19 +899,37 @@ impl Runtime {
             .is_some()
         {
             crate::model::ProviderKind::SoundCloud
+        } else if self
+            .providers
+            .get(crate::model::ProviderKind::YouTubeMusic)
+            .is_some()
+        {
+            crate::model::ProviderKind::YouTubeMusic
+        } else if self
+            .providers
+            .get(crate::model::ProviderKind::Deezer)
+            .is_some()
+        {
+            crate::model::ProviderKind::Deezer
+        } else if let Some(p) = self.providers.kinds().next() {
+            p
         } else {
             actions.push(Action::WaveFinished {
                 tracks: Vec::new(),
-                failures: vec!["Для волны настрой Yandex Music или SoundCloud".to_string()],
+                failures: vec!["Для волны подключите хотя бы один музыкальный сервис".to_string()],
             });
             return;
         };
+        let include_playlists = true;
+        let excluded_playlists = self.config.excluded_recommendation_playlist_ids.clone();
         self.wave_task = Some(spawn_wave(
             Arc::clone(&self.providers),
             self.storage.clone(),
             self.sender.clone(),
             self.wave_generation,
             primary_provider,
+            include_playlists,
+            excluded_playlists,
         ));
     }
 
@@ -893,6 +940,12 @@ impl Runtime {
         self.control_wave_generation = self.control_wave_generation.wrapping_add(1);
         let primary_provider = if self
             .providers
+            .get(crate::model::ProviderKind::Spotify)
+            .is_some()
+        {
+            crate::model::ProviderKind::Spotify
+        } else if self
+            .providers
             .get(crate::model::ProviderKind::YandexMusic)
             .is_some()
         {
@@ -903,10 +956,24 @@ impl Runtime {
             .is_some()
         {
             crate::model::ProviderKind::SoundCloud
+        } else if self
+            .providers
+            .get(crate::model::ProviderKind::YouTubeMusic)
+            .is_some()
+        {
+            crate::model::ProviderKind::YouTubeMusic
+        } else if self
+            .providers
+            .get(crate::model::ProviderKind::Deezer)
+            .is_some()
+        {
+            crate::model::ProviderKind::Deezer
+        } else if let Some(p) = self.providers.kinds().next() {
+            p
         } else {
             actions.push(Action::ControlWaveFinished {
                 tracks: Vec::new(),
-                failures: vec!["Для волны настрой Yandex Music или SoundCloud".to_string()],
+                failures: vec!["Для волны подключите хотя бы один музыкальный сервис".to_string()],
             });
             return;
         };
@@ -914,15 +981,21 @@ impl Runtime {
         let storage = self.storage.clone();
         let sender = self.sender.clone();
         let generation = self.control_wave_generation;
+        let include_playlists = true;
+        let excluded_playlists = self.config.excluded_recommendation_playlist_ids.clone();
         self.control_wave_task = Some(tokio::spawn(async move {
             let loaded = tokio::task::spawn_blocking(move || {
-                Ok::<_, anyhow::Error>((
-                    storage.recent_history(10_000)?,
-                    storage.liked_tracks_with_time()?,
-                ))
+                let history = storage.recent_history(10_000)?;
+                let liked = storage.liked_tracks_with_time()?;
+                let playlist_tracks = if include_playlists {
+                    crate::recommendation::load_playlist_tracks(&storage, &excluded_playlists)
+                } else {
+                    Vec::new()
+                };
+                Ok::<_, anyhow::Error>((history, liked, playlist_tracks))
             })
             .await;
-            let (history, liked) = match loaded {
+            let (history, liked, playlist_tracks) = match loaded {
                 Ok(Ok(data)) => data,
                 Ok(Err(error)) => {
                     let _ = sender.send(RuntimeMessage::ControlWaveFinished {
@@ -954,6 +1027,7 @@ impl Runtime {
                     },
                     history,
                     liked,
+                    playlist_tracks,
                     manual_seeds: Vec::new(),
                     manual_seed_only: false,
                     preview: false,
@@ -1014,6 +1088,18 @@ impl Runtime {
         self.notices.extend(setup.notices);
     }
 
+    pub fn set_audio_crossfade(&self, duration_ms: u32) {
+        if let Some(audio) = &self.audio {
+            audio.set_crossfade(duration_ms);
+        }
+    }
+
+    pub fn set_audio_agc(&self, enabled: bool) {
+        if let Some(audio) = &self.audio {
+            audio.set_agc(enabled);
+        }
+    }
+
     fn cancel_playback(&mut self) {
         if let Some(task) = self.playback_task.take() {
             task.abort();
@@ -1057,15 +1143,17 @@ impl Runtime {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|duration| duration.as_millis() as i64)
             .unwrap_or_default();
-        if let Err(error) = self.storage.record_history(&HistoryEntry {
-            track,
-            played_at_ms,
-            completed,
-            skipped,
-        }) {
-            self.notices
-                .push(format!("Не удалось сохранить историю: {error}"));
-        }
+        let storage = self.storage.clone();
+        std::thread::spawn(move || {
+            if let Err(error) = storage.record_history(&HistoryEntry {
+                track,
+                played_at_ms,
+                completed,
+                skipped,
+            }) {
+                crate::dlog!("[vessel] record_history error: {error}");
+            }
+        });
     }
 }
 
@@ -1352,7 +1440,14 @@ mod tests {
         };
         runtime.record_current(true, false);
         runtime.record_current(true, false);
-        let history = storage.recent_history(10).unwrap();
+        let mut history = Vec::new();
+        for _ in 0..50 {
+            history = storage.recent_history(10).unwrap();
+            if !history.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         assert_eq!(history.len(), 1);
         assert!(history[0].completed);
         assert!(!history[0].skipped);
@@ -1372,6 +1467,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: crate::model::TrackOrigin::Original,
         }
     }
 }

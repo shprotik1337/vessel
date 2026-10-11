@@ -52,7 +52,8 @@ pub fn normalizovat_track(track: Track) -> Option<TrackRef> {
         genres,
         explicit: track.explicit.unwrap_or(false),
         drm: false,
-            isrc: None,
+        isrc: None,
+        origin: crate::model::TrackOrigin::Original,
     })
 }
 

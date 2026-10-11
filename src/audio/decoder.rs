@@ -27,8 +27,14 @@ pub(super) fn decode_source(
     buffered_samples: &AtomicU64,
     duration_ms: &AtomicU64,
 ) -> Result<()> {
+    if current_generation.load(Ordering::Acquire) != generation {
+        return Ok(());
+    }
     crate::dlog!("[decode][gen{generation}] opening media (pos={position_ms})");
     let media = open_media(&source, position_ms)?;
+    if current_generation.load(Ordering::Acquire) != generation {
+        return Ok(());
+    }
     crate::dlog!("[decode][gen{generation}] media opened");
     let stream = MediaSourceStream::new(
         media.source,
@@ -51,6 +57,9 @@ pub(super) fn decode_source(
             MetadataOptions::default(),
         )
         .context("формат аудиопотока не распознан")?;
+    if current_generation.load(Ordering::Acquire) != generation {
+        return Ok(());
+    }
     crate::dlog!("[decode][gen{generation}] probe done");
     let track = format
         .default_track(TrackType::Audio)
@@ -78,6 +87,9 @@ pub(super) fn decode_source(
         .context("аудиокодек не поддерживается")?;
 
     if media.seek_in_format {
+        if current_generation.load(Ordering::Acquire) != generation {
+            return Ok(());
+        }
         let seconds = (position_ms / 1000) as i64;
         let nanos = ((position_ms % 1000) * 1_000_000) as u32;
         let time = Time::try_new(seconds, nanos).context("позиция перемотки слишком большая")?;

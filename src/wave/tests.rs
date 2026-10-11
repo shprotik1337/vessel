@@ -82,7 +82,7 @@ fn wave_settings_clamp_like_pc_and_skip_deezer() {
     assert_eq!(settings.language_rotation, ["ru", "en"]);
     assert_eq!(
         settings.provider_order(),
-        [ProviderKind::YandexMusic, ProviderKind::SoundCloud]
+        [ProviderKind::Deezer, ProviderKind::YandexMusic, ProviderKind::SoundCloud]
     );
 }
 
@@ -98,12 +98,12 @@ fn profile_uses_pc_windows_and_unique_recent_tracks() {
         (track("3", "Artist A"), now - 1_000),
         (track("4", "Artist C"), now - 31 * 86_400_000),
     ];
-    let profile = WaveTasteProfile::build(&history, &liked, now);
+    let profile = WaveTasteProfile::build(&history, &liked, &[], now);
     assert_eq!(profile.recent_tracks.len(), 2);
     assert_eq!(profile.recent_top_artists, [("artist a".to_string(), 2)]);
     assert_eq!(
         profile.all_top_artists,
-        [("artist a".to_string(), 2), ("artist b".to_string(), 1)]
+        [("artist a".to_string(), 3), ("artist b".to_string(), 1), ("artist c".to_string(), 1)]
     );
     assert_eq!(
         profile.liked_top_artists_recent,
@@ -120,7 +120,7 @@ fn profile_counts_repeats_and_cooldown_like_pc() {
         history(track("1", "Artist A"), now - 25 * 3_600_000),
         history(track("2", "Artist B"), now - 2 * 3_600_000),
     ];
-    let profile = WaveTasteProfile::build(&history, &[], now);
+    let profile = WaveTasteProfile::build(&history, &[], &[], now);
     assert_eq!(profile.play_counts_since(now - 24 * 3_600_000).len(), 2);
     assert_eq!(profile.play_counts_since(0).values().sum::<i64>(), 3);
     let cooldown = profile.cooldown_keys(now, 24);
@@ -172,7 +172,7 @@ fn ranking_filters_cooldown_and_exact_likes_like_pc() {
     let fresh = track("fresh", "Fresh");
     let history = vec![history(recent.clone(), now - 1_000)];
     let likes = vec![(liked.clone(), now - 1_000)];
-    let profile = WaveTasteProfile::build(&history, &likes, now);
+    let profile = WaveTasteProfile::build(&history, &likes, &[], now);
     let genre = WaveGenreProfile::from_tracks(&profile.recent_tracks);
     let settings = WaveSettings {
         primary_provider: ProviderKind::SoundCloud,
@@ -199,7 +199,7 @@ fn ranking_filters_cooldown_and_exact_likes_like_pc() {
 fn balanced_score_prefers_recent_artist_with_pc_weights() {
     let now = 2_000_000_000_000_i64;
     let history = vec![history(track("old", "Known"), now - 25 * 3_600_000)];
-    let profile = WaveTasteProfile::build(&history, &[], now);
+    let profile = WaveTasteProfile::build(&history, &[], &[], now);
     let genre = WaveGenreProfile::default();
     let settings = WaveSettings {
         primary_provider: ProviderKind::SoundCloud,
@@ -328,7 +328,8 @@ fn track(id: &str, artist: &str) -> TrackRef {
         genres: Vec::new(),
         explicit: false,
         drm: false,
-            isrc: None,
+        isrc: None,
+        origin: crate::model::TrackOrigin::Original,
     }
 }
 
@@ -345,3 +346,64 @@ fn ranked(id: &str, artist: &str, score: f64) -> super::RankedWaveTrack {
         reason: WaveReason::TasteMatch,
     }
 }
+
+#[test]
+fn mixed_providers_interleaves_without_starving_and_allows_runs() {
+    let mut tracks = Vec::new();
+    for i in 0..20 {
+        let mut t = track(&format!("sc_{i}"), &format!("SC Artist {i}"));
+        t.provider = ProviderKind::SoundCloud;
+        tracks.push(super::RankedWaveTrack {
+            key: t.provider_key(),
+            artist_id: super::artist_id(&t),
+            track: t,
+            is_new_artist: false,
+            is_liked_exact: false,
+            bucket: super::WaveBucket::Core,
+            score: 1.0 - (i as f64) * 0.01,
+            reason: WaveReason::TasteMatch,
+        });
+    }
+    for i in 0..5 {
+        let mut t = track(&format!("sp_{i}"), &format!("SP Artist {i}"));
+        t.provider = ProviderKind::Spotify;
+        tracks.push(super::RankedWaveTrack {
+            key: t.provider_key(),
+            artist_id: super::artist_id(&t),
+            track: t,
+            is_new_artist: false,
+            is_liked_exact: false,
+            bucket: super::WaveBucket::Core,
+            score: 0.99 - (i as f64) * 0.01,
+            reason: WaveReason::TasteMatch,
+        });
+    }
+
+    let mut settings = WaveSettings::default();
+    settings.size = 10;
+    settings.mixed_providers = true;
+    settings.provider_priority = vec![ProviderKind::SoundCloud, ProviderKind::Spotify];
+    let quotas = WaveQueueQuotas::calculate(10, WaveMode::Balanced, 0.5);
+
+    let selected = select_ranked(tracks, &settings, quotas);
+    assert_eq!(selected.len(), 10);
+
+    let sc_count = selected.iter().filter(|t| t.track.provider == ProviderKind::SoundCloud).count();
+    let sp_count = selected.iter().filter(|t| t.track.provider == ProviderKind::Spotify).count();
+
+    assert!(sp_count >= 3, "Spotify must get a fair share, got {sp_count}");
+    assert!(sc_count >= 3, "SoundCloud must get a fair share, got {sc_count}");
+
+    let mut current_streak = 0;
+    let mut last_p = None;
+    for t in &selected {
+        if Some(t.track.provider) == last_p {
+            current_streak += 1;
+            assert!(current_streak <= 3, "Provider streak must not exceed 3");
+        } else {
+            current_streak = 1;
+            last_p = Some(t.track.provider);
+        }
+    }
+}
+

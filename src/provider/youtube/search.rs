@@ -232,7 +232,8 @@ fn map_song(renderer: &Value) -> Option<TrackRef> {
         genres: Vec::new(),
         explicit: false,
         drm: false,
-            isrc: None,
+        isrc: None,
+        origin: crate::model::TrackOrigin::Original,
     })
 }
 

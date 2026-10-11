@@ -15,9 +15,12 @@ use url::Url;
 use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
     protocol::{
-        API_PREFIX, CREDENTIALS_HEADER, CollectionsResponse, ImportPlaylistRequest,
-        ImportedPlaylistResponse, LikedRequest, PageResponse, ProfileResponse, RelatedRequest,
-        ResolveSourceRequest, ResolveSourceResponse, ServerInfo, TracksResponse,
+        API_PREFIX, CREDENTIALS_HEADER, AuthResponse, CaptchaChallenge, CollectionsResponse,
+        DeletePlaylistRequest, ImportPlaylistRequest, ImportedPlaylistResponse, LikedRequest,
+        LoginRequest, MigrateDataRequest, PageResponse, ProfileResponse, RegisterRequest,
+        RelatedRequest, ResolveSourceRequest, ResolveSourceResponse, SavePlaylistRequest,
+        ServerInfo, SessionResponse, ToggleLikeRequest, ToggleLikeResponse, TracksResponse,
+        UpdateProfileRequest, UserInfo, UserLibraryResponse, UserPlaylistsResponse,
         collection_segment, kind_segment,
     },
     provider::{
@@ -74,8 +77,18 @@ impl ServerClient {
     }
 
     async fn send(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
-        let mut request = request
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", self.token));
+        self.send_with_user(request, None).await
+    }
+
+    async fn send_with_user(
+        &self,
+        mut request: reqwest::RequestBuilder,
+        session_token: Option<&str>,
+    ) -> Result<reqwest::Response> {
+        request = request.header(reqwest::header::AUTHORIZATION, format!("Bearer {}", self.token));
+        if let Some(session) = session_token {
+            request = request.header(crate::protocol::USER_SESSION_HEADER, session);
+        }
         if let Some(secrets) = &self.secrets {
             let credentials = crate::runtime::providers::collect_credentials(secrets);
             if !credentials.is_empty() {
@@ -92,19 +105,66 @@ impl ServerClient {
     }
 
     async fn get_json<T: DeserializeOwned>(&self, path: &str, query: &[(&str, String)]) -> Result<T> {
+        self.get_user_json(path, None, query).await
+    }
+
+    async fn get_user_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        session_token: Option<&str>,
+        query: &[(&str, String)],
+    ) -> Result<T> {
         let request = self.http.get(self.endpoint(path)).timeout(REQUEST_TIMEOUT);
         let request = query
             .iter()
             .fold(request, |acc, (key, value)| acc.query(&[(*key, &**value)]));
-        let response = self.send(request).await?;
+        let response = self.send_with_user(request, session_token).await?;
         Self::decode(response, path).await
     }
 
     async fn post_json<B: serde::Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
+        self.post_user_json(path, None, body).await
+    }
+
+    async fn post_user_json<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        session_token: Option<&str>,
+        body: &B,
+    ) -> Result<T> {
         let response = self
-            .send(self.http.post(self.endpoint(path)).json(body).timeout(REQUEST_TIMEOUT))
+            .send_with_user(
+                self.http.post(self.endpoint(path)).json(body).timeout(REQUEST_TIMEOUT),
+                session_token,
+            )
             .await?;
         Self::decode(response, path).await
+    }
+
+    async fn post_user_empty<B: serde::Serialize>(
+        &self,
+        path: &str,
+        session_token: Option<&str>,
+        body: Option<&B>,
+    ) -> Result<()> {
+        let mut request = self.http.post(self.endpoint(path)).timeout(REQUEST_TIMEOUT);
+        if let Some(b) = body {
+            request = request.json(b);
+        }
+        let response = self.send_with_user(request, session_token).await?;
+        let status = response.status();
+        if !status.is_success() {
+            let detail = response
+                .text()
+                .await
+                .unwrap_or_default()
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            bail!("Vessel Server [{status}] {path}: {}", detail.trim());
+        }
+        Ok(())
     }
 
     async fn decode<T: DeserializeOwned>(response: reqwest::Response, path: &str) -> Result<T> {
@@ -179,11 +239,20 @@ impl ServerClient {
         Ok(response.tracks)
     }
 
-    pub async fn related(&self, track: &TrackRef, limit: usize) -> Result<Vec<TrackRef>> {
+    pub async fn related(
+        &self,
+        target_provider: Option<ProviderKind>,
+        track: &TrackRef,
+        limit: usize,
+    ) -> Result<Vec<TrackRef>> {
         let response: TracksResponse = self
             .post_json(
                 "/tracks/related",
-                &RelatedRequest { track: track.clone(), limit },
+                &RelatedRequest {
+                    track: track.clone(),
+                    limit,
+                    target_provider,
+                },
             )
             .await?;
         Ok(response.tracks)
@@ -233,12 +302,94 @@ impl ServerClient {
             let url = Url::parse(&format!("{}{}", self.base, relay_path))
                 .context("Vessel Server вернул некорректный relay_path")?;
             source.url = url;
-            source
-                .headers
-                .insert("Authorization".to_string(), format!("Bearer {}", self.token));
+            source.headers.insert("Authorization".to_string(), format!("Bearer {}", self.token));
             source.supports_range = true;
         }
         Ok(source)
+    }
+
+    // -----------------------------------------------------------------------
+    // Auth & Captcha
+    // -----------------------------------------------------------------------
+
+    pub async fn auth_captcha(&self) -> Result<CaptchaChallenge> {
+        self.get_json("/auth/captcha", &[]).await
+    }
+
+    pub async fn auth_register(&self, req: &RegisterRequest) -> Result<AuthResponse> {
+        self.post_json("/auth/register", req).await
+    }
+
+    pub async fn auth_login(&self, req: &LoginRequest) -> Result<AuthResponse> {
+        self.post_json("/auth/login", req).await
+    }
+
+    pub async fn auth_session(&self, token: &str) -> Result<SessionResponse> {
+        self.get_user_json("/auth/session", Some(token), &[]).await
+    }
+
+    pub async fn auth_logout(&self, token: &str) -> Result<()> {
+        self.post_user_empty::<()>("/auth/logout", Some(token), None).await
+    }
+
+    // -----------------------------------------------------------------------
+    // User Storage & Sync
+    // -----------------------------------------------------------------------
+
+    pub async fn user_profile(&self, token: &str) -> Result<UserInfo> {
+        self.get_user_json("/user/profile", Some(token), &[]).await
+    }
+
+    pub async fn user_update_profile(
+        &self,
+        token: &str,
+        req: &UpdateProfileRequest,
+    ) -> Result<UserInfo> {
+        self.post_user_json("/user/profile", Some(token), req).await
+    }
+
+    pub async fn user_library(&self, token: &str) -> Result<UserLibraryResponse> {
+        self.get_user_json("/user/library", Some(token), &[]).await
+    }
+
+    pub async fn user_library_toggle(
+        &self,
+        token: &str,
+        req: &ToggleLikeRequest,
+    ) -> Result<ToggleLikeResponse> {
+        self.post_user_json("/user/library/toggle", Some(token), req).await
+    }
+
+    pub async fn user_playlists(&self, token: &str) -> Result<UserPlaylistsResponse> {
+        self.get_user_json("/user/playlists", Some(token), &[]).await
+    }
+
+    pub async fn user_playlists_save(
+        &self,
+        token: &str,
+        req: &SavePlaylistRequest,
+    ) -> Result<()> {
+        self.post_user_empty("/user/playlists/save", Some(token), Some(req)).await
+    }
+
+    pub async fn user_playlists_delete(
+        &self,
+        token: &str,
+        req: &DeletePlaylistRequest,
+    ) -> Result<()> {
+        self.post_user_empty("/user/playlists/delete", Some(token), Some(req)).await
+    }
+
+    pub async fn user_history(&self, token: &str) -> Result<UserLibraryResponse> {
+        self.get_user_json("/user/history", Some(token), &[]).await
+    }
+
+    pub async fn user_migrate(
+        &self,
+        token: &str,
+        req: &MigrateDataRequest,
+    ) -> Result<()> {
+        self.post_user_empty("/user/migrate", Some(token), Some(req)).await
     }
 }
 
@@ -324,7 +475,7 @@ impl MusicProvider for ServerProvider {
     }
 
     async fn related(&self, track: &TrackRef, limit: usize) -> Result<Vec<TrackRef>> {
-        self.client.related(track, limit).await
+        self.client.related(Some(self.kind), track, limit).await
     }
 
     async fn personal_wave(&self, limit: usize) -> Result<Vec<TrackRef>> {

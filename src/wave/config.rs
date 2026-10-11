@@ -175,7 +175,6 @@ impl WaveSettings {
                 }
             }
         }
-        providers.retain(|provider| *provider != ProviderKind::Deezer);
         providers
     }
 }

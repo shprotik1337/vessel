@@ -318,6 +318,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: crate::model::TrackOrigin::Original,
         }
     }
 

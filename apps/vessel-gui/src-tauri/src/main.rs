@@ -51,6 +51,15 @@ mod single_instance {
     }
 }
 
+fn startup_log_path() -> std::path::PathBuf {
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let dir = std::path::PathBuf::from(appdata).join("vessel").join("vessel").join("data");
+        let _ = std::fs::create_dir_all(&dir);
+        return dir.join("startup-debug.log");
+    }
+    std::env::temp_dir().join("vessel-startup-debug.log")
+}
+
 fn main() {
     #[cfg(windows)]
     let _instance_guard = match single_instance::acquire() {
@@ -61,11 +70,11 @@ fn main() {
         }
     };
 
-    let log_path = "C:\\Users\\smiling knight\\AppData\\Roaming\\vessel\\vessel\\data\\startup-debug.log";
+    let log_path = startup_log_path();
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(log_path)
+        .open(&log_path)
         .and_then(|mut f| {
             use std::io::Write;
             writeln!(f, "[startup] main entered at {:?}", std::time::SystemTime::now())
@@ -77,7 +86,7 @@ fn main() {
         let _ = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("C:\\Users\\smiling knight\\AppData\\Roaming\\vessel\\vessel\\data\\startup-debug.log")
+            .open(startup_log_path())
             .and_then(|mut f| {
                 use std::io::Write;
                 f.write_all(msg.as_bytes())
@@ -89,7 +98,7 @@ fn main() {
             let _ = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open("C:\\Users\\smiling knight\\AppData\\Roaming\\vessel\\vessel\\data\\startup-debug.log")
+                .open(startup_log_path())
                 .and_then(|mut f| {
                     use std::io::Write;
                     f.write_all(b"[startup] vessel::run() returned Ok(())\n")
@@ -100,7 +109,7 @@ fn main() {
             let _ = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open("C:\\Users\\smiling knight\\AppData\\Roaming\\vessel\\vessel\\data\\startup-debug.log")
+                .open(startup_log_path())
                 .and_then(|mut f| {
                     use std::io::Write;
                     f.write_all(msg.as_bytes())

@@ -36,6 +36,8 @@ pub struct AudioEngine {
     buffered_samples: Arc<AtomicU64>,
     /// Длительность текущего трека от декодера (0 = неизвестна)
     duration_ms: Arc<AtomicU64>,
+    crossfade_ms: Arc<AtomicU32>,
+    agc_enabled: Arc<AtomicBool>,
     output_rate: u32,
     output_channels: usize,
     output_name: String,
@@ -64,6 +66,8 @@ impl AudioEngine {
         let played_samples = Arc::new(AtomicU64::new(0));
         let buffered_samples = Arc::new(AtomicU64::new(0));
         let duration_ms = Arc::new(AtomicU64::new(0));
+        let crossfade_ms = Arc::new(AtomicU32::new(0));
+        let agc_enabled = Arc::new(AtomicBool::new(false));
 
         // В колбэке нельзя устраивать сходку с мьютексами, аудиодрайвер за такое этапирует звук в лагерь 🫩
         let stream = build_stream(
@@ -78,6 +82,8 @@ impl AudioEngine {
             Arc::clone(&played_samples),
             Arc::clone(&buffered_samples),
             Arc::clone(&duration_ms),
+            Arc::clone(&crossfade_ms),
+            Arc::clone(&agc_enabled),
         )?;
         stream.play().context("не удалось запустить аудиовыход")?;
 
@@ -93,10 +99,20 @@ impl AudioEngine {
             played_samples,
             buffered_samples,
             duration_ms,
+            crossfade_ms,
+            agc_enabled,
             output_rate,
             output_channels,
             output_name,
         })
+    }
+
+    pub fn set_crossfade(&self, duration_ms: u32) {
+        self.crossfade_ms.store(duration_ms, Ordering::Release);
+    }
+
+    pub fn set_agc(&self, enabled: bool) {
+        self.agc_enabled.store(enabled, Ordering::Release);
     }
 
     pub fn output_devices() -> Result<Vec<String>> {

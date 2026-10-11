@@ -19,6 +19,7 @@ pub struct WaveGenerationRequest {
     pub settings: WaveSettings,
     pub history: Vec<HistoryEntry>,
     pub liked: Vec<(TrackRef, i64)>,
+    pub playlist_tracks: Vec<TrackRef>,
     pub manual_seeds: Vec<TrackRef>,
     pub manual_seed_only: bool,
     pub preview: bool,
@@ -36,16 +37,22 @@ pub async fn generate_wave(
     request: WaveGenerationRequest,
 ) -> WaveGeneration {
     let settings = request.settings.normalized(request.preview);
-    let profile = WaveTasteProfile::build(&request.history, &request.liked, request.now_ms);
+    let profile = WaveTasteProfile::build(
+        &request.history,
+        &request.liked,
+        &request.playlist_tracks,
+        request.now_ms,
+    );
     let seeds = build_seeds(
         &profile,
         &request.liked,
+        &request.playlist_tracks,
         &request.manual_seeds,
         request.manual_seed_only,
         &settings,
     );
     let genre_profile = WaveGenreProfile::from_tracks(&seeds.tracks);
-    let deadline = Instant::now() + Duration::from_secs(if request.preview { 4 } else { 14 });
+    let deadline = Instant::now() + Duration::from_secs(if request.preview { 4 } else { 8 });
     let target_pool_size = if request.preview {
         settings.size.saturating_mul(4).clamp(32, 96)
     } else {
@@ -56,7 +63,11 @@ pub async fn generate_wave(
         && !seeds.tracks.is_empty()
         && matches!(
             settings.primary_provider,
-            ProviderKind::YandexMusic | ProviderKind::SoundCloud
+            ProviderKind::YandexMusic
+                | ProviderKind::SoundCloud
+                | ProviderKind::Spotify
+                | ProviderKind::Deezer
+                | ProviderKind::YouTubeMusic
         );
     let candidate_target = if native_related {
         if request.preview {
@@ -89,22 +100,38 @@ pub async fn generate_wave(
     }
 
     if settings.source_mode != WaveSourceMode::LibraryOnly && !native_related {
-        for name in &seeds.artist_names {
+        for chunk in seeds.artist_names.chunks(3) {
             if Instant::now() >= deadline || pool.len() >= candidate_target {
                 break;
             }
-            collect_search_order(
-                providers,
-                &settings,
-                name,
-                24,
-                deadline,
-                &mut pool,
-                WaveCandidateOrigin::Seed,
-                candidate_target,
-                &mut failures,
-            )
-            .await;
+            let mut search_futs = Vec::new();
+            for name in chunk {
+                search_futs.push(async {
+                    let mut local_pool = CandidatePool::default();
+                    let mut local_fails = Vec::new();
+                    collect_search_order(
+                        providers,
+                        &settings,
+                        name,
+                        24,
+                        deadline,
+                        &mut local_pool,
+                        WaveCandidateOrigin::Seed,
+                        candidate_target,
+                        &mut local_fails,
+                    )
+                    .await;
+                    (local_pool, local_fails)
+                });
+            }
+            let results = futures_util::future::join_all(search_futs).await;
+            for (local_pool, local_fails) in results {
+                pool.merge(local_pool, candidate_target);
+                failures.extend(local_fails);
+                if pool.len() >= candidate_target {
+                    break;
+                }
+            }
         }
     }
 
@@ -123,23 +150,6 @@ pub async fn generate_wave(
         .await;
     }
 
-    if native_related && pool.len() < settings.size.saturating_div(2).max(8) {
-        for name in seeds.artist_names.iter().take(6) {
-            collect_search_order(
-                providers,
-                &settings,
-                name,
-                24,
-                deadline,
-                &mut pool,
-                WaveCandidateOrigin::Seed,
-                candidate_target,
-                &mut failures,
-            )
-            .await;
-        }
-    }
-
     let explore = if settings.source_mode == WaveSourceMode::LibraryOnly
         || native_related
         || request.manual_seed_only
@@ -152,30 +162,47 @@ pub async fn generate_wave(
         let per_query = ((settings.size as f64) * (0.15 + settings.novelty * 0.95))
             .round()
             .clamp(6.0, 28.0) as usize;
-        for query in &explore {
+        for chunk in explore.chunks(3) {
             if Instant::now() >= deadline || pool.len() >= candidate_target {
                 break;
             }
-            collect_search_order(
-                providers,
-                &settings,
-                query,
-                per_query,
-                deadline,
-                &mut pool,
-                WaveCandidateOrigin::Explore,
-                candidate_target,
-                &mut failures,
-            )
-            .await;
+            let mut explore_futs = Vec::new();
+            for query in chunk {
+                explore_futs.push(async {
+                    let mut local_pool = CandidatePool::default();
+                    let mut local_fails = Vec::new();
+                    collect_search_order(
+                        providers,
+                        &settings,
+                        query,
+                        per_query,
+                        deadline,
+                        &mut local_pool,
+                        WaveCandidateOrigin::Explore,
+                        candidate_target,
+                        &mut local_fails,
+                    )
+                    .await;
+                    (local_pool, local_fails)
+                });
+            }
+            let results = futures_util::future::join_all(explore_futs).await;
+            for (local_pool, local_fails) in results {
+                pool.merge(local_pool, candidate_target);
+                failures.extend(local_fails);
+                if pool.len() >= candidate_target {
+                    break;
+                }
+            }
         }
     }
 
     if (settings.mode == WaveMode::Favorites || settings.source_mode == WaveSourceMode::LibraryOnly)
         && !request.manual_seed_only
     {
+        let allowed = settings.provider_order();
         pool.extend(
-            comfort_tracks(&request.history, &request.liked, 80),
+            comfort_tracks(&request.history, &request.liked, 80, &allowed),
             WaveCandidateOrigin::Comfort,
             candidate_target.max(80),
         );
@@ -261,25 +288,41 @@ async fn collect_related(
     } else {
         10
     };
+    let mut seeds_processed = 0usize;
     for seed in seeds.iter().take(seed_limit) {
-        if Instant::now() >= deadline || pool.len() >= candidate_target {
+        if Instant::now() >= deadline {
             break;
         }
-        if native_related && seed.provider != settings.primary_provider {
+        if !settings.mixed_providers && pool.len() >= candidate_target * 2 && seeds_processed >= 6 {
+            break;
+        }
+        if settings.mixed_providers {
+            let provider_count = settings.provider_order().len().max(1);
+            let per_cap = (candidate_target / provider_count).max(8);
+            if settings.provider_order().iter().all(|k| pool.provider_count(*k) >= per_cap) && seeds_processed >= 6 {
+                break;
+            }
+        }
+        seeds_processed += 1;
+        if !settings.mixed_providers && native_related && seed.provider != settings.primary_provider {
             let query = format!("{} {}", seed.display_artist(), seed.title);
-            collect_search_provider(
-                providers,
-                settings.primary_provider,
-                &query,
-                target.min(24),
-                deadline,
-                pool,
-                WaveCandidateOrigin::Related,
-                candidate_target,
-                None,
-                failures,
-            )
-            .await;
+            if let Some(provider) = providers.get(settings.primary_provider) {
+                if let Ok(Ok(page)) = timeout_at(deadline, provider.search(&query, None)).await {
+                    if let Some(matched) = page.tracks.into_iter().next() {
+                        let related_res = timeout_at(deadline, provider.related(&matched, target.min(64))).await;
+                        if let Ok(Ok(rel_tracks)) = related_res
+                            && !rel_tracks.is_empty()
+                        {
+                            let capped: Vec<TrackRef> = rel_tracks.into_iter().take(8).collect();
+                            pool.extend(capped, WaveCandidateOrigin::Related, candidate_target * 2);
+                        }
+                        pool.extend(vec![matched], WaveCandidateOrigin::Related, candidate_target * 2);
+                        if pool.len() >= candidate_target * 2 && seeds_processed >= 6 {
+                            break;
+                        }
+                    }
+                }
+            }
             continue;
         }
         for kind in related_provider_order(settings, seed.provider) {
@@ -294,25 +337,23 @@ async fn collect_related(
             };
             let result = if kind == seed.provider {
                 timeout_at(deadline, provider.related(seed, target.min(64))).await
-            } else if settings.mixed_providers {
-                // смешанный режим: ищем похожие треки на других провайдерах
-                let query = format!("{} {}", seed.display_artist(), seed.title);
-                collect_search_provider(
-                    providers,
-                    kind,
-                    &query,
-                    target.min(24),
-                    deadline,
-                    pool,
-                    WaveCandidateOrigin::Related,
-                    candidate_target,
-                    provider_cap,
-                    failures,
-                )
-                .await;
-                continue;
             } else {
-                continue;
+                // Кросс-провайдерный запрос: семя от другого сервиса.
+                // Ищем эквивалент на целевом провайдере и получаем его нативный related!
+                let query = format!("{} {}", seed.display_artist(), seed.title);
+                if let Ok(Ok(page)) = timeout_at(deadline, provider.search(&query, None)).await {
+                    if let Some(matched) = page.tracks.into_iter().next() {
+                        let rel_res = timeout_at(deadline, provider.related(&matched, target.min(64))).await;
+                        match rel_res {
+                            Ok(Ok(rel_tracks)) if !rel_tracks.is_empty() => Ok(Ok(rel_tracks)),
+                            _ => Ok(Ok(vec![matched])),
+                        }
+                    } else {
+                        Ok(Ok(Vec::new()))
+                    }
+                } else {
+                    Ok(Ok(Vec::new()))
+                }
             };
             match result {
                 Ok(Ok(tracks)) if !tracks.is_empty() => {
@@ -320,11 +361,11 @@ async fn collect_related(
                         pool.extend_balanced(
                             tracks,
                             WaveCandidateOrigin::Related,
-                            candidate_target,
+                            candidate_target * 2,
                             provider_cap,
                         );
                     } else {
-                        pool.extend(tracks, WaveCandidateOrigin::Related, candidate_target);
+                        pool.extend(tracks, WaveCandidateOrigin::Related, candidate_target * 2);
                     }
                 }
                 Ok(Ok(_)) => {
@@ -449,37 +490,53 @@ fn query_variants(query: &str, kind: ProviderKind) -> Vec<String> {
 }
 
 fn related_provider_order(settings: &WaveSettings, seed: ProviderKind) -> Vec<ProviderKind> {
+    let allowed = settings.provider_order();
     if settings.mixed_providers {
-        // смешиваем — related ищем по всем выбранным провайдерам
-        let mut order = vec![seed];
-        for provider in settings.provider_order() {
+        let mut order = Vec::new();
+        if allowed.contains(&seed) {
+            order.push(seed);
+        }
+        for provider in allowed {
             if !order.contains(&provider) {
                 order.push(provider);
             }
+        }
+        if order.is_empty() {
+            return vec![settings.primary_provider];
         }
         return order;
     }
     if settings.source_mode == WaveSourceMode::CurrentService {
         return vec![settings.primary_provider];
     }
-    let mut order = vec![seed];
-    for provider in settings.provider_order() {
+    let mut order = Vec::new();
+    if allowed.contains(&seed) {
+        order.push(seed);
+    }
+    for provider in allowed {
         if !order.contains(&provider) {
             order.push(provider);
         }
     }
-    order
+    if order.is_empty() {
+        vec![settings.primary_provider]
+    } else {
+        order
+    }
 }
 
 fn comfort_tracks(
     history: &[HistoryEntry],
     liked: &[(TrackRef, i64)],
     limit: usize,
+    allowed_providers: &[ProviderKind],
 ) -> Vec<TrackRef> {
     let mut result = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for (track, _) in liked {
-        if seen.insert(track_key(track)) {
+        if (allowed_providers.is_empty() || allowed_providers.contains(&track.provider))
+            && seen.insert(track_key(track))
+        {
             result.push(track.clone());
         }
         if result.len() >= limit {
@@ -488,6 +545,9 @@ fn comfort_tracks(
     }
     let mut counted = HashMap::<String, (TrackRef, usize, i64)>::new();
     for entry in history {
+        if !allowed_providers.is_empty() && !allowed_providers.contains(&entry.track.provider) {
+            continue;
+        }
         let key = track_key(&entry.track);
         counted
             .entry(key)
@@ -621,6 +681,7 @@ mod tests {
                     skipped: false,
                 }],
                 liked: Vec::new(),
+                playlist_tracks: Vec::new(),
                 manual_seeds: Vec::new(),
                 manual_seed_only: false,
                 preview: false,
@@ -652,6 +713,7 @@ mod tests {
                 },
                 history: Vec::new(),
                 liked: Vec::new(),
+                playlist_tracks: Vec::new(),
                 manual_seeds: Vec::new(),
                 manual_seed_only: false,
                 preview: false,
@@ -677,6 +739,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: crate::model::TrackOrigin::Original,
         }
     }
 }

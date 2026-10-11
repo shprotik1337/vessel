@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
-import { Waveform } from "./Waveform";
 import { PlatformIcon } from "./PlatformIcon";
-import { useBlockWidth } from "../customization/EditableBlock";
 import { t } from "../i18n";
 import { trackKey } from "../lib/utils";
 import * as api from "../api/commands";
@@ -11,22 +9,22 @@ import * as api from "../api/commands";
 interface ProviderOption {
   key: string;
   label: string;
+  color: string;
 }
 
 const PROVIDER_OPTIONS: ProviderOption[] = [
-  { key: "soundcloud", label: "SoundCloud" },
-  { key: "deezer", label: "Deezer" },
-  { key: "yandex", label: "Yandex" },
-  { key: "spotify", label: "Spotify" },
-  { key: "you_tube_music", label: "YouTube Music" },
+  { key: "youtube_music", label: "YouTube Music", color: "#FF0000" },
+  { key: "soundcloud", label: "SoundCloud", color: "#FF5500" },
+  { key: "spotify", label: "Spotify", color: "#1DB954" },
+  { key: "yandex", label: "Yandex Music", color: "#FFCC00" },
+  { key: "deezer", label: "Deezer", color: "#A238FF" },
 ];
 
 export function WaveSection() {
-  const { state, lang, showToast, playTracks, navigateTo, waveTracks, setWaveTracks } = useApp();
-  const [sourcePicker, setSourcePicker] = useState(false);
-  const [playlistPicker, setPlaylistPicker] = useState(false);
+  const { state, lang, showToast, playTracks, navigateTo, waveTracks, setWaveTracks, setIsWaveActive } = useApp();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [building, setBuilding] = useState(false);
+  const [showPlatformBar, setShowPlatformBar] = useState(false);
   const [selectedProviders, setSelectedProviders] = useState<string[] | null>(null);
   const [allProviders, setAllProviders] = useState(true);
   const chosenSource = useRef<"favorites" | "playlists" | null>(null);
@@ -38,12 +36,15 @@ export function WaveSection() {
       try {
         const val = await api.getWaveProviders();
         if (cancelled) return;
-        if (val === "all" || !val) {
+        if (val === "all") {
           setAllProviders(true);
           setSelectedProviders(PROVIDER_OPTIONS.map((o) => o.key));
+        } else if (!val) {
+          setAllProviders(false);
+          setSelectedProviders([]);
         } else {
           const list = val.split(",").filter((k) => PROVIDER_OPTIONS.some((o) => o.key === k));
-          setAllProviders(false);
+          setAllProviders(list.length === PROVIDER_OPTIONS.length);
           setSelectedProviders(list);
         }
       } catch {
@@ -59,23 +60,11 @@ export function WaveSection() {
   const isLive =
     state?.player.status === "playing" || state?.player.status === "buffering";
   const playing = waveNow && isLive;
-  const wfState = playing ? "playing" : "idle";
 
   const providerFilter = () => {
-    if (allProviders || !selectedProviders || selectedProviders.length === 0) return "all";
+    if (allProviders) return "all";
+    if (!selectedProviders || selectedProviders.length === 0) return "";
     return selectedProviders.join(",");
-  };
-
-  const openSourcePicker = () => setSourcePicker(true);
-
-  const chooseSource = async (source: "favorites" | "playlists") => {
-    chosenSource.current = source;
-    setSourcePicker(false);
-    if (source === "favorites") {
-      await buildWave("favorites", null);
-    } else {
-      setPlaylistPicker(true);
-    }
   };
 
   const buildWave = async (source: "favorites" | "playlists", playlistId: string | null) => {
@@ -85,7 +74,9 @@ export function WaveSection() {
       const tracks = await api.getWaveRecommendations(source, 50, playlistId, providerFilter());
       setWaveTracks(tracks);
       if (tracks.length > 0) {
+        setIsWaveActive(true);
         playTracks(tracks, 0);
+        navigateTo("player");
       } else {
         showToast(t(lang, "wave.empty1"), true);
       }
@@ -93,21 +84,28 @@ export function WaveSection() {
       showToast(String(error), true);
     } finally {
       setBuilding(false);
-      setPlaylistPicker(false);
     }
   };
 
   const playWave = () => {
+    const currentKeys = (allProviders || !selectedProviders) ? PROVIDER_OPTIONS.map(o => o.key) : selectedProviders;
+    if (currentKeys.length === 0) {
+      showToast(lang === "ru" ? "Выберите хотя бы один сервис для Моей волны" : "Please select at least one service", true);
+      return;
+    }
     if (waveTracks.length === 0) {
-      openSourcePicker();
+      void buildWave("favorites", null);
       return;
     }
     // Если сейчас играет именно трек из волны — переключаем паузу/плей.
     // Иначе — заменяем очередь волной (не продолжаем избранное/плейлист).
-    if (playing) {
+    if (waveNow) {
       void api.togglePlayback().catch(() => {});
+      navigateTo("player");
     } else {
+      setIsWaveActive(true);
       playTracks(waveTracks, 0);
+      navigateTo("player");
     }
   };
 
@@ -133,16 +131,38 @@ export function WaveSection() {
     }
   };
 
+  const handleTogglePlatform = async (key: string) => {
+    const allKeys = PROVIDER_OPTIONS.map((o) => o.key);
+    const current = selectedProviders ?? (allProviders ? allKeys : []);
+    const next = current.includes(key)
+      ? current.filter((k) => k !== key)
+      : [...current, key];
+
+    const isAll = next.length === allKeys.length;
+    setAllProviders(isAll);
+    setSelectedProviders(next);
+
+    const filter = isAll ? "all" : next.join(",");
+    try {
+      await api.setWaveProviders(filter);
+    } catch {}
+
+    window.dispatchEvent(new CustomEvent("vessel:providers-changed", { detail: filter }));
+  };
+
   const applyProviderSettings = async () => {
     setSettingsOpen(false);
-    await api.setWaveProviders(providerFilter());
+    const filter = providerFilter();
+    try {
+      await api.setWaveProviders(filter);
+    } catch {}
+    window.dispatchEvent(new CustomEvent("vessel:providers-changed", { detail: filter }));
     if (waveTracks.length > 0) {
       await buildWave("favorites", null);
     }
   };
 
-  const blockWidth = useBlockWidth();
-  const isMini = blockWidth === "third" || blockWidth === "half";
+  const isMini = false;
 
   return (
     <div className="section">
@@ -176,11 +196,16 @@ export function WaveSection() {
           </div>
           <div className="wave-mini-controls" onClick={(e) => e.stopPropagation()}>
             <button
-              className="btn btn-ghost btn-mini-tool"
-              onClick={() => setSettingsOpen(true)}
-              title={t(lang, "wave.settings")}
+              className={`btn btn-ghost btn-mini-tool ${showPlatformBar ? "active" : ""}`}
+              onClick={() => setShowPlatformBar((v) => !v)}
+              title="Платформы волны"
             >
-              ⚙
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="8" x2="20" y2="8" />
+                <circle cx="8" cy="8" r="3" fill="currentColor" />
+                <line x1="4" y1="16" x2="20" y2="16" />
+                <circle cx="16" cy="16" r="3" fill="currentColor" />
+              </svg>
             </button>
             <button
               className="btn btn-primary btn-mini-play"
@@ -196,171 +221,123 @@ export function WaveSection() {
           </div>
         </div>
       ) : (
-        <div
-          className="wave-panel"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            height: 150,
-            background: "var(--panel)",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            overflow: "hidden",
-            cursor: "pointer",
-            transition: "border-color .12s",
-          }}
-          onClick={() => navigateTo("wave")}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border2)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)";
-          }}
-        >
-          <div style={{ flex: 1, minHeight: 0 }} />
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 12,
-              padding: "8px 20px",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="btn btn-ghost"
-              style={{
-                width: 36,
-                height: 36,
-                padding: 0,
-                borderRadius: 18,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              onClick={() => setSettingsOpen(true)}
-              title={t(lang, "wave.settings")}
-            >
-              ⚙
-            </button>
-            <button
-              className="btn btn-primary"
-              style={{
-                width: 40,
-                height: 40,
-                padding: 0,
-                borderRadius: 20,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                playWave();
-              }}
-              disabled={building}
-            >
-              {building ? "…" : playing ? "⏸" : "▶"}
-            </button>
-            <button
-              className="btn btn-ghost"
-              style={{
-                width: 36,
-                height: 36,
-                padding: 0,
-                borderRadius: 18,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (waveTracks.length > 0) {
-                  void (async () => {
-                    setBuilding(true);
-                    try {
-                      const tracks = await api.getWaveRecommendations("favorites", 50, null, providerFilter());
-                      setWaveTracks(tracks);
-                      if (tracks.length > 0) playTracks(tracks, 0);
-                    } catch (err) {
-                      showToast(String(err), true);
-                    } finally {
-                      setBuilding(false);
-                    }
-                  })();
-                } else {
-                  openSourcePicker();
+        <div className="wave-hero-card" style={{ cursor: "default" }}>
+          <div className="wave-hero-left">
+            <div className="wave-hero-tag">
+              <span>{lang === "ru" ? "МОЯ ВОЛНА" : "MY WAVE"}</span>
+            </div>
+            <div className="wave-hero-title">
+              {lang === "ru" ? "Персональный поток без лишнего шума" : "Personal stream without extra noise"}
+            </div>
+            <div className="wave-hero-desc">
+              {(() => {
+                const currentKeys = (allProviders || !selectedProviders) ? PROVIDER_OPTIONS.map(o => o.key) : selectedProviders;
+                const activeLabels = currentKeys
+                  .map((k) => PROVIDER_OPTIONS.find((o) => o.key === k)?.label)
+                  .filter(Boolean) as string[];
+                if (currentKeys.length === 0) {
+                  return lang === "ru"
+                    ? "Сервисы не выбраны. Выберите одну или несколько платформ ниже для запуска волны."
+                    : "No services selected. Select one or more platforms below to launch wave.";
                 }
-              }}
-              disabled={building}
-              title={t(lang, "wave.refresh")}
-            >
-              ↻
-            </button>
-          </div>
-          <div style={{ height: 60, padding: "0 20px 4px" }}>
-            <Waveform state={wfState} barCount={80} height={56} />
-          </div>
-        </div>
-      )}
+                const servicesStr =
+                  activeLabels.length === 1
+                    ? activeLabels[0]
+                    : `${activeLabels.slice(0, -1).join(", ")} ${lang === "ru" ? "и" : "and"} ${activeLabels[activeLabels.length - 1]}`;
+                return lang === "ru"
+                  ? `Очередь собирается из ${servicesStr}, а активный сервис задает стартовую точку поиска.`
+                  : `The queue is assembled from ${servicesStr}, and the active service sets the starting point.`;
+              })()}
+            </div>
 
-      {sourcePicker && (
-        <div className="ov show" onClick={() => setSourcePicker(false)}>
-          <div
-            className="ov-card"
-            style={{ width: 360, height: "auto", maxHeight: "auto", padding: 24, gap: 12 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sett-title" style={{ fontSize: 17 }}>
-              {t(lang, "wave.sourceTitle")}
+            <div className="wave-hero-actions">
+              {(() => {
+                const currentKeys = (allProviders || !selectedProviders) ? PROVIDER_OPTIONS.map(o => o.key) : selectedProviders;
+                const noService = currentKeys.length === 0;
+                return (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-wave-primary"
+                      onClick={playWave}
+                      disabled={building || noService}
+                      title={noService ? (lang === "ru" ? "Выберите хотя бы один сервис" : "Select at least one service") : undefined}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                        {playing ? (
+                          <>
+                            <rect x="6" y="4" width="4" height="16" rx="1" />
+                            <rect x="14" y="4" width="4" height="16" rx="1" />
+                          </>
+                        ) : (
+                          <polygon points="5 3 19 12 5 21 5 3"/>
+                        )}
+                      </svg>
+                      <span>
+                        {building
+                          ? (lang === "ru" ? "Сборка…" : "Building…")
+                          : playing
+                          ? (lang === "ru" ? "Пауза" : "Pause")
+                          : waveNow
+                          ? (lang === "ru" ? "Продолжить" : "Resume")
+                          : (lang === "ru" ? "Запустить волну" : "Launch Wave")}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn-wave-icon"
+                      onClick={() => buildWave(chosenSource.current || "favorites", null)}
+                      disabled={building || noService}
+                      title={t(lang, "wave.refresh")}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                      </svg>
+                    </button>
+                  </>
+                );
+              })()}
             </div>
-            <div className="set-desc">{t(lang, "wave.sourceSub")}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-              <button className="btn btn-primary" onClick={() => chooseSource("favorites")} disabled={building}>
-                {t(lang, "nav.favorites")}
-              </button>
-              <button className="btn btn-outline" onClick={() => chooseSource("playlists")} disabled={building}>
-                {t(lang, "nav.playlists")}
-              </button>
+
+            {/* Platform Selection Chips */}
+            <div className="wave-services-row">
+              {PROVIDER_OPTIONS.map((p) => {
+                const currentKeys = selectedProviders ?? (allProviders ? PROVIDER_OPTIONS.map(o => o.key) : []);
+                const isSelected = currentKeys.includes(p.key);
+                return (
+                  <div
+                    key={p.key}
+                    className={`wave-service-chip ${isSelected ? "active" : ""}`}
+                    onClick={() => void handleTogglePlatform(p.key)}
+                    title={`${p.label} (${isSelected ? (lang === "ru" ? "Активен" : "Active") : (lang === "ru" ? "Выключен" : "Disabled")})`}
+                  >
+                    <PlatformIcon kind={p.key as any} size={15} color={p.color} />
+                    <span>{p.label}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </div>
-      )}
 
-      {playlistPicker && (
-        <div className="ov show" onClick={() => setPlaylistPicker(false)}>
-          <div
-            className="ov-card"
-            style={{ width: 420, height: "auto", maxHeight: "70vh", padding: 24, gap: 12 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sett-title" style={{ fontSize: 17 }}>
-              {t(lang, "wave.choosePlaylist")}
-            </div>
-            <div className="set-desc">{t(lang, "wave.choosePlaylistSub")}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
-              {state?.playlists.map((p) => (
-                <button
-                  key={p.id}
-                  className="btn btn-outline"
-                  style={{ justifyContent: "flex-start", textAlign: "left", height: "auto", padding: "10px 14px" }}
-                  onClick={() => buildWave("playlists", p.id)}
-                  disabled={building}
-                >
-                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {p.title}
-                  </span>
-                  <span style={{ color: "var(--text3)", fontSize: 12, flexShrink: 0 }}>
-                    {p.tracks.length}
-                  </span>
-                </button>
+          <div className="wave-hero-right">
+            <div className={`wave-visualizer ${playing ? "playing" : "paused"}`}>
+              {[
+                25, 38, 55, 72, 88, 62, 45, 30, 48, 70, 92, 100, 84, 65, 42, 58, 80, 95, 88, 70,
+                52, 35, 45, 68, 85, 96, 78, 60, 40, 55, 75, 90, 82, 64, 46, 32, 50, 72, 94, 86,
+                68, 50, 36, 48, 70, 85, 65, 40
+              ].map((h, i) => (
+                <div
+                  key={i}
+                  className="wave-visualizer-bar"
+                  style={{
+                    height: `${h}%`,
+                    animationDelay: `${(i * 0.045).toFixed(3)}s`,
+                  }}
+                />
               ))}
-              {state && state.playlists.length === 0 && (
-                <div className="set-desc" style={{ padding: 12, textAlign: "center" }}>
-                  {t(lang, "playlists.empty1")}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -383,7 +360,7 @@ export function WaveSection() {
             </div>
             <div>
               <div className="svc-row" style={{ borderBottom: "1px solid var(--border)" }}>
-                <div style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <span style={{ fontSize: 16 }}>★</span>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -414,13 +391,10 @@ export function WaveSection() {
                 const colors: Record<string, string> = {
                   soundcloud: "#F50", deezer: "#A238FF", yandex: "#FC0", spotify: "#1DB954", youtube_music: "#FF0000",
                 };
-                const iconSizes: Record<string, number> = {
-                  soundcloud: 40, deezer: 44, yandex: 33, spotify: 59, youtube_music: 32,
-                };
                 return (
                   <div key={opt.key} className="svc-row" style={{ borderBottom: "none" }}>
-                    <div style={{ width: 58, height: 58, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: colors[opt.key] }}>
-                      <PlatformIcon kind={opt.key as "soundcloud"|"deezer"|"yandex"|"spotify"|"you_tube_music"} size={iconSizes[opt.key] ?? 40} />
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: colors[opt.key] }}>
+                      <PlatformIcon kind={opt.key as "soundcloud"|"deezer"|"yandex"|"spotify"|"you_tube_music"} size={22} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600 }}>{opt.label}</div>

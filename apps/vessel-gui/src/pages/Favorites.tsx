@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
+import { VirtualTrackList } from "../components/VirtualTrackList";
 import { trackKey, artistLabel, formatDuration } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
@@ -16,7 +17,15 @@ export function Favorites() {
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [sort, setSort] = useState<SortMode>("custom");
   const [dir, setDir] = useState<SortDir>("desc");
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [likedTimes, setLikedTimes] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!sortDropdownOpen) return;
+    const close = () => setSortDropdownOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [sortDropdownOpen]);
 
   useEffect(() => {
     void (async () => {
@@ -167,75 +176,97 @@ export function Favorites() {
         </button>
       </div>
 
-      <div className="panel">
-        <div className="playlist-hd">
-          <div className="fav-cover" title={t(lang, "favorites.title")}>
-            <svg width="60" height="60" viewBox="0 0 24 24" fill="#ffffff">
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-            </svg>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 8, minWidth: 0 }}>
-            <span className="kicker">{t(lang, "nav.favorites")}</span>
-            <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
-              {t(lang, "favorites.title")}
+      <div className="page-panel">
+        <div className="page-ambient-glow-fav" />
+        <div className="page-panel-header">
+          <div className="hero-ref">
+            <div className="fav-cover-large" title={t(lang, "favorites.title")}>
+              <svg width="84" height="84" viewBox="0 0 24 24" fill="#ffffff">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              </svg>
             </div>
-            <div className="meta-line">
-              <span>{favTracks.length} {t(lang, "common.tracks")}</span>
-              {totalMs > 0 && (
-                <>
-                  <span className="meta-sep">·</span>
-                  <span>{formatDuration(totalMs)}</span>
-                </>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button className="btn btn-primary btn-sm" onClick={playAll}>
-                ▶ {t(lang, "playlist.play")}
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={shufflePlay}>
-                {t(lang, "favorites.shuffle")}
-              </button>
-              <button
-                className="btn btn-outline btn-sm"
-                onClick={downloadAll}
-                disabled={Boolean(cacheProgress)}
-                title={t(lang, "favorites.cacheTitle")}
-              >
-                {cacheProgress
-                  ? (lang === "ru"
-                      ? `Кэширование ${cacheProgress.completed}/${cacheProgress.total}…`
-                      : `Caching ${cacheProgress.completed}/${cacheProgress.total}…`)
-                  : t(lang, "favorites.cache")}
-              </button>
+            <div className="hero-ref-info">
+              <div className="hero-ref-title" style={{ maxWidth: 650, wordBreak: "break-word" }}>
+                {t(lang, "favorites.title")}
+              </div>
+              <div className="hero-ref-subtitle">
+                {lang === "ru" ? "Моя медиатека" : "My Library"}
+              </div>
+              <div className="hero-ref-meta">
+                <span>{favTracks.length} {t(lang, "common.tracks")}</span>
+                {totalMs > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>{formatDuration(totalMs)}</span>
+                  </>
+                )}
+              </div>
+              <div className="hero-ref-actions">
+                <button className="btn-pill btn-pill-primary" onClick={playAll}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  <span>{t(lang, "playlist.play")}</span>
+                </button>
+                <button className="btn-pill" onClick={shufflePlay}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                  <span>{t(lang, "favorites.shuffle")}</span>
+                </button>
+                <button
+                  className="btn-pill"
+                  onClick={downloadAll}
+                  disabled={Boolean(cacheProgress)}
+                  title={t(lang, "favorites.cacheTitle")}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <span>
+                    {cacheProgress
+                      ? (lang === "ru"
+                          ? `Кэширование ${cacheProgress.completed}/${cacheProgress.total}…`
+                          : `Caching ${cacheProgress.completed}/${cacheProgress.total}…`)
+                      : t(lang, "favorites.cache")}
+                  </span>
+                </button>
+                <div className="sort-dropdown-wrap" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className={`btn-pill ${sort !== "custom" ? "btn-pill-active" : ""}`}
+                    onClick={() => setSortDropdownOpen((v) => !v)}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>
+                    <span>
+                      {sort === "custom"
+                        ? (lang === "ru" ? "Сортировка" : "Sort")
+                        : (sortOptions.find((o) => o.mode === sort)?.label ?? "")}
+                      {sort !== "custom" && (dir === "asc" ? " ↑" : " ↓")}
+                    </span>
+                    <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>▾</span>
+                  </button>
+                  {sortDropdownOpen && (
+                    <div className="sort-dropdown-menu">
+                      {sortOptions.map((opt) => (
+                        <div
+                          key={opt.mode}
+                          className={`sort-dropdown-item ${sort === opt.mode ? "active" : ""}`}
+                          onClick={() => {
+                            toggleSort(opt.mode);
+                            setSortDropdownOpen(false);
+                          }}
+                        >
+                          <span>{opt.label}</span>
+                          {sort === opt.mode && opt.mode !== "custom" && (
+                            <span className="sort-dropdown-badge">
+                              {dir === "asc" ? "↑" : "↓"}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="playlist-bar" style={{ padding: "12px 24px", gap: 12 }}>
-          <div className="chips">
-            {sortOptions.map((opt) => (
-              <button
-                key={opt.mode}
-                className="chip"
-                style={
-                  sort === opt.mode
-                    ? { borderColor: "var(--border3)", color: "var(--text)" }
-                    : undefined
-                }
-                onClick={() => toggleSort(opt.mode)}
-                title={sort === opt.mode && opt.mode !== "custom" ? (dir === "asc" ? t(lang, "playlist.ascending") : t(lang, "playlist.descending")) : undefined}
-              >
-                {opt.label}
-                {sort === opt.mode && opt.mode !== "custom" && (dir === "asc" ? " ↑" : " ↓")}
-              </button>
-            ))}
-          </div>
-          <span style={{ color: "var(--text3)", fontSize: 12 }}>
-            {t(lang, "playlist.reorderHint")}
-          </span>
-        </div>
-
-        <div style={{ padding: "12px 8px" }}>
+        <div className="page-panel-body">
           {favTracks.length === 0 ? (
             <div className="empty">
               <div className="ico">♡</div>
@@ -243,8 +274,11 @@ export function Favorites() {
               <div className="t2">{t(lang, "favorites.empty2")}</div>
             </div>
           ) : (
-            <div className="tracklist" onMouseUp={onRowMouseUp} onMouseLeave={() => setDragOver(null)}>
-              {visible.map((track, i) => (
+            <VirtualTrackList
+              items={visible}
+              onMouseUp={onRowMouseUp}
+              onMouseLeave={() => setDragOver(null)}
+              renderItem={(track, i) => (
                 <div
                   key={trackKey(track) + i}
                   onMouseDown={(e) => onRowMouseDown(e, i)}
@@ -265,8 +299,8 @@ export function Favorites() {
                     onArtistClick={(name, provider) => navigateTo("artist", { artist: name, provider })}
                   />
                 </div>
-              ))}
-            </div>
+              )}
+            />
           )}
         </div>
       </div>

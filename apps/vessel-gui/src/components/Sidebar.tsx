@@ -1,31 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
 import { useCustomization } from "../customization";
 import { TextInputModal } from "./Modal";
 import { t } from "../i18n";
-import { resolveArtworkUrl } from "../lib/utils";
 import * as api from "../api/commands";
-
-function IconCollapse() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <line x1="9" y1="3" x2="9" y2="21" />
-      <polyline points="16 15 13 12 16 9" />
-    </svg>
-  );
-}
-
-function IconExpand() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <line x1="9" y1="3" x2="9" y2="21" />
-      <polyline points="14 9 17 12 14 15" />
-    </svg>
-  );
-}
 
 function IconSearch() {
   return (
@@ -98,6 +77,15 @@ function IconQueue() {
   );
 }
 
+function IconPlayer() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 function IconSettings() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -111,146 +99,50 @@ export function Sidebar() {
   const {
     state,
     view,
-    playlistId,
     navigateTo,
     showToast,
     refresh,
     lang,
-    sidebarCollapsed: collapsed,
-    toggleSidebarCollapsed: toggleCollapsed,
+    isSettingsOpen,
+    openSettings,
   } = useApp();
   const {
-    isEditMode,
     config,
-    setSidebarPosition,
-    setSidebarWidth,
-    setActiveDragTarget,
-    setActiveDropZone,
+    isQueueOpen,
+    toggleQueue,
   } = useCustomization();
-  const [plExpanded, setPlExpanded] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const dragRef = useRef<{ from: number } | null>(null);
-  const [dragOver, setDragOver] = useState<number | null>(null);
 
   const isSidebarRight = config.sidebar?.position === "right";
   const isSidebarTop = config.sidebar?.position === "top";
   const isSidebarBottom = config.sidebar?.position === "bottom";
+  const isSidebarLeft = !isSidebarRight && !isSidebarTop && !isSidebarBottom;
   const isHorizontal = isSidebarTop || isSidebarBottom;
-  const isFloating = config.sidebar?.style === "floating";
+  const isIsland = config.sidebar?.style === "island" || config.sidebar?.style === "floating";
+  const autoHide = Boolean(config.sidebar?.autoHide);
 
-  const onDragSidebarPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const handleEl = e.currentTarget as HTMLElement;
-    handleEl.setPointerCapture(e.pointerId);
-    setActiveDragTarget("sidebar");
+  const [isRevealed, setIsRevealed] = useState(!autoHide);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const onPointerMove = (ev: PointerEvent) => {
-      const x = ev.clientX;
-      const y = ev.clientY;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+  useEffect(() => {
+    if (!autoHide) setIsRevealed(true);
+    else setIsRevealed(false);
+  }, [autoHide]);
 
-      const distLeft = x;
-      const distRight = w - x;
-      const distTop = y;
-      const distBottom = h - y;
-
-      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
-      let targetZone: "left" | "right" | "top" | "bottom" = "left";
-      if (minDist === distLeft) targetZone = "left";
-      else if (minDist === distRight) targetZone = "right";
-      else if (minDist === distTop) targetZone = "top";
-      else targetZone = "bottom";
-
-      setActiveDropZone(targetZone);
-    };
-
-    const onPointerUp = (ev: PointerEvent) => {
-      try {
-        handleEl.releasePointerCapture(ev.pointerId);
-      } catch {}
-      handleEl.removeEventListener("pointermove", onPointerMove);
-      handleEl.removeEventListener("pointerup", onPointerUp);
-
-      const x = ev.clientX;
-      const y = ev.clientY;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const distLeft = x;
-      const distRight = w - x;
-      const distTop = y;
-      const distBottom = h - y;
-      const minDist = Math.min(distLeft, distRight, distTop, distBottom);
-      let targetZone: "left" | "right" | "top" | "bottom" = "left";
-      if (minDist === distLeft) targetZone = "left";
-      else if (minDist === distRight) targetZone = "right";
-      else if (minDist === distTop) targetZone = "top";
-      else targetZone = "bottom";
-
-      setSidebarPosition(targetZone);
-      setActiveDragTarget(null);
-      setActiveDropZone(null);
-    };
-
-    handleEl.addEventListener("pointermove", onPointerMove);
-    handleEl.addEventListener("pointerup", onPointerUp);
-  };
-
-  const onResizePointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const handleEl = e.currentTarget as HTMLElement;
-    handleEl.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const startW = config.sidebar?.width || 232;
-
-    const onPointerMove = (ev: PointerEvent) => {
-      const delta = isSidebarRight ? startX - ev.clientX : ev.clientX - startX;
-      setSidebarWidth(startW + delta);
-    };
-
-    const onPointerUp = (ev: PointerEvent) => {
-      try {
-        handleEl.releasePointerCapture(ev.pointerId);
-      } catch {}
-      handleEl.removeEventListener("pointermove", onPointerMove);
-      handleEl.removeEventListener("pointerup", onPointerUp);
-    };
-
-    handleEl.addEventListener("pointermove", onPointerMove);
-    handleEl.addEventListener("pointerup", onPointerUp);
-  };
-
-
-  const reorderPlaylists = async (from: number, to: number) => {
-    if (!state) return;
-    try {
-      const order = state.playlists.map((p) => p.id);
-      const [id] = order.splice(from, 1);
-      order.splice(to, 0, id);
-      await api.reorderPlaylists(order);
-      await refresh();
-    } catch (error) {
-      showToast(String(error), true);
+  const reveal = () => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
     }
+    setIsRevealed(true);
   };
 
-  const onItemMouseDown = (e: React.MouseEvent, i: number) => {
-    if (e.button !== 0) return;
-    dragRef.current = { from: i };
-    setDragOver(i);
-  };
-
-  const onItemMouseEnter = (i: number) => {
-    if (dragRef.current && dragOver !== i) setDragOver(i);
-  };
-
-  const onItemMouseUp = () => {
-    const drag = dragRef.current;
-    dragRef.current = null;
-    if (drag && dragOver != null && drag.from !== dragOver) {
-      void reorderPlaylists(drag.from, dragOver);
-    }
-    setDragOver(null);
+  const scheduleHide = () => {
+    if (!autoHide) return;
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => {
+      setIsRevealed(false);
+    }, 380);
   };
 
   const doCreate = async (title: string) => {
@@ -271,6 +163,8 @@ export function Sidebar() {
     switch (v) {
       case "home":
         return { label: t(lang, "nav.home"), icon: <IconHome /> };
+      case "player":
+        return { label: lang === "ru" ? "Плеер" : "Player", icon: <IconPlayer /> };
       case "wave":
         return { label: t(lang, "wave.title"), icon: <IconWave /> };
       case "search":
@@ -290,16 +184,21 @@ export function Sidebar() {
     }
   };
 
+  const isCompactRail = (config.sidebar?.variant || "standard") === "compact";
+
   const nav = (v: string) => {
     const meta = getNavMeta(v);
-    const isActive = view === v;
+    const isActive = v === "queue" ? isQueueOpen : view === v;
 
-    if (collapsed) {
+    if (isCompactRail) {
       return (
         <button
           key={v}
           className={`nav-item icon-only ${isActive ? "active" : ""}`}
-          onClick={() => navigateTo(v)}
+          onClick={() => {
+            if (v === "queue") toggleQueue();
+            else navigateTo(v);
+          }}
           title={meta.count !== undefined ? `${meta.label} (${meta.count})` : meta.label}
           aria-label={meta.label}
         >
@@ -312,7 +211,10 @@ export function Sidebar() {
       <button
         key={v}
         className={`nav-item ${isActive ? "active" : ""}`}
-        onClick={() => navigateTo(v)}
+        onClick={() => {
+          if (v === "queue") toggleQueue();
+          else navigateTo(v);
+        }}
         title={meta.label}
       >
         <span className="nav-item-icon">{meta.icon}</span>
@@ -322,301 +224,203 @@ export function Sidebar() {
     );
   };
 
-  if (isHorizontal) {
-    const topVariant = config.sidebar?.topVariant || "full";
-    const defaultH = topVariant === "compact" ? 46 : 64;
-    const currentH = config.sidebar?.height || defaultH;
+  const sidebarStyle = config.sidebar?.style || "dock";
+
+  if (isIsland) {
+    const posClass = isSidebarTop ? "pos-top" : isSidebarRight ? "pos-right" : isSidebarLeft ? "pos-left" : "pos-bottom";
 
     return (
-      <aside
-        className={`sidebar ${isSidebarBottom ? "dock-bottom" : "dock-top"} ${
-          isFloating ? "floating-island" : "full-dock"
-        } ${topVariant === "compact" ? "top-compact" : ""}`}
-        style={{
-          position: "relative",
-          height: `${currentH}px`,
-        }}
-      >
-        {isEditMode && (
+      <>
+        {autoHide && (
           <div
-            className="sidebar-drag-grip horizontal"
-            onPointerDown={onDragSidebarPointerDown}
-            title="Зажмите мышкой и перетащите меню к любому краю экрана"
-          >
-            <span className="grip-icon">⠿</span>
-            <span className="grip-label">Перетащить</span>
-          </div>
+            className={`sidebar-autohide-sensor ${posClass}`}
+            onMouseEnter={reveal}
+          />
         )}
-        <div className={`top-nav-bar ${topVariant === "compact" ? "compact" : ""}`}>
-          <div className="top-nav-items">
-            {["home", "wave", "search", "favorites", "playlists", "queue"].map((v) => {
-              const meta = getNavMeta(v);
-              const isActive = view === v;
-              return (
-                <button
-                  key={v}
-                  className={`nav-item top-nav-item ${isActive ? "active" : ""}`}
-                  onClick={() => navigateTo(v)}
-                  title={meta.label}
-                >
-                  <span className="nav-item-icon">{meta.icon}</span>
-                  {topVariant !== "compact" && (
-                    <span className="nav-item-label">{meta.label}</span>
-                  )}
-                  {meta.count !== undefined && state && <span className="nav-count">{meta.count}</span>}
-                </button>
-              );
-            })}
-          </div>
-          <div className="top-nav-right">
-            <button
-              className={`nav-item top-nav-item ${view === "settings" ? "active" : ""}`}
-              onClick={() => navigateTo("settings")}
-              title={t(lang, "nav.settings")}
-            >
-              <span className="nav-item-icon"><IconSettings /></span>
-              {topVariant !== "compact" && (
-                <span className="nav-item-label">{t(lang, "nav.settings")}</span>
-              )}
-            </button>
-          </div>
+        <div
+          className={`island-dock-wrap ${posClass} ${autoHide ? "auto-hide" : ""} ${isRevealed ? "revealed" : ""}`}
+          onMouseEnter={reveal}
+          onMouseLeave={scheduleHide}
+        >
+          <aside className="sidebar island-dock">
+            <div className="island-nav-items">
+              <button
+                className={`island-nav-item ${view === "home" ? "active" : ""}`}
+                onClick={() => navigateTo("home")}
+                title={t(lang, "nav.home")}
+              >
+                <span className="island-nav-icon">{getNavMeta("home").icon}</span>
+              </button>
+              <div className="island-sep" />
+              {(["search", "player", "favorites", "playlists", "recent", "queue"] as const).map((v) => {
+                const meta = getNavMeta(v);
+                const isActive = v === "queue" ? isQueueOpen : view === v;
+                return (
+                  <button
+                    key={v}
+                    className={`island-nav-item ${isActive ? "active" : ""}`}
+                    onClick={() => {
+                      if (v === "queue") toggleQueue();
+                      else navigateTo(v);
+                    }}
+                    title={meta.label}
+                  >
+                    <span className="island-nav-icon">{meta.icon}</span>
+                  </button>
+                );
+              })}
+              <div className="island-sep" />
+              <button
+                className={`island-nav-item ${isSettingsOpen ? "active" : ""}`}
+                onClick={openSettings}
+                title={t(lang, "nav.settings")}
+              >
+                <span className="island-nav-icon"><IconSettings /></span>
+              </button>
+            </div>
+          </aside>
         </div>
-      </aside>
+      </>
     );
   }
 
+  if (isHorizontal) {
+    const defaultH = 58;
+    const currentH = config.sidebar?.height && config.sidebar.height >= 50
+      ? config.sidebar.height
+      : defaultH;
+    const posClass = isSidebarBottom ? "pos-bottom" : "pos-top";
+
+    return (
+      <>
+        {autoHide && (
+          <div
+            className={`sidebar-autohide-sensor ${posClass}`}
+            onMouseEnter={reveal}
+          />
+        )}
+        <aside
+          className={`sidebar ${isSidebarBottom ? "dock-bottom" : "dock-top"} style-${sidebarStyle} ${
+            sidebarStyle === "round" ? "style-round" : sidebarStyle === "compact" ? "style-compact" : "style-dock full-dock"
+          } top-compact ${
+            autoHide ? "auto-hide" : ""
+          } ${isRevealed ? "revealed" : ""}`}
+          style={{
+            position: "relative",
+            height: `${currentH}px`,
+          }}
+          onMouseEnter={reveal}
+          onMouseLeave={scheduleHide}
+        >
+          <div className="top-nav-bar compact">
+            <div className="top-nav-left">
+              <button
+                className={`nav-item top-nav-item ${view === "home" ? "active" : ""}`}
+                onClick={() => navigateTo("home")}
+                title={t(lang, "nav.home")}
+              >
+                <span className="nav-item-icon">{getNavMeta("home").icon}</span>
+              </button>
+            </div>
+            <div className="top-nav-center">
+              {(["search", "player", "favorites", "playlists", "recent", "queue"] as const).map((v) => {
+                const meta = getNavMeta(v);
+                const isActive = v === "queue" ? isQueueOpen : view === v;
+                return (
+                  <button
+                    key={v}
+                    className={`nav-item top-nav-item ${isActive ? "active" : ""}`}
+                    onClick={() => {
+                      if (v === "queue") toggleQueue();
+                      else navigateTo(v);
+                    }}
+                    title={meta.label}
+                  >
+                    <span className="nav-item-icon">{meta.icon}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="top-nav-right">
+              <button
+                className={`nav-item top-nav-item ${isSettingsOpen ? "active" : ""}`}
+                onClick={openSettings}
+                title={t(lang, "nav.settings")}
+              >
+                <span className="nav-item-icon"><IconSettings /></span>
+              </button>
+            </div>
+          </div>
+        </aside>
+      </>
+    );
+  }
+
+  const posClass = isSidebarRight ? "pos-right" : "pos-left";
+
   return (
-    <aside
-      className={`sidebar ${collapsed ? "collapsed" : ""} ${
-        isSidebarRight ? "dock-right" : "dock-left"
-      } ${isFloating ? "floating-island" : "full-dock"}`}
-      style={{
-        position: "relative",
-        width: collapsed ? undefined : `${config.sidebar?.width || 232}px`,
-      }}
-    >
-      {isEditMode && !collapsed && (
+    <>
+      {autoHide && (
         <div
-          className={`sidebar-resize-handle ${isSidebarRight ? "resize-left" : "resize-right"}`}
-          onPointerDown={onResizePointerDown}
-          title="Потяните мышкой для изменения ширины меню"
+          className={`sidebar-autohide-sensor ${posClass}`}
+          onMouseEnter={reveal}
         />
       )}
+      <aside
+        className={`sidebar collapsed rail-sidebar style-${sidebarStyle} ${
+          isSidebarRight ? "dock-right" : "dock-left"
+        } ${sidebarStyle === "round" ? "style-round" : sidebarStyle === "compact" ? "style-compact" : "style-dock full-dock"} ${
+          autoHide ? "auto-hide" : ""
+        } ${isRevealed ? "revealed" : ""}`}
+        style={{
+          position: "relative",
+          width: "76px",
+        }}
+        onMouseEnter={reveal}
+        onMouseLeave={scheduleHide}
+      >
+        {/* Top item: home */}
+        <div className="sidebar-header collapsed" style={{ display: "flex", justifyContent: "center", padding: "12px 0 8px", width: "100%" }}>
+          <button
+            className={`nav-item icon-only ${view === "home" ? "active" : ""}`}
+            onClick={() => navigateTo("home")}
+            title={t(lang, "nav.home")}
+            aria-label={t(lang, "nav.home")}
+          >
+            <span className="nav-item-icon">{getNavMeta("home").icon}</span>
+          </button>
+        </div>
 
-      {isEditMode && (
-        <div
-          className="sidebar-drag-grip vertical"
-          onPointerDown={onDragSidebarPointerDown}
-          title="Зажмите мышкой и перетащите меню к любому краю экрана"
-        >
-          <span className="grip-icon">⠿</span>
-          {!collapsed && <span className="grip-label">Перетащить</span>}
-        </div>
-      )}
-      {/* Top section: search and sidebar toggle */}
-      {!collapsed ? (
-        <div className="sidebar-header">
-          <div className="ssearch" onClick={() => navigateTo("search")} title={t(lang, "nav.searchEverything")}>
-            <IconSearch />
-            <span className="ssearch-text">{t(lang, "nav.searchEverything")}</span>
-          </div>
-          <button
-            className="sidebar-toggle-btn"
-            onClick={toggleCollapsed}
-            title={t(lang, "nav.collapse")}
-            aria-label={t(lang, "nav.collapse")}
-          >
-            <IconCollapse />
-          </button>
-        </div>
-      ) : (
-        <div className="sidebar-header collapsed">
-          <button
-            className="sidebar-toggle-btn"
-            onClick={toggleCollapsed}
-            title={t(lang, "nav.expand")}
-            aria-label={t(lang, "nav.expand")}
-          >
-            <IconExpand />
-          </button>
-          <button
-            className={`nav-item icon-only ${view === "search" ? "active" : ""}`}
-            onClick={() => navigateTo("search")}
-            title={t(lang, "nav.searchEverything")}
-            aria-label={t(lang, "nav.searchEverything")}
-          >
-            <span className="nav-item-icon"><IconSearch /></span>
-          </button>
-        </div>
-      )}
-
-      {/* Main navigation list */}
-      <div className="nav">
-        {nav("home")}
-        {nav("favorites")}
-        {nav("playlists")}
-        {nav("wave")}
-        {nav("recent")}
-        {nav("queue")}
-      </div>
-
-      {/* Playlists section */}
-      {!collapsed ? (
-        <div className="nav">
-          <div className="nav-label-row">
-            <span
-              className={`nav-chevron ${plExpanded ? "open" : "closed"}`}
-              onClick={() => setPlExpanded((v) => !v)}
-              aria-label="Toggle playlists"
-              title={plExpanded ? "Свернуть плейлисты" : "Развернуть плейлисты"}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-            </span>
-            <span
-              className="nav-label"
-              style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, cursor: "pointer" }}
-              onClick={() => setPlExpanded((v) => !v)}
-            >
-              {t(lang, "nav.playlists")}
-            </span>
-            <span className="plus" onClick={(e) => { e.stopPropagation(); setCreateOpen(true); }} aria-label="Создать плейлист" title="Создать плейлист">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </span>
-          </div>
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: 1 }}
-            onMouseUp={onItemMouseUp}
-            onMouseLeave={() => setDragOver(null)}
-          >
-            {plExpanded &&
-              state?.playlists.map((p, i) => (
-                <button
-                  key={p.id}
-                  className={`pl-item ${view === "playlist" && playlistId === p.id ? "active" : ""}`}
-                  onMouseDown={(e) => onItemMouseDown(e, i)}
-                  onMouseEnter={() => onItemMouseEnter(i)}
-                  style={{
-                    cursor: "grab",
-                    userSelect: "none",
-                    ...(dragOver === i && dragRef.current
-                      ? { boxShadow: "inset 0 2px 0 0 var(--text)" }
-                      : {}),
-                  }}
-                  onClick={() => navigateTo("playlist", { playlistId: p.id })}
-                >
-                  {p.cover_url || p.tracks[0]?.artwork_url ? (
-                    <div
-                      className="pl-mark"
-                      style={{
-                        background: "var(--track)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <img
-                        src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      className="pl-mark"
-                      style={{
-                        background: `var(--track${((p.tracks.length % 4) + 1)})`,
-                      }}
-                    />
-                  )}
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {p.title}
-                  </span>
-                </button>
-              ))}
-          </div>
-        </div>
-      ) : (
-        <div className="collapsed-playlists">
-          <button
-            className="collapsed-add-pl"
-            onClick={() => setCreateOpen(true)}
-            title={t(lang, "playlists.createName")}
-            aria-label={t(lang, "playlists.createName")}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-          {state?.playlists.map((p) => {
-            const isActive = view === "playlist" && playlistId === p.id;
-            return (
-              <button
-                key={p.id}
-                className={`pl-item-collapsed ${isActive ? "active" : ""}`}
-                onClick={() => navigateTo("playlist", { playlistId: p.id })}
-                title={p.title}
-                aria-label={p.title}
-              >
-                {p.cover_url || p.tracks[0]?.artwork_url ? (
-                  <div className="pl-mark-collapsed">
-                    <img
-                      src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className="pl-mark-collapsed"
-                    style={{
-                      background: `var(--track${((p.tracks.length % 4) + 1)})`,
-                    }}
-                  />
-                )}
-              </button>
-            );
+        {/* Main navigation list */}
+        <div className="nav" style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "center", width: "100%" }}>
+          {["search", "player", "favorites", "playlists", "recent", "queue"].map((v) => {
+            return nav(v);
           })}
         </div>
-      )}
 
-      {/* Bottom section: settings */}
-      {!collapsed ? (
-        <div
-          className="nav"
-          style={{ marginTop: "auto", borderTop: "1px solid var(--border)", paddingTop: "10px" }}
-        >
+        {/* Bottom section: settings */}
+        <div className="sidebar-bottom-collapsed" style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "12px", width: "100%", borderTop: "1px solid var(--border)", paddingTop: "10px" }}>
           <button
-            className={`nav-item ${view === "settings" ? "active" : ""}`}
-            onClick={() => navigateTo("settings")}
-            title={t(lang, "nav.settings")}
-          >
-            <span className="nav-item-icon"><IconSettings /></span>
-            <span className="nav-item-label">{t(lang, "nav.settings")}</span>
-          </button>
-        </div>
-      ) : (
-        <div className="sidebar-bottom-collapsed">
-          <button
-            className={`nav-item icon-only ${view === "settings" ? "active" : ""}`}
-            onClick={() => navigateTo("settings")}
+            className={`nav-item icon-only ${isSettingsOpen ? "active" : ""}`}
+            onClick={openSettings}
             title={t(lang, "nav.settings")}
             aria-label={t(lang, "nav.settings")}
           >
             <span className="nav-item-icon"><IconSettings /></span>
           </button>
         </div>
-      )}
 
-      {createOpen && (
-        <TextInputModal
-          lang={lang}
-          title={t(lang, "playlists.createName")}
-          placeholder={t(lang, "playlists.createName")}
-          confirmText={t(lang, "common.create")}
-          onSubmit={doCreate}
-          onClose={() => setCreateOpen(false)}
-        />
-      )}
-    </aside>
+        {createOpen && (
+          <TextInputModal
+            lang={lang}
+            title={t(lang, "playlists.createName")}
+            placeholder={t(lang, "playlists.createName")}
+            confirmText={t(lang, "common.create")}
+            onSubmit={doCreate}
+            onClose={() => setCreateOpen(false)}
+          />
+        )}
+      </aside>
+    </>
   );
 }

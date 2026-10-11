@@ -6,7 +6,7 @@ import { t } from "../i18n";
 
 type ServerView = api.VesselServerView;
 
-export function ServersTab() {
+export function ServersTab({ onServersChanged }: { onServersChanged?: (servers: ServerView[]) => void } = {}) {
   const { showToast, lang } = useApp();
   const [servers, setServers] = useState<ServerView[]>([]);
   const [name, setName] = useState("");
@@ -18,7 +18,9 @@ export function ServersTab() {
 
   const load = async () => {
     try {
-      setServers(await api.vesselServers());
+      const list = await api.vesselServers();
+      setServers(list);
+      onServersChanged?.(list);
     } catch (error) {
       showToast(String(error), true);
     }

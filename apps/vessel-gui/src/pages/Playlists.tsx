@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useApp } from "../store";
 import { PlaylistCover } from "../components/PlaylistCover";
@@ -169,6 +170,11 @@ export function Playlists() {
                   coverUrl={p.cover_url}
                   border={false}
                 />
+                <div className="card-badge-ico" title="Плейлист">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM9 18H3M15 6H3M11 12H3" />
+                  </svg>
+                </div>
                 <button
                   className="card-play"
                   title={t(lang, "common.play")}
@@ -187,7 +193,7 @@ export function Playlists() {
         </div>
       )}
 
-      {importStep !== "none" && (
+      {importStep !== "none" && createPortal(
         <div className="ov show" onMouseDown={(e) => e.stopPropagation()}>
           <div
             className="playlist-picker-card"
@@ -324,15 +330,21 @@ export function Playlists() {
 
               {importStep === "soundcloud-url" && (
                 <>
-                  <div className="set-desc">{t(lang, "playlists.likesProfileHint")}</div>
+                  <div className="set-desc">
+                    {lang === "ru"
+                      ? "Введите ссылку на ваш профиль SoundCloud (например: https://soundcloud.com/username) для загрузки лайков:"
+                      : "Enter your SoundCloud profile URL (e.g. https://soundcloud.com/username) to fetch likes:"}
+                  </div>
                   <div className="input-row">
                     <input
                       type="text"
-                      placeholder="https://soundcloud.com/username"
+                      placeholder="https://soundcloud.com/your-username"
                       value={likesProfileUrl}
                       onChange={(e) => setLikesProfileUrl(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && likesProfileUrl.trim()) setImportStep("target");
+                        if (e.key === "Enter" && likesProfileUrl.trim()) {
+                          setImportStep("target");
+                        }
                       }}
                       autoFocus
                     />
@@ -342,17 +354,9 @@ export function Playlists() {
                       ← {t(lang, "playlists.back")}
                     </button>
                     <div style={{ display: "flex", gap: 8 }}>
-                      {state?.providers?.find((p) => p.kind === "soundcloud")?.connected && (
-                        <button
-                          className="btn btn-outline"
-                          onClick={() => {
-                            setLikesProfileUrl("");
-                            setImportStep("target");
-                          }}
-                        >
-                          {lang === "ru" ? "Мой аккаунт" : "My account"}
-                        </button>
-                      )}
+                      <button className="btn btn-outline" onClick={closeImport}>
+                        {t(lang, "common.cancel")}
+                      </button>
                       <button
                         className="btn btn-primary"
                         disabled={!likesProfileUrl.trim()}
@@ -416,7 +420,8 @@ export function Playlists() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       {createOpen && (
         <TextInputModal

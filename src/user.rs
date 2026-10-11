@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     fs,
     path::{Path, PathBuf},
 };
@@ -15,6 +15,36 @@ use crate::storage::Storage;
 // ---------------------------------------------------------------------------
 
 pub const FORMAT_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AccountState {
+    Guest,
+    Restoring,
+    Authenticated {
+        username: String,
+        user_id: String,
+    },
+}
+
+impl Default for AccountState {
+    fn default() -> Self {
+        Self::Guest
+    }
+}
+
+impl AccountState {
+    pub fn is_authenticated(&self) -> bool {
+        matches!(self, AccountState::Authenticated { .. })
+    }
+
+    pub fn username(&self) -> Option<&str> {
+        match self {
+            AccountState::Authenticated { username, .. } => Some(username),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserProfile {
@@ -46,6 +76,7 @@ impl UserProfile {
 // User — a single user directory with profile + storage
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Debug)]
 pub struct User {
     pub dir: PathBuf,
     pub profile: UserProfile,

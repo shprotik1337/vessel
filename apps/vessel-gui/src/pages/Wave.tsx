@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
-import { PlaylistCover } from "../components/PlaylistCover";
-import { trackKey, formatDuration, artistLabel } from "../lib/utils";
+import { PlatformIcon } from "../components/PlatformIcon";
+import { trackKey, artistLabel } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
@@ -11,31 +11,61 @@ import * as api from "../api/commands";
 type SortMode = "custom" | "title" | "artist";
 type SortDir = "asc" | "desc";
 
+const WAVE_PROVIDER_OPTIONS = [
+  { key: "youtube_music", label: "YouTube Music", color: "#FF0000" },
+  { key: "soundcloud", label: "SoundCloud", color: "#FF5500" },
+  { key: "spotify", label: "Spotify", color: "#1DB954" },
+  { key: "yandex", label: "Yandex Music", color: "#FFCC00" },
+  { key: "deezer", label: "Deezer", color: "#A238FF" },
+];
+
 export function WavePage() {
-  const { state, playTracks, showToast, refresh, navigateTo, goBack, lang, waveTracks, setWaveTracks } = useApp();
-  const [sourcePicker, setSourcePicker] = useState(false);
-  const [playlistPicker, setPlaylistPicker] = useState(false);
+  const { state, playTracks, showToast, refresh, navigateTo, goBack, lang, waveTracks, setWaveTracks, setIsWaveActive } = useApp();
   const [building, setBuilding] = useState(false);
   const [providers, setProviders] = useState<string>("all");
   const [sort, setSort] = useState<SortMode>("custom");
   const [dir, setDir] = useState<SortDir>("desc");
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
 
   useEffect(() => {
     void api.getWaveProviders().then(setProviders).catch(() => {});
+    const onProvidersChanged = (e: any) => {
+      setProviders(e.detail || "all");
+    };
+    window.addEventListener("vessel:providers-changed", onProvidersChanged);
+    return () => window.removeEventListener("vessel:providers-changed", onProvidersChanged);
   }, []);
+
+  useEffect(() => {
+    if (!sortDropdownOpen) return;
+    const close = () => setSortDropdownOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [sortDropdownOpen]);
 
   if (!state) return null;
 
   const nowKey = state.now_playing ? trackKey(state.now_playing) : null;
+  const waveNow = state?.now_playing
+    ? waveTracks.some((t) => trackKey(t) === trackKey(state.now_playing!))
+    : false;
+  const isLive =
+    state?.player.status === "playing" || state?.player.status === "buffering";
+  const playing = waveNow && isLive;
 
-  const buildWave = async (source: "favorites" | "playlists", playlistId: string | null) => {
+  const buildWave = async (source: "favorites" | "playlists", playlistId: string | null, autoplay = true) => {
     if (building) return;
     setBuilding(true);
     try {
       const tracks = await api.getWaveRecommendations(source, 50, playlistId, providers);
       setWaveTracks(tracks);
       if (tracks.length > 0) {
-        await api.playTracks(tracks, 0);
+        if (autoplay) {
+          setIsWaveActive(true);
+          await api.playTracks(tracks, 0);
+        } else {
+          showToast(lang === "ru" ? `Собрано ${tracks.length} треков` : `Loaded ${tracks.length} tracks`);
+        }
       } else {
         showToast(t(lang, "wave.empty1"), true);
       }
@@ -44,32 +74,52 @@ export function WavePage() {
       showToast(String(error), true);
     } finally {
       setBuilding(false);
-      setPlaylistPicker(false);
     }
+  };
+
+  const allKeys = WAVE_PROVIDER_OPTIONS.map((o) => o.key);
+  const activeProviders = providers === "all" ? allKeys : !providers ? [] : providers.split(",").filter(Boolean);
+
+  const handleToggleProvider = async (key: string) => {
+    let next: string[];
+    if (activeProviders.includes(key)) {
+      next = activeProviders.filter((k) => k !== key);
+    } else {
+      next = [...activeProviders, key];
+    }
+    const val = next.length === allKeys.length ? "all" : next.join(",");
+    setProviders(val);
+    try {
+      await api.setWaveProviders(val);
+    } catch {}
+  };
+
+  const handleLaunchWave = async () => {
+    if (activeProviders.length === 0) {
+      showToast(lang === "ru" ? "Выберите хотя бы один сервис для Моей волны" : "Please select at least one service", true);
+      return;
+    }
+    if (waveTracks.length > 0) {
+      if (waveNow) {
+        await api.togglePlayback();
+      } else {
+        setIsWaveActive(true);
+        await playTracks(waveTracks, 0);
+      }
+    } else {
+      await buildWave("favorites", null, true);
+    }
+  };
+
+  const handleRefreshWave = async () => {
+    await buildWave("favorites", null, false);
   };
 
   const playOne = (track: TrackRef) => {
     const idx = waveTracks.findIndex((t) => trackKey(t) === trackKey(track));
+    setIsWaveActive(true);
     void playTracks(waveTracks, idx < 0 ? 0 : idx);
   };
-
-  const playAll = () => {
-    if (waveTracks.length === 0) return;
-    void playTracks(waveTracks, 0);
-  };
-
-  const openBuild = () => setSourcePicker(true);
-
-  const chooseSource = async (source: "favorites" | "playlists") => {
-    setSourcePicker(false);
-    if (source === "favorites") {
-      await buildWave("favorites", null);
-    } else {
-      setPlaylistPicker(true);
-    }
-  };
-
-  const totalMs = waveTracks.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0);
 
   const sortTracks = (tracks: TrackRef[]): TrackRef[] => {
     if (sort === "custom") return tracks;
@@ -105,6 +155,8 @@ export function WavePage() {
     }
   };
 
+  const glowArt = waveTracks[0]?.artwork_url || state.now_playing?.artwork_url;
+
   return (
     <div className="view">
       <div style={{ marginBottom: 18 }}>
@@ -113,62 +165,172 @@ export function WavePage() {
         </button>
       </div>
 
-      <div className="panel">
-        <div className="playlist-hd" style={{ padding: "16px 20px" }}>
-          <PlaylistCover tracks={waveTracks} coverUrl={null} size={148} />
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 6, minWidth: 0 }}>
-            <span className="kicker">{t(lang, "wave.title")}</span>
-            <div className="big-title" style={{ maxWidth: 600, wordBreak: "break-word" }}>
-              {t(lang, "wave.title")}
-            </div>
-            <div className="meta-line">
-              <span>{waveTracks.length} {t(lang, "common.tracks")}</span>
-              <span className="meta-sep">·</span>
-              <span>{formatDuration(totalMs)}</span>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              {waveTracks.length > 0 ? (
-                <>
-                  <button className="btn btn-primary btn-sm" onClick={playAll}>
-                    ▶ {t(lang, "common.play")}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={openBuild} disabled={building}>
-                    {t(lang, "wave.refresh")}
-                  </button>
-                </>
-              ) : (
-                <button className="btn btn-primary btn-sm" onClick={openBuild} disabled={building}>
-                  {building ? "…" : t(lang, "wave.refresh")}
+      <div className="page-panel">
+        {glowArt ? (
+          <div
+            className="page-ambient-glow"
+            style={{ backgroundImage: `url("${glowArt}")` }}
+          />
+        ) : (
+          <div className="page-ambient-glow-fallback" />
+        )}
+
+        <div className="page-panel-header" style={{ borderBottom: "none", paddingBottom: 0 }}>
+          <div className="wave-hero-card">
+            <div className="wave-hero-left">
+              <div className="wave-hero-tag">
+                <span>{lang === "ru" ? "МОЯ ВОЛНА" : "MY WAVE"}</span>
+              </div>
+              <div className="wave-hero-title">
+                {lang === "ru" ? "Персональный поток без лишнего шума" : "Personal stream without extra noise"}
+              </div>
+              <div className="wave-hero-desc">
+                {(() => {
+                  const activeLabels = activeProviders
+                    .map((k) => WAVE_PROVIDER_OPTIONS.find((o) => o.key === k)?.label)
+                    .filter(Boolean) as string[];
+                  if (activeLabels.length === 0) {
+                    return lang === "ru"
+                      ? "Сервисы не выбраны. Выберите одну или несколько платформ ниже для запуска волны."
+                      : "No services selected. Select one or more platforms below to launch wave.";
+                  }
+                  const servicesStr =
+                    activeLabels.length === 1
+                      ? activeLabels[0]
+                      : `${activeLabels.slice(0, -1).join(", ")} ${lang === "ru" ? "и" : "and"} ${activeLabels[activeLabels.length - 1]}`;
+                  return lang === "ru"
+                    ? `Очередь собирается из ${servicesStr}, а активный сервис задает стартовую точку поиска.`
+                    : `The queue is assembled from ${servicesStr}, and the active service sets the starting point.`;
+                })()}
+              </div>
+
+              <div className="wave-hero-actions">
+                <button
+                  type="button"
+                  className="btn-wave-primary"
+                  onClick={handleLaunchWave}
+                  disabled={building || activeProviders.length === 0}
+                  title={activeProviders.length === 0 ? (lang === "ru" ? "Выберите хотя бы один сервис" : "Select at least one service") : undefined}
+                >
+                  {building ? (
+                    <span className="spinner" style={{ width: 13, height: 13, borderWidth: 2 }} />
+                  ) : playing ? (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                  ) : (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                  )}
+                  <span>
+                    {building
+                      ? (lang === "ru" ? "Сборка…" : "Building…")
+                      : playing
+                      ? (lang === "ru" ? "Пауза" : "Pause")
+                      : waveNow
+                      ? (lang === "ru" ? "Продолжить" : "Resume")
+                      : (lang === "ru" ? "Запустить волну" : "Launch Wave")}
+                  </span>
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  className="btn-wave-icon"
+                  onClick={handleRefreshWave}
+                  disabled={building || activeProviders.length === 0}
+                  title={t(lang, "wave.refresh")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                </button>
+
+                {waveTracks.length > 0 && (
+                  <div className="sort-dropdown-wrap" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className={`btn-pill ${sort !== "custom" ? "btn-pill-active" : ""}`}
+                      onClick={() => setSortDropdownOpen((v) => !v)}
+                      style={{ height: 40 }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>
+                      <span>
+                        {sort === "custom"
+                          ? (lang === "ru" ? "Сортировка" : "Sort")
+                          : (sortOptions.find((o) => o.mode === sort)?.label ?? "")}
+                        {sort !== "custom" && (dir === "asc" ? " ↑" : " ↓")}
+                      </span>
+                      <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>▾</span>
+                    </button>
+                    {sortDropdownOpen && (
+                      <div className="sort-dropdown-menu">
+                        {sortOptions.map((opt) => (
+                          <div
+                            key={opt.mode}
+                            className={`sort-dropdown-item ${sort === opt.mode ? "active" : ""}`}
+                            onClick={() => {
+                              toggleSort(opt.mode);
+                              setSortDropdownOpen(false);
+                            }}
+                          >
+                            <span>{opt.label}</span>
+                            {sort === opt.mode && opt.mode !== "custom" && (
+                              <span className="sort-dropdown-badge">
+                                {dir === "asc" ? "↑" : "↓"}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Multi-select Service Chips (colored brand icons, rounded rectangles) */}
+              <div className="wave-services-row">
+                {WAVE_PROVIDER_OPTIONS.map((p) => {
+                  const isSelected = activeProviders.includes(p.key);
+                  return (
+                    <div
+                      key={p.key}
+                      className={`wave-service-chip ${isSelected ? "active" : ""}`}
+                      onClick={() => void handleToggleProvider(p.key)}
+                      title={`${p.label} (${isSelected ? (lang === "ru" ? "Активен" : "Active") : (lang === "ru" ? "Выключен" : "Disabled")})`}
+                    >
+                      <PlatformIcon kind={p.key as any} size={15} color={p.color} />
+                      <span>{p.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="wave-hero-right">
+              <div className={`wave-visualizer ${playing ? "playing" : "paused"}`}>
+                {[
+                  25, 38, 55, 72, 88, 62, 45, 30, 48, 70, 92, 100, 84, 65, 42, 58, 80, 95, 88, 70,
+                  52, 35, 45, 68, 85, 96, 78, 60, 40, 55, 75, 90, 82, 64, 46, 32, 50, 72, 94, 86,
+                  68, 50, 36, 48, 70, 85, 65, 40
+                ].map((h, i) => (
+                  <div
+                    key={i}
+                    className="wave-visualizer-bar"
+                    style={{
+                      height: `${h}%`,
+                      animationDelay: `${(i * 0.045).toFixed(3)}s`,
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
-        {waveTracks.length > 0 && (
-          <div className="playlist-bar" style={{ padding: "12px 24px", gap: 12 }}>
-            <div className="chips">
-              {sortOptions.map((opt) => (
-                <button
-                  key={opt.mode}
-                  className="chip"
-                  style={
-                    sort === opt.mode
-                      ? { borderColor: "var(--border3)", color: "var(--text)" }
-                      : undefined
-                  }
-                  onClick={() => toggleSort(opt.mode)}
-                  title={sort === opt.mode && opt.mode !== "custom" ? (dir === "asc" ? t(lang, "playlist.ascending") : t(lang, "playlist.descending")) : undefined}
-                >
-                  {opt.label}
-                  {sort === opt.mode && opt.mode !== "custom" && (dir === "asc" ? " ↑" : " ↓")}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div style={{ padding: "12px 8px" }}>
+        <div className="page-panel-body">
           {waveTracks.length === 0 ? (
             <div className="empty">
               <div className="ico">≈</div>
@@ -190,67 +352,6 @@ export function WavePage() {
           )}
         </div>
       </div>
-
-      {sourcePicker && (
-        <div className="ov show" onClick={() => setSourcePicker(false)}>
-          <div
-            className="ov-card"
-            style={{ width: 360, height: "auto", maxHeight: "auto", padding: 24, gap: 12 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sett-title" style={{ fontSize: 17 }}>
-              {t(lang, "wave.sourceTitle")}
-            </div>
-            <div className="set-desc">{t(lang, "wave.sourceSub")}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-              <button className="btn btn-primary" onClick={() => chooseSource("favorites")} disabled={building}>
-                {t(lang, "nav.favorites")}
-              </button>
-              <button className="btn btn-outline" onClick={() => chooseSource("playlists")} disabled={building}>
-                {t(lang, "nav.playlists")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {playlistPicker && (
-        <div className="ov show" onClick={() => setPlaylistPicker(false)}>
-          <div
-            className="ov-card"
-            style={{ width: 420, height: "auto", maxHeight: "70vh", padding: 24, gap: 12 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sett-title" style={{ fontSize: 17 }}>
-              {t(lang, "wave.choosePlaylist")}
-            </div>
-            <div className="set-desc">{t(lang, "wave.choosePlaylistSub")}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto" }}>
-              {state?.playlists.map((p) => (
-                <button
-                  key={p.id}
-                  className="btn btn-outline"
-                  style={{ justifyContent: "flex-start", textAlign: "left", height: "auto", padding: "10px 14px" }}
-                  onClick={() => buildWave("playlists", p.id)}
-                  disabled={building}
-                >
-                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {p.title}
-                  </span>
-                  <span style={{ color: "var(--text3)", fontSize: 12, flexShrink: 0 }}>
-                    {p.tracks.length}
-                  </span>
-                </button>
-              ))}
-              {state && state.playlists.length === 0 && (
-                <div className="set-desc" style={{ padding: 12, textAlign: "center" }}>
-                  {t(lang, "playlists.empty1")}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

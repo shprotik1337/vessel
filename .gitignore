@@ -26,6 +26,9 @@ apps/**/dist/
 .agents/
 .gitnexus/
 AGENTS.md
+GEMINI.md
+scratch/
+scripts/
 CLAUDE.md
 .env
 .env.*

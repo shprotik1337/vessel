@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 
 export interface ThemeColors {
   accentColor: string;
+  secondaryColor?: string;
   appBgColor: string;
   sidebarBgColor: string;
   playerBgColor: string;
@@ -12,12 +13,19 @@ export interface ThemeColors {
   wallpaperDim: number; // 0..90 %
   glassMode: boolean;
   glassOpacity: number; // 0.1..0.95
+  trackRowOpacity?: number; // 0..1
+  trackRowActiveOpacity?: number; // 0..1
+  trackRowActiveStyle?: "glass" | "accent" | "dark";
+  ambientMode?: "dynamic" | "theme" | "off";
+  windowOpacity?: number; // 0..100 % (Непрозрачность фона окна)
+  glassForce?: number; // 0..100 % (Сила стекла - интенсивность акрилового слоя)
+  backdropBlur?: number; // 0..40 px (Размытие стекла - радиус размытия заднего плана)
 }
 
 export type BorderRadiusPreset = "sharp" | "small" | "medium" | "round";
 export type BlockWidth = "third" | "half" | "two-thirds" | "full";
 export type BlockAlign = "left" | "center" | "right";
-export type ComponentStyle = "dock" | "floating";
+export type ComponentStyle = "dock" | "compact" | "round" | "floating" | "island";
 
 export let globalDraggingPanelId: string | null = null;
 export function setGlobalDraggingPanelId(id: string | null) {
@@ -47,17 +55,24 @@ export interface CustomizationConfig {
     height?: number; // for top/bottom, default 64, min 50, max 130
     collapsed: boolean;
     topVariant?: "compact" | "full";
+    variant?: "standard" | "compact";
+    horizontalNavButtons?: string[];
+    autoHide?: boolean;
   };
   player: {
     position: "bottom" | "top" | "left" | "right";
     style: ComponentStyle;
-    height: number; // default 82, min 68, max 120
+    height: number; // default 96, min 68, max 120
     widthPercent?: number; // default 100, min 50, max 100
     largeIcons: boolean;
-    hideDetails: boolean;
+    showMiniPlayer?: boolean;
+    hideDetails?: boolean;
     queuePosition?: "right" | "left" | "bottom";
-    miniPlayerPreset?: "full" | "rounded" | "hybrid" | "deck";
-    miniPlayerBg?: "theme" | "artwork" | "dominant";
+    fullscreenMode?: "both" | "lyrics" | "cover";
+    fullscreenFollowTrack?: boolean;
+    fullscreenLyricsPosition?: "right" | "left";
+    miniPlayerPreset?: "default" | "compact" | "minimal" | "expanded";
+    miniPlayerBg?: "blur" | "solid" | "theme" | "artwork" | "dominant" | "dense_glass";
     miniPlayerShape?: "default" | "capsule";
   };
   home: {
@@ -78,6 +93,7 @@ export interface ThemePreset {
   name: string;
   desc: string;
   accentColor: string;
+  secondaryColor?: string;
   appBgColor: string;
   sidebarBgColor: string;
   playerBgColor: string;
@@ -89,66 +105,101 @@ export interface ThemePreset {
   wallpaperBlur?: number;
   wallpaperDim?: number;
   borderRadius?: BorderRadiusPreset;
+  ambientMode?: "off" | "dynamic" | "theme";
 }
 
 export const BUILTIN_THEMES: ThemePreset[] = [
   {
-    id: "classic",
-    name: "Classic Dark",
-    desc: "Стандартная сбалансированная тёмная тема",
-    accentColor: "#3b82f6",
-    appBgColor: "#0B0B0C",
+    id: "neutral",
+    name: "Neutral",
+    desc: "Сбалансированная тёмно-серая палитра",
+    accentColor: "#ffffff",
+    secondaryColor: "#2b2d31",
+    appBgColor: "#0b0b0c",
     sidebarBgColor: "#141416",
     playerBgColor: "#141416",
-    cardBgColor: "#1C1C1F",
-    textColor: "#F4F4F5",
+    cardBgColor: "#1c1c1f",
+    textColor: "#f4f4f5",
     glassMode: true,
     glassOpacity: 0.72,
   },
   {
-    id: "cyberpunk",
-    name: "Cyberpunk Neon",
-    desc: "Яркий неоновый контраст в стиле ночного города",
-    accentColor: "#f43f5e",
-    appBgColor: "#0b0914",
-    sidebarBgColor: "#120e24",
-    playerBgColor: "#120e24",
-    cardBgColor: "#1c1438",
-    textColor: "#fdf2f8",
-    glassMode: true,
-    glassOpacity: 0.68,
+    id: "amoled",
+    name: "AMOLED",
+    desc: "Максимально глубокий чёрный для OLED-экранов",
+    accentColor: "#ffffff",
+    secondaryColor: "#000000",
+    appBgColor: "#000000",
+    sidebarBgColor: "#000000",
+    playerBgColor: "#000000",
+    cardBgColor: "#000000",
+    textColor: "#ffffff",
+    glassMode: false,
+    glassOpacity: 1,
+    ambientMode: "off",
   },
   {
-    id: "midnight",
-    name: "Midnight Ocean",
-    desc: "Глубокий тёмно-синий океан с лазурным акцентом",
-    accentColor: "#06b6d4",
-    appBgColor: "#060e17",
-    sidebarBgColor: "#0a1626",
-    playerBgColor: "#0a1626",
-    cardBgColor: "#112238",
-    textColor: "#ecfeff",
+    id: "crimson",
+    name: "Crimson",
+    desc: "Энергичный рубиновый акцент",
+    accentColor: "#ef4444",
+    secondaryColor: "#991b1b",
+    appBgColor: "#0f0808",
+    sidebarBgColor: "#170c0c",
+    playerBgColor: "#170c0c",
+    cardBgColor: "#221111",
+    textColor: "#fef2f2",
     glassMode: true,
     glassOpacity: 0.72,
   },
   {
-    id: "emerald",
-    name: "Emerald Forest",
-    desc: "Спокойный лесной изумрудный стиль",
-    accentColor: "#10b981",
-    appBgColor: "#06120b",
-    sidebarBgColor: "#0d1f14",
-    playerBgColor: "#0d1f14",
-    cardBgColor: "#152e1f",
+    id: "nord",
+    name: "Nord",
+    desc: "Ледяной нордический лазурный стиль",
+    accentColor: "#38bdf8",
+    secondaryColor: "#0369a1",
+    appBgColor: "#060f17",
+    sidebarBgColor: "#0a1724",
+    playerBgColor: "#0a1724",
+    cardBgColor: "#102336",
+    textColor: "#f0f9ff",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "sky",
+    name: "Sky",
+    desc: "Небесно-голубой чистый оттенок",
+    accentColor: "#60a5fa",
+    secondaryColor: "#1d4ed8",
+    appBgColor: "#070d18",
+    sidebarBgColor: "#0c1527",
+    playerBgColor: "#0c1527",
+    cardBgColor: "#13203b",
+    textColor: "#eff6ff",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "mint",
+    name: "Mint",
+    desc: "Свежая мятная изумрудная палитра",
+    accentColor: "#34d399",
+    secondaryColor: "#047857",
+    appBgColor: "#06130e",
+    sidebarBgColor: "#0b1f17",
+    playerBgColor: "#0b1f17",
+    cardBgColor: "#112e23",
     textColor: "#ecfdf5",
     glassMode: true,
     glassOpacity: 0.72,
   },
   {
-    id: "amethyst",
-    name: "Purple Velvet",
-    desc: "Мистический фиолетовый бархат",
+    id: "violet",
+    name: "Violet",
+    desc: "Насыщенный благородный фиолетовый",
     accentColor: "#a855f7",
+    secondaryColor: "#6b21a8",
     appBgColor: "#0e0717",
     sidebarBgColor: "#170c26",
     playerBgColor: "#170c26",
@@ -158,92 +209,186 @@ export const BUILTIN_THEMES: ThemePreset[] = [
     glassOpacity: 0.72,
   },
   {
-    id: "obsidian",
-    name: "OLED Pure Black",
-    desc: "Максимально глубокий чёрный для OLED-экранов",
-    accentColor: "#ffffff",
-    appBgColor: "#000000",
-    sidebarBgColor: "#090909",
-    playerBgColor: "#090909",
-    cardBgColor: "#141414",
-    textColor: "#ffffff",
-    glassMode: false,
-    glassOpacity: 0.95,
+    id: "blossom",
+    name: "Blossom",
+    desc: "Яркий неоново-розовый акцент",
+    accentColor: "#f472b6",
+    secondaryColor: "#be185d",
+    appBgColor: "#140810",
+    sidebarBgColor: "#200d1a",
+    playerBgColor: "#200d1a",
+    cardBgColor: "#301327",
+    textColor: "#fdf2f8",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "sakura",
+    name: "Sakura",
+    desc: "Нежные лепестки сакуры",
+    accentColor: "#fb7185",
+    secondaryColor: "#be123c",
+    appBgColor: "#14080a",
+    sidebarBgColor: "#220c10",
+    playerBgColor: "#220c10",
+    cardBgColor: "#331218",
+    textColor: "#fff1f2",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "terminal",
+    name: "Terminal",
+    desc: "Киберпанк и матричный зелёный",
+    accentColor: "#22c55e",
+    secondaryColor: "#15803d",
+    appBgColor: "#051208",
+    sidebarBgColor: "#0a1d0d",
+    playerBgColor: "#0a1d0d",
+    cardBgColor: "#0f2c14",
+    textColor: "#f0fdf4",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "aqua",
+    name: "Aqua",
+    desc: "Глубокая морская бирюза",
+    accentColor: "#06b6d4",
+    secondaryColor: "#0e7490",
+    appBgColor: "#051114",
+    sidebarBgColor: "#091b20",
+    playerBgColor: "#091b20",
+    cardBgColor: "#0e2930",
+    textColor: "#ecfeff",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "sunset",
+    name: "Sunset",
+    desc: "Тёплый закатный оранжевый",
+    accentColor: "#f97316",
+    secondaryColor: "#c2410c",
+    appBgColor: "#130904",
+    sidebarBgColor: "#1f0f06",
+    playerBgColor: "#1f0f06",
+    cardBgColor: "#2e1609",
+    textColor: "#fff7ed",
+    glassMode: true,
+    glassOpacity: 0.72,
+  },
+  {
+    id: "slate",
+    name: "Slate",
+    desc: "Строгий матовый металлик",
+    accentColor: "#94a3b8",
+    secondaryColor: "#475569",
+    appBgColor: "#0a0e14",
+    sidebarBgColor: "#101620",
+    playerBgColor: "#101620",
+    cardBgColor: "#17202e",
+    textColor: "#f8fafc",
+    glassMode: true,
+    glassOpacity: 0.72,
   },
 ];
 
 export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
   borderRadius: "medium",
   sidebar: {
-    position: "left",
-    style: "dock",
-    width: 232,
-    height: 64,
+    position: "top",
+    style: "floating",
+    width: 76,
+    height: 58,
     collapsed: false,
-    topVariant: "full",
+    topVariant: "compact",
+    variant: "compact",
+    autoHide: false,
   },
   player: {
     position: "bottom",
     style: "floating",
-    height: 82,
+    height: 96,
     widthPercent: 100,
     largeIcons: false,
     hideDetails: false,
+    showMiniPlayer: false,
     queuePosition: "right",
-    miniPlayerPreset: "full",
+    fullscreenMode: "both",
+    fullscreenFollowTrack: true,
+    fullscreenLyricsPosition: "right",
     miniPlayerBg: "theme",
     miniPlayerShape: "default",
   },
   home: {
-    blockOrder: ["header", "wave", "playlists", "recent", "library"],
+    blockOrder: ["wave", "recommendations", "mixes", "explore", "library"],
     hiddenBlocks: [],
     rows: [
-      ["header"],
       ["wave"],
-      ["playlists", "recent"],
+      ["recommendations"],
+      ["mixes"],
+      ["explore"],
       ["library"],
       [],
     ],
     blockWidths: {
-      header: "full",
       wave: "full",
-      playlists: "half",
-      recent: "half",
+      recommendations: "full",
+      mixes: "full",
+      explore: "full",
       library: "full",
+      header: "full",
+      playlists: "full",
+      recent: "full",
     },
     blockAligns: {
-      header: "left",
       wave: "left",
+      recommendations: "left",
+      mixes: "left",
+      explore: "left",
+      library: "left",
+      header: "left",
       playlists: "left",
       recent: "left",
-      library: "left",
     },
     gridColumns: {
+      recommendations: 5,
+      mixes: 4,
+      explore: 4,
+      library: 1,
       recent: 4,
       playlists: 3,
-      library: 4,
     },
     canvasPositions: {
-      header: { x: 0, y: 0, w: "100%", widthPreset: "full", offsetX: 0 },
-      wave: { x: 0, y: 72, w: "100%", widthPreset: "full", offsetX: 0 },
-      playlists: { x: 0, y: 264, w: 576, widthPreset: "half", offsetX: 0 },
-      recent: { x: 0, y: 264, w: 576, widthPreset: "half", offsetX: 0 },
-      library: { x: 0, y: 552, w: "100%", widthPreset: "full", offsetX: 0 },
+      wave: { x: 0, y: 0, w: "100%", widthPreset: "full", offsetX: 0 },
+      recommendations: { x: 0, y: 160, w: "100%", widthPreset: "full", offsetX: 0 },
+      mixes: { x: 0, y: 440, w: "100%", widthPreset: "full", offsetX: 0 },
+      explore: { x: 0, y: 720, w: "100%", widthPreset: "full", offsetX: 0 },
+      library: { x: 0, y: 1100, w: "100%", widthPreset: "full", offsetX: 0 },
     },
     freeLayoutSections: [],
   },
   theme: {
-    accentColor: "#3b82f6",
-    appBgColor: "#0B0B0C",
-    sidebarBgColor: "#141416",
-    playerBgColor: "#141416",
-    cardBgColor: "#1C1C1F",
-    textColor: "#F4F4F5",
+    accentColor: "#ffffff",
+    secondaryColor: "#000000",
+    appBgColor: "#000000",
+    sidebarBgColor: "#000000",
+    playerBgColor: "#000000",
+    cardBgColor: "#000000",
+    textColor: "#ffffff",
     wallpaperData: null,
-    wallpaperBlur: 14,
-    wallpaperDim: 45,
+    wallpaperBlur: 0,
+    wallpaperDim: 0,
     glassMode: true,
-    glassOpacity: 0.72,
+    glassOpacity: 0.5,
+    glassForce: 65,
+    windowOpacity: 50,
+    backdropBlur: 15,
+    trackRowOpacity: 0,
+    trackRowActiveOpacity: 0.08,
+    trackRowActiveStyle: "glass",
+    ambientMode: "dynamic",
   },
 };
 
@@ -278,11 +423,14 @@ export function getContrastTextColor(hex: string): string {
 }
 
 export const ALL_HOME_BLOCKS = [
-  { id: "header", title: "Приветствие и статус", defaultWidth: "full" as BlockWidth },
   { id: "wave", title: "Моя волна", defaultWidth: "full" as BlockWidth },
+  { id: "recommendations", title: "Рекомендации", defaultWidth: "full" as BlockWidth },
+  { id: "mixes", title: "Персональные миксы", defaultWidth: "full" as BlockWidth },
+  { id: "explore", title: "Возможно, вам понравится", defaultWidth: "full" as BlockWidth },
+  { id: "library", title: "Из вашей библиотеки", defaultWidth: "full" as BlockWidth },
   { id: "recent", title: "Продолжить прослушивание", defaultWidth: "full" as BlockWidth },
   { id: "playlists", title: "Плейлисты", defaultWidth: "full" as BlockWidth },
-  { id: "library", title: "Библиотека", defaultWidth: "full" as BlockWidth },
+  { id: "header", title: "Приветствие и статус", defaultWidth: "full" as BlockWidth },
 ] as const;
 
 export function sanitizeConfig(raw: any): CustomizationConfig {
@@ -298,9 +446,12 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   const validPositions = ["left", "right", "top", "bottom"] as const;
   const sidebarPos = validPositions.includes(raw.sidebar?.position)
     ? raw.sidebar.position
-    : "left";
-  const sidebarStyle: ComponentStyle =
-    raw.sidebar?.style === "floating" ? "floating" : "dock";
+    : "top";
+  const validSidebarStyles: ComponentStyle[] = ["dock", "compact", "round", "floating", "island"];
+  const sidebarStyle: ComponentStyle = validSidebarStyles.includes(raw.sidebar?.style)
+    ? raw.sidebar.style
+    : "floating";
+  const sidebarAutoHide = Boolean(raw.sidebar?.autoHide);
   const sidebarWidth =
     typeof raw.sidebar?.width === "number" && !isNaN(raw.sidebar.width)
       ? Math.max(160, Math.min(360, raw.sidebar.width))
@@ -308,8 +459,11 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   const sidebarHeight =
     typeof raw.sidebar?.height === "number" && !isNaN(raw.sidebar.height)
       ? Math.max(50, Math.min(130, raw.sidebar.height))
-      : 64;
+      : 58;
   const sidebarCollapsed = Boolean(raw.sidebar?.collapsed);
+  const horizontalNavButtons = Array.isArray(raw.sidebar?.horizontalNavButtons)
+    ? raw.sidebar.horizontalNavButtons.filter((b: any) => typeof b === "string")
+    : ["player", "home", "wave", "search", "favorites", "playlists", "recent", "queue"];
 
   const validPlayerPositions = ["bottom", "top", "left", "right"] as const;
   const playerPos = validPlayerPositions.includes(raw.player?.position)
@@ -320,7 +474,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   const playerHeight =
     typeof raw.player?.height === "number" && !isNaN(raw.player.height)
       ? Math.max(68, Math.min(120, raw.player.height))
-      : 82;
+      : 96;
   const playerWidthPercent =
     typeof raw.player?.widthPercent === "number" && !isNaN(raw.player.widthPercent)
       ? Math.max(50, Math.min(100, raw.player.widthPercent))
@@ -333,22 +487,35 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     ? raw.player.queuePosition
     : "right";
 
-  const validMiniPlayerPresets = ["full", "rounded", "hybrid", "deck"] as const;
+  const validMiniPlayerPresets = ["default", "compact", "minimal", "expanded"] as const;
   const miniPlayerPreset = validMiniPlayerPresets.includes(raw.player?.miniPlayerPreset)
     ? raw.player.miniPlayerPreset
-    : "full";
+    : "default";
 
-  const validMiniPlayerBgs = ["theme", "artwork", "dominant"] as const;
-  const miniPlayerBg = validMiniPlayerBgs.includes(raw.player?.miniPlayerBg)
-    ? raw.player.miniPlayerBg
-    : "theme";
+  const showMiniPlayer = raw.player?.showMiniPlayer === true;
+  const validFsModes = ["both", "lyrics", "cover"] as const;
+  const fullscreenMode = validFsModes.includes(raw.player?.fullscreenMode)
+    ? raw.player.fullscreenMode
+    : "both";
+  const fullscreenFollowTrack = raw.player?.fullscreenFollowTrack !== false;
+
+  const validFsLyricsPositions = ["right", "left"] as const;
+  const fullscreenLyricsPosition = validFsLyricsPositions.includes(raw.player?.fullscreenLyricsPosition)
+    ? raw.player.fullscreenLyricsPosition
+    : "right";
+
+  const validMiniPlayerBgs = ["solid", "theme", "artwork", "dominant", "dense_glass"] as const;
+  const rawMiniPlayerBg = raw.player?.miniPlayerBg;
+  const miniPlayerBg = (rawMiniPlayerBg === "blur" || !rawMiniPlayerBg || !validMiniPlayerBgs.includes(rawMiniPlayerBg))
+    ? "theme"
+    : rawMiniPlayerBg;
 
   const validMiniPlayerShapes = ["default", "capsule"] as const;
   const miniPlayerShape = validMiniPlayerShapes.includes(raw.player?.miniPlayerShape)
     ? raw.player.miniPlayerShape
     : "default";
 
-  const defaultOrder = ["header", "wave", "recent", "playlists", "library"];
+  const defaultOrder = ["wave", "recommendations", "mixes", "explore", "library"];
   let blockOrder: string[] = [];
   if (Array.isArray(raw.home?.blockOrder)) {
     blockOrder = raw.home.blockOrder.filter((b: any) => typeof b === "string");
@@ -362,11 +529,14 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
 
   const validWidths: BlockWidth[] = ["third", "half", "two-thirds", "full"];
   const blockWidths: Record<string, BlockWidth> = {
-    header: "full",
     wave: "full",
+    recommendations: "full",
+    mixes: "full",
+    explore: "full",
+    library: "full",
+    header: "full",
     recent: "full",
     playlists: "full",
-    library: "full",
   };
   if (typeof raw.home?.blockWidths === "object" && raw.home.blockWidths !== null) {
     for (const [k, v] of Object.entries(raw.home.blockWidths)) {
@@ -377,9 +547,12 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   }
 
   const gridColumns = {
+    recommendations: 5,
+    mixes: 4,
+    explore: 4,
+    library: 1,
     recent: 4,
     playlists: 3,
-    library: 4,
   };
   if (typeof raw.home?.gridColumns === "object" && raw.home?.gridColumns !== null) {
     if (typeof raw.home.gridColumns.recent === "number") gridColumns.recent = raw.home.gridColumns.recent;
@@ -388,6 +561,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   }
 
   const sidebarTopVariant = raw.sidebar?.topVariant === "compact" ? "compact" : "full";
+  const sidebarVariant = raw.sidebar?.variant === "compact" ? "compact" : "standard";
 
   const defaultCanvasPositions: Record<string, BlockCanvasPos> = {
     header: { x: 0, y: 0, w: "100%", widthPreset: "full", offsetX: 0 },
@@ -420,17 +594,28 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   }
 
   const theme: ThemeColors = {
-    accentColor: typeof raw.theme?.accentColor === "string" ? raw.theme.accentColor : "#3b82f6",
-    appBgColor: typeof raw.theme?.appBgColor === "string" ? raw.theme.appBgColor : "#0B0B0C",
-    sidebarBgColor: typeof raw.theme?.sidebarBgColor === "string" ? raw.theme.sidebarBgColor : "#141416",
-    playerBgColor: typeof raw.theme?.playerBgColor === "string" ? raw.theme.playerBgColor : "#141416",
-    cardBgColor: typeof raw.theme?.cardBgColor === "string" ? raw.theme.cardBgColor : "#1C1C1F",
-    textColor: typeof raw.theme?.textColor === "string" ? raw.theme.textColor : "#F4F4F5",
+    accentColor: typeof raw.theme?.accentColor === "string" ? raw.theme.accentColor : "#ffffff",
+    appBgColor: typeof raw.theme?.appBgColor === "string" ? raw.theme.appBgColor : "#000000",
+    sidebarBgColor: typeof raw.theme?.sidebarBgColor === "string" ? raw.theme.sidebarBgColor : "#000000",
+    playerBgColor: typeof raw.theme?.playerBgColor === "string" ? raw.theme.playerBgColor : "#000000",
+    cardBgColor: typeof raw.theme?.cardBgColor === "string" ? raw.theme.cardBgColor : "#000000",
+    textColor: typeof raw.theme?.textColor === "string" ? raw.theme.textColor : "#ffffff",
     wallpaperData: typeof raw.theme?.wallpaperData === "string" ? raw.theme.wallpaperData : null,
-    wallpaperBlur: typeof raw.theme?.wallpaperBlur === "number" ? raw.theme.wallpaperBlur : 14,
-    wallpaperDim: typeof raw.theme?.wallpaperDim === "number" ? raw.theme.wallpaperDim : 45,
+    wallpaperBlur: typeof raw.theme?.wallpaperBlur === "number" ? raw.theme.wallpaperBlur : 0,
+    wallpaperDim: typeof raw.theme?.wallpaperDim === "number" ? raw.theme.wallpaperDim : 0,
     glassMode: raw.theme?.glassMode !== undefined ? Boolean(raw.theme.glassMode) : true,
-    glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.72,
+    glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.5,
+    trackRowOpacity: typeof raw.theme?.trackRowOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowOpacity)) : 0,
+    trackRowActiveOpacity: typeof raw.theme?.trackRowActiveOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowActiveOpacity)) : 0.08,
+    trackRowActiveStyle: (raw.theme?.trackRowActiveStyle === "accent" || raw.theme?.trackRowActiveStyle === "dark")
+      ? raw.theme.trackRowActiveStyle
+      : "glass",
+    ambientMode: (raw.theme?.ambientMode === "theme" || raw.theme?.ambientMode === "dynamic" || raw.theme?.ambientMode === "off")
+      ? raw.theme.ambientMode
+      : "dynamic",
+    windowOpacity: typeof raw.theme?.windowOpacity === "number" ? Math.max(0, Math.min(100, raw.theme.windowOpacity)) : 50,
+    glassForce: typeof raw.theme?.glassForce === "number" ? Math.max(0, Math.min(100, raw.theme.glassForce)) : 65,
+    backdropBlur: typeof raw.theme?.backdropBlur === "number" ? Math.max(0, Math.min(40, raw.theme.backdropBlur)) : 15,
   };
 
   const validAligns: BlockAlign[] = ["left", "center", "right"];
@@ -487,6 +672,9 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       height: sidebarHeight,
       collapsed: sidebarCollapsed,
       topVariant: sidebarTopVariant,
+      variant: sidebarVariant,
+      horizontalNavButtons,
+      autoHide: sidebarAutoHide,
     },
     player: {
       position: playerPos,
@@ -495,7 +683,11 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       widthPercent: playerWidthPercent,
       largeIcons: playerLargeIcons,
       hideDetails: playerHideDetails,
+      showMiniPlayer,
       queuePosition,
+      fullscreenMode,
+      fullscreenFollowTrack,
+      fullscreenLyricsPosition,
       miniPlayerPreset,
       miniPlayerBg,
       miniPlayerShape,
@@ -527,6 +719,8 @@ export interface CustomizationContextType {
   setSidebarWidth: (width: number) => void;
   setSidebarHeight: (height: number) => void;
   setSidebarTopVariant: (variant: "compact" | "full") => void;
+  setSidebarVariant: (variant: "standard" | "compact") => void;
+  setSidebarAutoHide: (autoHide: boolean) => void;
   setPlayerPosition: (pos: "bottom" | "top" | "left" | "right") => void;
   setPlayerStyle: (style: ComponentStyle) => void;
   setPlayerHeight: (height: number) => void;
@@ -563,10 +757,15 @@ export interface CustomizationContextType {
   isQueueOpen: boolean;
   setIsQueueOpen: (open: boolean) => void;
   toggleQueue: () => void;
+  setShowMiniPlayer: (show: boolean) => void;
   setQueuePosition: (pos: "right" | "left" | "bottom") => void;
-  setMiniPlayerPreset: (preset: "full" | "rounded" | "hybrid" | "deck") => void;
-  setMiniPlayerBg: (bg: "theme" | "artwork" | "dominant") => void;
+  setFullscreenMode: (mode: "both" | "lyrics" | "cover") => void;
+  setFullscreenFollowTrack: (follow: boolean) => void;
+  setFullscreenLyricsPosition: (pos: "right" | "left") => void;
+  setMiniPlayerPreset: (preset: "default" | "compact" | "minimal" | "expanded") => void;
+  setMiniPlayerBg: (bg: "blur" | "solid" | "theme" | "artwork" | "dominant" | "dense_glass") => void;
   setMiniPlayerShape: (shape: "default" | "capsule") => void;
+  setHorizontalNavButtons: (buttons: string[]) => void;
   isPreviewActive: boolean;
   previewPreset: ThemePreset | null;
   startPreview: (preset: ThemePreset) => void;
@@ -635,6 +834,29 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     root.style.setProperty("--text3", hexToRgba(theme.textColor, 0.45));
     root.style.setProperty("--wp-blur", `${theme.wallpaperBlur}px`);
     root.style.setProperty("--wp-dim", `${theme.wallpaperDim / 100}`);
+    const trowAlpha = typeof theme.trackRowOpacity === "number" ? Math.max(0, Math.min(1, theme.trackRowOpacity)) : 0;
+    root.style.setProperty("--trow-bg-opacity", `${trowAlpha}`);
+    const trowBg = trowAlpha > 0 ? hexToRgba(theme.cardBgColor, trowAlpha * 0.95) : "transparent";
+    const trowBorder = trowAlpha > 0 ? `rgba(255, 255, 255, ${trowAlpha * 0.08})` : "transparent";
+    root.style.setProperty("--trow-bg", trowBg);
+    root.style.setProperty("--trow-border", trowBorder);
+    const trowActiveAlpha = typeof theme.trackRowActiveOpacity === "number" ? Math.max(0, Math.min(1, theme.trackRowActiveOpacity)) : 0.08;
+    root.style.setProperty("--trow-active-opacity", `${trowActiveAlpha}`);
+
+    const activeStyle = theme.trackRowActiveStyle || "glass";
+    let activeBg = `rgba(255, 255, 255, ${trowActiveAlpha})`;
+    let activeBorder = "transparent";
+
+    if (activeStyle === "accent") {
+      activeBg = hexToRgba(theme.accentColor, trowActiveAlpha);
+      activeBorder = hexToRgba(theme.accentColor, Math.min(1, trowActiveAlpha * 1.5));
+    } else if (activeStyle === "dark") {
+      activeBg = `rgba(0, 0, 0, ${trowActiveAlpha})`;
+      activeBorder = "transparent";
+    }
+
+    root.style.setProperty("--trow-now-bg", activeBg);
+    root.style.setProperty("--trow-now-border", activeBorder);
 
     const radiusMap: Record<BorderRadiusPreset, { card: string; panel: string; btn: string; player: string }> = {
       sharp: { card: "0px", panel: "0px", btn: "0px", player: "0px" },
@@ -646,22 +868,38 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     root.style.setProperty("--radius-card", r.card);
     root.style.setProperty("--radius-panel", r.panel);
     root.style.setProperty("--radius-btn", r.btn);
-    root.style.setProperty("--radius-player", r.player);
-    root.style.setProperty("--sidebar-width", `${sidebar.width || 232}px`);
+    const playerRadius = player.miniPlayerShape === "capsule" ? "9999px" : "16px";
+    root.style.setProperty("--radius-player", playerRadius);
+    const isCompactRail = sidebar.variant === "compact";
+    const effectiveSidebarWidth = isCompactRail ? 76 : (sidebar.width || 232);
+    root.style.setProperty("--sidebar-width", `${effectiveSidebarWidth}px`);
     root.style.setProperty("--sidebar-height", `${sidebar.height || 64}px`);
-    root.style.setProperty("--player-height", `${player.height || 82}px`);
+    const playerHeight = player.height || 96;
+    const safeAreaBottom = Math.max(180, playerHeight + 84);
+    root.style.setProperty("--player-height", `${playerHeight}px`);
+    root.style.setProperty("--safe-area-bottom", `${safeAreaBottom}px`);
     root.style.setProperty("--player-width", `${player.widthPercent || 100}%`);
 
     const isGlass = Boolean(theme.glassMode);
-    const alpha = isGlass ? Math.max(0.1, Math.min(0.95, theme.glassOpacity ?? 0.72)) : 1;
+    const winOpacity = typeof theme.windowOpacity === "number" ? theme.windowOpacity : Math.round((theme.glassOpacity ?? 0.66) * 100);
+    const alpha = isGlass ? Math.max(0.04, Math.min(1, winOpacity / 100)) : 1;
+    const playerBlurAlpha = isGlass ? Math.max(0.1, Math.min(0.9, alpha * 0.9)) : 0.85;
+    const blurPx = typeof theme.backdropBlur === "number" ? theme.backdropBlur : (theme.wallpaperBlur || 16);
+    const glassForceVal = typeof theme.glassForce === "number" ? theme.glassForce / 100 : 0.05;
+
+    root.style.setProperty("--glass-blur", `${blurPx}px`);
+    root.style.setProperty("--glass-blur-val", `${blurPx}px`);
+    root.style.setProperty("--glass-force", `${glassForceVal}`);
 
     root.style.setProperty("--bg", theme.wallpaperData ? "transparent" : theme.appBgColor);
     root.style.setProperty("--panel", hexToRgba(theme.sidebarBgColor, alpha));
     root.style.setProperty("--panel2", hexToRgba(theme.sidebarBgColor, Math.max(0.08, alpha * 0.85)));
     root.style.setProperty("--sidebar-bg", hexToRgba(theme.sidebarBgColor, alpha));
     root.style.setProperty("--player-bg", hexToRgba(theme.playerBgColor, alpha));
+    root.style.setProperty("--player-blur-bg", hexToRgba(theme.playerBgColor, playerBlurAlpha));
     root.style.setProperty("--panel-bg-glass", hexToRgba(theme.sidebarBgColor, alpha));
-    root.style.setProperty("--player-bg-glass", hexToRgba(theme.playerBgColor, alpha));
+    root.style.setProperty("--player-bg-glass", hexToRgba(theme.playerBgColor, playerBlurAlpha));
+    root.style.setProperty("--player-contrast-text", getContrastTextColor(theme.playerBgColor));
     root.style.setProperty("--card-bg", hexToRgba(theme.cardBgColor, Math.min(0.95, alpha + 0.05)));
     root.style.setProperty("--card-bg-glass", hexToRgba(theme.cardBgColor, Math.min(0.95, alpha + 0.05)));
     root.style.setProperty("--elev", hexToRgba(theme.cardBgColor, Math.min(0.95, alpha + 0.05)));
@@ -671,8 +909,6 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     root.style.setProperty("--border2", hexToRgba(theme.textColor, 0.18));
     root.style.setProperty("--border3", hexToRgba(theme.textColor, 0.28));
     root.style.setProperty("--glass-border", hexToRgba(theme.textColor, 0.12));
-    root.style.setProperty("--glass-blur", isGlass ? `${Math.max(12, theme.wallpaperBlur || 16)}px` : "0px");
-    root.style.setProperty("--glass-blur-val", `${Math.max(12, theme.wallpaperBlur || 16)}px`);
   }, [activeConfig]);
 
   const enterEditMode = () => {
@@ -756,6 +992,20 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const setSidebarVariant = (variant: "standard" | "compact") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, variant },
+    }));
+  };
+
+  const setSidebarAutoHide = (autoHide: boolean) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, autoHide },
+    }));
+  };
+
   const setPlayerPosition = (pos: "bottom" | "top" | "left" | "right") => {
     persistOrDraft((prev) => ({
       ...prev,
@@ -804,14 +1054,42 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const setMiniPlayerPreset = (preset: "full" | "rounded" | "hybrid" | "deck") => {
+  const setShowMiniPlayer = (show: boolean) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, showMiniPlayer: show },
+    }));
+  };
+
+  const setFullscreenMode = (mode: "both" | "lyrics" | "cover") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, fullscreenMode: mode },
+    }));
+  };
+
+  const setFullscreenFollowTrack = (follow: boolean) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, fullscreenFollowTrack: follow },
+    }));
+  };
+
+  const setFullscreenLyricsPosition = (pos: "right" | "left") => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, fullscreenLyricsPosition: pos },
+    }));
+  };
+
+  const setMiniPlayerPreset = (preset: "default" | "compact" | "minimal" | "expanded") => {
     persistOrDraft((prev) => ({
       ...prev,
       player: { ...prev.player, miniPlayerPreset: preset },
     }));
   };
 
-  const setMiniPlayerBg = (bg: "theme" | "artwork" | "dominant") => {
+  const setMiniPlayerBg = (bg: "blur" | "solid" | "theme" | "artwork" | "dominant" | "dense_glass") => {
     persistOrDraft((prev) => ({
       ...prev,
       player: { ...prev.player, miniPlayerBg: bg },
@@ -822,6 +1100,13 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     persistOrDraft((prev) => ({
       ...prev,
       player: { ...prev.player, miniPlayerShape: shape },
+    }));
+  };
+
+  const setHorizontalNavButtons = (buttons: string[]) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      sidebar: { ...prev.sidebar, horizontalNavButtons: buttons },
     }));
   };
 
@@ -1282,6 +1567,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       ...(preset.wallpaperData !== undefined ? { wallpaperData: preset.wallpaperData } : {}),
       ...(preset.wallpaperBlur !== undefined ? { wallpaperBlur: preset.wallpaperBlur } : {}),
       ...(preset.wallpaperDim !== undefined ? { wallpaperDim: preset.wallpaperDim } : {}),
+      ...(preset.ambientMode !== undefined ? { ambientMode: preset.ambientMode } : {}),
     });
     if (preset.borderRadius) {
       setBorderRadius(preset.borderRadius);
@@ -1360,11 +1646,11 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   };
 
   const resetToDefaults = () => {
-    setDraftConfig(JSON.parse(JSON.stringify(DEFAULT_CUSTOMIZATION)));
-    if (!isEditMode) {
-      setSavedConfig(DEFAULT_CUSTOMIZATION);
-      try { localStorage.removeItem(STORAGE_KEY); } catch {}
-    }
+    const def = JSON.parse(JSON.stringify(DEFAULT_CUSTOMIZATION));
+    setDraftConfig(def);
+    setSavedConfig(def);
+    setIsEditMode(false);
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
   };
 
   return (
@@ -1382,15 +1668,22 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         setSidebarWidth,
         setSidebarHeight,
         setSidebarTopVariant,
+        setSidebarVariant,
+        setSidebarAutoHide,
         setPlayerPosition,
         setPlayerStyle,
         setPlayerHeight,
         setPlayerWidthPercent,
         setPlayerOptions,
         setQueuePosition,
+        setShowMiniPlayer,
+        setFullscreenMode,
+        setFullscreenFollowTrack,
+        setFullscreenLyricsPosition,
         setMiniPlayerPreset,
         setMiniPlayerBg,
         setMiniPlayerShape,
+        setHorizontalNavButtons,
         isQueueOpen,
         setIsQueueOpen,
         toggleQueue,

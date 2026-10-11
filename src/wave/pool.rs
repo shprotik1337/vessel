@@ -69,6 +69,17 @@ impl CandidatePool {
         }
     }
 
+    pub fn merge(&mut self, other: CandidatePool, target: usize) {
+        for candidate in other.into_candidates() {
+            for origin in candidate.origins {
+                self.insert(candidate.track.clone(), origin);
+            }
+            if self.len() >= target {
+                break;
+            }
+        }
+    }
+
     pub fn into_candidates(self) -> Vec<WaveCandidate> {
         self.candidates.into_values().collect()
     }

@@ -1,4 +1,6 @@
-export type ProviderKind = "soundcloud" | "yandex_music" | "deezer" | "spotify" | "you_tube_music";
+export type ProviderKind = "soundcloud" | "yandex_music" | "deezer" | "spotify" | "youtube_music" | "you_tube_music";
+
+export type TrackOrigin = "original" | "smart_shuffle" | "autoplay" | "my_wave";
 
 export interface TrackRef {
   provider: ProviderKind;
@@ -12,6 +14,7 @@ export interface TrackRef {
   genres: string[];
   explicit: boolean;
   drm: boolean;
+  origin?: TrackOrigin;
 }
 
 export type PlaybackCapability =
@@ -82,11 +85,71 @@ export interface FullState {
   youtube_music_enabled: boolean;
   status_message: string;
   user_profile: UserProfile | null;
+  account_state: AccountState;
   needs_user_selection: boolean;
   language: string;
   wave_source: string;
   image_proxy?: ImageProxyConfig | null;
   discord_rpc: boolean;
+}
+
+export type AccountState =
+  | { kind: "guest" }
+  | { kind: "restoring" }
+  | { kind: "authenticated"; username: string; user_id: string };
+
+export interface CaptchaItem {
+  id: number;
+  symbol: string;
+  x: number;
+  y: number;
+}
+
+export interface CaptchaChallenge {
+  id: string;
+  targets: string[];
+  items: CaptchaItem[];
+  expires_in_secs: number;
+}
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  created_at_ms: number;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  status?: string | null;
+  bio?: string | null;
+}
+
+export interface UpdateProfileRequest {
+  display_name?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  status?: string | null;
+  bio?: string | null;
+}
+
+export interface AuthResult {
+  user: UserInfo;
+  has_local_data: boolean;
+}
+
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  captcha_id: string;
+  captcha_clicks: number[];
+  installation_id?: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+  captcha_id?: string;
+  captcha_clicks?: number[];
+  installation_id?: string;
 }
 
 export interface UserProfile {
@@ -144,4 +207,34 @@ export interface ArtistProfile {
   avatar_url: string | null;
   popular_tracks: TrackRef[];
   releases: CollectionItem[];
+}
+
+export interface MixItem {
+  id: number;
+  pillColor: string;
+  pillTextColor: string;
+  title: string;
+  artist: string;
+  relatedArtists: string[];
+  coverUrl: string | null;
+  tracks: TrackRef[];
+}
+
+export interface ExploreContent {
+  artists: CollectionItem[];
+  albums: CollectionItem[];
+}
+
+export interface QueueContext {
+  current_track: TrackRef | null;
+  recent_played: TrackRef[];
+  remaining_queue: TrackRef[];
+  session_played_keys: string[];
+  feedback_skips: string[];
+  feedback_likes: string[];
+}
+
+export interface SmartShuffleResult {
+  interleaved_queue: TrackRef[];
+  injected_track_keys: string[];
 }

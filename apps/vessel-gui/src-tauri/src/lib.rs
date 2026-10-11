@@ -29,6 +29,7 @@ pub struct GuiCore {
     pub storage: Storage,
     pub users: UserManager,
     pub needs_user_selection: bool,
+    pub account_state: vessel_core::user::AccountState,
     pub last_state_hash: u64,
     pub last_progress_at: Instant,
 }
@@ -40,7 +41,7 @@ pub struct ImageProxyConfig {
     pub routed_providers: Vec<String>,
 }
 
-/// Р СџР С•Р В»Р Р…Р С•Р Вµ РЎРѓР С•РЎРѓРЎвЂљР С•РЎРЏР Р…Р С‘Р Вµ Р С—РЎР‚Р С‘Р В»Р С•Р В¶Р ВµР Р…Р С‘РЎРЏ, Р С”Р С•РЎвЂљР С•РЎР‚Р С•Р Вµ РЎвЂћРЎР‚Р С•Р Р…РЎвЂљР ВµР Р…Р Т‘ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ Р Р…Р В°Р С—РЎР‚РЎРЏР С˜РЎС“РЎР‹ Р С—Р С• Р В·Р В°Р С—РЎР‚Р С•РЎРѓРЎС“.
+/// Полное состояние приложения, которое фронтенд читает напрямую по запросу.
 #[derive(Serialize, Clone)]
 pub struct FullState {
     pub player: PlayerState,
@@ -59,6 +60,7 @@ pub struct FullState {
     pub youtube_music_enabled: bool,
     pub status_message: String,
     pub user_profile: Option<vessel_core::user::UserProfile>,
+    pub account_state: vessel_core::user::AccountState,
     pub needs_user_selection: bool,
     pub language: String,
     pub wave_source: String,
@@ -83,17 +85,16 @@ pub struct SearchOutcome {
     pub failures: Vec<String>,
 }
 
-fn state_hash(app: &App) -> u64 {
+fn state_hash(core: &GuiCore) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
+    let app = &core.app;
     format!("{:?}", app.player.status).hash(&mut hasher);
     app.player.volume_percent.hash(&mut hasher);
     app.player.shuffle.hash(&mut hasher);
     format!("{:?}", app.player.repeat).hash(&mut hasher);
     app.player.duration_ms.hash(&mut hasher);
-    app.player.position_ms.hash(&mut hasher);
-    app.player.buffered_ms.hash(&mut hasher);
     app.queue_index.hash(&mut hasher);
     app.now_playing
         .as_ref()
@@ -105,6 +106,7 @@ fn state_hash(app: &App) -> u64 {
     for track in app.queue.iter() {
         track.provider_key().hash(&mut hasher);
     }
+    format!("{:?}", core.account_state).hash(&mut hasher);
     hasher.finish()
 }
 
@@ -235,6 +237,7 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
         youtube_music_enabled: core.app.youtube_music_enabled,
         status_message: core.app.status_message.clone(),
         user_profile: core.app.user_profile.clone(),
+        account_state: core.account_state.clone(),
         needs_user_selection: core.needs_user_selection,
         language: core.config.language.clone(),
         wave_source: core
@@ -280,7 +283,7 @@ fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
         drive_runtime(&mut core);
         persist(&mut core);
         let now = Instant::now();
-        let hash = state_hash(&core.app);
+        let hash = state_hash(&core);
         if hash != core.last_state_hash {
             core.last_state_hash = hash;
             let full = build_full_state(&core);
@@ -323,49 +326,58 @@ fn drive_runtime(core: &mut GuiCore) {
 }
 
 fn persist(core: &mut GuiCore) {
-    let mut config = core.config.clone();
     if core.app.queue_dirty {
-        if let Err(error) = core.storage.save_queue(&core.app.queue_snapshot()) {
-            vessel_core::dlog!("[vessel] save_queue: {error}");
-        } else {
-            core.app.queue_dirty = false;
-        }
+        let storage = core.storage.clone();
+        let snapshot = core.app.queue_snapshot();
+        core.app.queue_dirty = false;
+        std::thread::spawn(move || {
+            if let Err(error) = storage.save_queue(&snapshot) {
+                vessel_core::dlog!("[vessel] save_queue: {error}");
+            }
+        });
     }
     if core.app.playlists_dirty {
-        for playlist in &core.app.playlists {
-            if let Err(error) = core.storage.save_playlist(playlist) {
-                vessel_core::dlog!("[vessel] save_playlist: {error}");
-            }
-        }
+        let storage = core.storage.clone();
+        let playlists = core.app.playlists.clone();
         core.app.playlists_dirty = false;
+        std::thread::spawn(move || {
+            for playlist in &playlists {
+                if let Err(error) = storage.save_playlist(playlist) {
+                    vessel_core::dlog!("[vessel] save_playlist: {error}");
+                }
+            }
+        });
     }
     if core.app.config_dirty {
+        let mut config = core.config.clone();
         config.volume_percent = core.app.player.volume_percent;
         config.soundcloud_enabled = core.app.soundcloud_enabled;
         config.yandex_enabled = core.app.yandex_enabled;
         config.deezer_enabled = core.app.deezer_enabled;
         config.spotify_enabled = core.app.spotify_enabled;
         config.youtube_music_enabled = core.app.youtube_music_enabled;
-        // Р ВРЎРѓРЎвЂљР С•РЎвЂЎР Р…Р С‘Р С” Р В°РЎС“Р Т‘Р С‘Р С• Spotify (Р СР ВµР Р…РЎРЏР ВµРЎвЂљРЎРѓРЎРЏ РЎвЂЎР ВµРЎР‚Р ВµР В· set_spotify_playback_source,
-        // Р С”Р С•РЎвЂљР С•РЎР‚РЎвЂ№Р в„– Р С—Р С‘РЎв‚¬Р ВµРЎвЂљ Р ВµР С–Р С• Р Р† core.config РЎвЂЎР ВµРЎР‚Р ВµР В· Runtime)
         config.spotify_playback_source = core.config.spotify_playback_source.clone();
         config.global_hotkeys_enabled = core.app.global_hotkeys_enabled;
         config.hotkeys = core.app.hotkeys.clone();
         config.keybindings_notice_seen = core.app.keybindings_notice_seen;
-        if let Err(error) = config.save(&core.paths) {
-            vessel_core::dlog!("[vessel] save config: {error}");
-        } else {
-            core.config = config;
-            core.app.config_dirty = false;
-        }
+        let paths = core.paths.clone();
+        core.config = config.clone();
+        core.app.config_dirty = false;
+        std::thread::spawn(move || {
+            if let Err(error) = config.save(&paths) {
+                vessel_core::dlog!("[vessel] save config: {error}");
+            }
+        });
     }
     if core.app.user_dirty {
         core.users.active_user_mut().profile.touch();
-        if let Err(error) = core.users.active_user().save_profile() {
-            vessel_core::dlog!("[vessel] save profile: {error}");
-        } else {
-            core.app.user_dirty = false;
-        }
+        let user = core.users.active_user().clone();
+        core.app.user_dirty = false;
+        std::thread::spawn(move || {
+            if let Err(error) = user.save_profile() {
+                vessel_core::dlog!("[vessel] save profile: {error}");
+            }
+        });
     }
 }
 
@@ -413,6 +425,29 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
     if let Some(notice) = runtime.take_notices().into_iter().last() {
         app.status_message = notice;
     }
+
+    // Ensure official server token is present in secrets
+    let official_secret = format!("vessel-server:{}", vessel_core::config::OFFICIAL_SERVER_ID);
+    if secrets.get_named(&official_secret).ok().flatten().is_none() {
+        let _ = secrets.set_named(&official_secret, vessel_core::config::OFFICIAL_SERVER_TOKEN);
+    }
+
+    let saved_session = secrets.get_named("vessel-user-session").ok().flatten();
+    let saved_username = secrets.get_named("vessel-user-username").ok().flatten();
+    let saved_id = secrets.get_named("vessel-user-id").ok().flatten();
+    let account_state = if saved_session.is_some() {
+        if let (Some(username), Some(id)) = (saved_username, saved_id) {
+            vessel_core::user::AccountState::Authenticated {
+                username,
+                user_id: id,
+            }
+        } else {
+            vessel_core::user::AccountState::Restoring
+        }
+    } else {
+        vessel_core::user::AccountState::Guest
+    };
+
     Ok(GuiCore {
         app,
         runtime,
@@ -421,6 +456,7 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         storage,
         users,
         needs_user_selection,
+        account_state,
         last_state_hash: 0,
         last_progress_at: Instant::now(),
     })
@@ -481,6 +517,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::remove_from_queue,
             commands::move_queue_item,
             commands::clear_queue,
+            commands::set_crossfade,
+            commands::set_audio_agc,
             commands::toggle_favorite,
             commands::get_playlists,
             commands::import_playlist_url,
@@ -512,6 +550,15 @@ pub fn run() -> anyhow::Result<()> {
             commands::set_wave_providers,
             commands::get_recommendation_providers,
             commands::set_recommendation_providers,
+            commands::get_include_playlists_in_recommendations,
+            commands::set_include_playlists_in_recommendations,
+            commands::get_excluded_recommendation_playlists,
+            commands::toggle_playlist_taste_exclusion,
+            commands::get_personal_mixes,
+            commands::get_explore_content,
+            commands::get_home_recommendations,
+            commands::get_next_autoplay_chunk,
+            commands::apply_smart_shuffle,
             commands::import_likes,
             commands::reset_settings,
             commands::reset_data,
@@ -552,6 +599,10 @@ pub fn run() -> anyhow::Result<()> {
             commands::pick_file,
             commands::save_file_as,
             commands::open_path,
+            commands::get_data_dir,
+            commands::get_database_path,
+            commands::write_text_file,
+            commands::read_text_file,
             commands::get_users_dir,
             commands::vessel_servers,
             commands::vessel_routes,
@@ -559,6 +610,17 @@ pub fn run() -> anyhow::Result<()> {
             commands::vessel_server_add,
             commands::vessel_server_remove,
             commands::vessel_route_set,
+            commands::auth_get_captcha,
+            commands::auth_register,
+            commands::auth_login,
+            commands::auth_logout,
+            commands::auth_continue_guest,
+            commands::auth_migrate_data,
+            commands::auth_download_cloud_data,
+            commands::import_tracks_batch,
+            commands::auth_get_account_state,
+            commands::auth_get_profile,
+            commands::auth_update_profile,
             commands::window_minimize,
             commands::window_toggle_maximize,
             commands::window_is_maximized,
@@ -590,6 +652,57 @@ pub fn run() -> anyhow::Result<()> {
                     }
                 };
                 let _guard = runtime.enter();
+
+                let core_session = Arc::clone(&core);
+                tokio::spawn(async move {
+                    let (token_opt, _is_restoring) = {
+                        let core = core_session.lock().unwrap_or_else(|p| p.into_inner());
+                        let secrets = SecretStore::new(core.paths.secrets_file.clone());
+                        let token = secrets.get_named("vessel-user-session").ok().flatten();
+                        (token, core.account_state != vessel_core::user::AccountState::Guest)
+                    };
+
+                    if let Some(token) = token_opt {
+                        if let Ok(client) = commands::official_client() {
+                            match client.auth_session(&token).await {
+                                Ok(session_resp) => {
+                                    let lib = client.user_library(&token).await.ok();
+                                    let pl = client.user_playlists(&token).await.ok();
+                                    let mut core = core_session.lock().unwrap_or_else(|p| p.into_inner());
+                                    let secrets = SecretStore::new(core.paths.secrets_file.clone());
+                                    let _ = secrets.set_named("vessel-user-username", &session_resp.user.username);
+                                    let _ = secrets.set_named("vessel-user-id", &session_resp.user.id);
+                                    core.account_state = vessel_core::user::AccountState::Authenticated {
+                                        username: session_resp.user.username,
+                                        user_id: session_resp.user.id,
+                                    };
+                                    if let Some(lib) = lib {
+                                        core.app.library = lib.tracks;
+                                    }
+                                    if let Some(pl) = pl {
+                                        core.app.playlists = pl.playlists;
+                                    }
+                                }
+                                Err(err) => {
+                                    vessel_core::dlog!("[vessel] session restore failed: {err}");
+                                    let err_str = err.to_string();
+                                    let is_unauthorized = err_str.contains("401")
+                                        || err_str.contains("неавторизован")
+                                        || err_str.contains("Unauthorized");
+                                    if is_unauthorized {
+                                        let mut core = core_session.lock().unwrap_or_else(|p| p.into_inner());
+                                        let secrets = SecretStore::new(core.paths.secrets_file.clone());
+                                        let _ = secrets.remove_named("vessel-user-session");
+                                        let _ = secrets.remove_named("vessel-user-username");
+                                        let _ = secrets.remove_named("vessel-user-id");
+                                        core.account_state = vessel_core::user::AccountState::Guest;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
                 driver_loop(core, app_handle);
             });
 

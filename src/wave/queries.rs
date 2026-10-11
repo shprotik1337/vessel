@@ -16,6 +16,23 @@ pub fn explore_queries(recent: &[TrackRef], settings: &WaveSettings) -> Vec<Stri
             .iter()
             .any(|language| language == "en");
     let mut queries = UniqueQueries::default();
+    let corpus = normalize_search_text(
+        &recent
+            .iter()
+            .flat_map(|track| [track.title.clone(), track.display_artist()])
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    let has_hiphop = corpus.contains("рэп")
+        || corpus.contains("rap")
+        || corpus.contains("trap")
+        || corpus.contains("трэп")
+        || corpus.contains("rage")
+        || corpus.contains("drill")
+        || corpus.contains("hiphop")
+        || corpus.contains("hip-hop")
+        || recent.iter().any(|t| super::genre::track_tags(t).contains("rap"));
+
     if wants_ru {
         queries.push(match settings.mode {
             WaveMode::Discovery => "новинки музыки",
@@ -23,14 +40,25 @@ pub fn explore_queries(recent: &[TrackRef], settings: &WaveSettings) -> Vec<Stri
             WaveMode::Favorites => "похожие на любимое",
             WaveMode::Balanced => "музыка по вкусу",
         });
-        for query in [
-            "популярные треки",
-            "инди",
-            "драйв",
-            "танцевальная музыка",
-            "электроника",
-        ] {
-            queries.push(query);
+        if has_hiphop {
+            for query in [
+                "рэп хиты",
+                "новинки рэпа",
+                "трэп",
+                "популярные треки",
+            ] {
+                queries.push(query);
+            }
+        } else {
+            for query in [
+                "популярные треки",
+                "инди",
+                "драйв",
+                "танцевальная музыка",
+                "электроника",
+            ] {
+                queries.push(query);
+            }
         }
     }
     if wants_en {
@@ -40,19 +68,30 @@ pub fn explore_queries(recent: &[TrackRef], settings: &WaveSettings) -> Vec<Stri
             WaveMode::Favorites => "similar to liked songs",
             WaveMode::Balanced => "music by taste",
         });
-        for query in [
-            "trending songs",
-            "indie",
-            "dance hits",
-            "electronic",
-            "night drive",
-        ] {
-            queries.push(query);
+        if has_hiphop {
+            for query in [
+                "hip hop hits",
+                "trap hits",
+                "trending rap",
+                "rage rap",
+            ] {
+                queries.push(query);
+            }
+        } else {
+            for query in [
+                "trending songs",
+                "indie",
+                "dance hits",
+                "electronic",
+                "night drive",
+            ] {
+                queries.push(query);
+            }
         }
     }
-    add_mood_queries(&mut queries, settings.mood, wants_ru, wants_en);
+    add_mood_queries(&mut queries, settings.mood, wants_ru, wants_en, has_hiphop);
     add_time_queries(&mut queries, settings.time_of_day, wants_ru, wants_en);
-    add_corpus_queries(&mut queries, recent, wants_ru, wants_en);
+    add_corpus_queries(&mut queries, &corpus, wants_ru, wants_en);
     for keyword in recent_title_keywords(recent, 8) {
         if wants_ru {
             queries.push(format!("{keyword} микс"));
@@ -117,13 +156,22 @@ impl UniqueQueries {
     }
 }
 
-fn add_mood_queries(queries: &mut UniqueQueries, mood: WaveMood, ru: bool, en: bool) {
+fn add_mood_queries(queries: &mut UniqueQueries, mood: WaveMood, ru: bool, en: bool, has_hiphop: bool) {
     let (russian, english): (&[&str], &[&str]) = match mood {
         WaveMood::Calm => (&["спокойная музыка", "чилл"], &["calm music", "chill mix"]),
-        WaveMood::Drive => (
-            &["энергичная музыка", "музыка для тренировки"],
-            &["high energy songs", "workout mix"],
-        ),
+        WaveMood::Drive => {
+            if has_hiphop {
+                (
+                    &["бодрый рэп", "энергичный трэп"],
+                    &["hype rap", "energy rap hits"],
+                )
+            } else {
+                (
+                    &["энергичная музыка", "музыка для тренировки"],
+                    &["high energy songs", "workout mix"],
+                )
+            }
+        }
         WaveMood::Focus => (
             &["музыка для концентрации", "лоуфай для работы"],
             &["focus music", "lofi for work"],
@@ -164,14 +212,7 @@ fn add_time_queries(queries: &mut UniqueQueries, time: WaveTimeOfDay, ru: bool, 
     }
 }
 
-fn add_corpus_queries(queries: &mut UniqueQueries, recent: &[TrackRef], ru: bool, en: bool) {
-    let corpus = normalize_search_text(
-        &recent
-            .iter()
-            .flat_map(|track| [track.title.clone(), track.display_artist()])
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
+fn add_corpus_queries(queries: &mut UniqueQueries, corpus: &str, ru: bool, en: bool) {
     let groups: &[(&[&str], &str, &str)] = &[
         (
             &["груст", "печал", "sad", "cry"],
@@ -189,7 +230,7 @@ fn add_corpus_queries(queries: &mut UniqueQueries, recent: &[TrackRef], ru: bool
             "club mix",
         ),
         (&["рок", "rock", "metal"], "рок", "rock"),
-        (&["рэп", "rap", "hiphop", "hip-hop"], "рэп", "rap"),
+        (&["рэп", "rap", "hiphop", "hip-hop", "трэп", "trap"], "рэп", "rap"),
         (&["фонк", "phonk"], "фонк", "phonk"),
     ];
     for (markers, russian, english) in groups {

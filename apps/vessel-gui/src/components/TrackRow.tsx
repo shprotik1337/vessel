@@ -1,19 +1,21 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
+import { createPortal } from "react-dom";
 
 import { useApp } from "../store";
 import {
   formatDuration,
   artistLabel,
   filterValidArtists,
-  providerLabel,
   isFavorite,
   trackKey,
   canPlay,
   resolveArtworkUrl,
+  providerLabel,
 } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import { Artwork } from "./Artwork";
+import { PlatformIcon } from "./PlatformIcon";
 import * as api from "../api/commands";
 
 interface TrackRowProps {
@@ -28,7 +30,7 @@ interface TrackRowProps {
   addedLabel?: string;
 }
 
-export function TrackRow({
+function TrackRowComponent({
   track,
   index,
   nowKey,
@@ -39,14 +41,14 @@ export function TrackRow({
   showAdded,
   addedLabel,
 }: TrackRowProps) {
-  const { state, showToast, refresh, lang } = useApp();
+  const { state, favoriteKeysSet, showToast, refresh, lang } = useApp();
   const key = trackKey(track);
   const isCurrent = nowKey != null && nowKey === key;
   const isLive =
     isCurrent &&
     (state?.player.status === "playing" || state?.player.status === "buffering");
   const playing = isLive;
-  const fav = state ? isFavorite(state.library, track) : false;
+  const fav = favoriteKeysSet ? favoriteKeysSet.has(key) : (state ? isFavorite(state.library, track) : false);
   const playable = canPlay(track.capability);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [plPicker, setPlPicker] = useState(false);
@@ -160,21 +162,26 @@ export function TrackRow({
 
   const openMenu = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
-    setMenu({ x: rect.right + 4, y: rect.top });
+    const x = Math.min(rect.right + 4, window.innerWidth - 220);
+    const y = Math.min(rect.top, window.innerHeight - 260);
+    setMenu({ x: Math.max(10, x), y: Math.max(10, y) });
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY });
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 260);
+    setMenu({ x: Math.max(10, x), y: Math.max(10, y) });
   };
 
   const menuStyle: React.CSSProperties = {
     position: "fixed",
-    left: menu ? Math.min(menu.x, window.innerWidth - 220) : 0,
-    top: menu ? Math.min(menu.y, window.innerHeight - 200) : 0,
-    zIndex: 120,
+    left: menu ? menu.x : 0,
+    top: menu ? menu.y : 0,
+    zIndex: 99999,
   };
 
   return (
@@ -196,10 +203,11 @@ export function TrackRow({
             <span className="t-num">{index + 1}</span>
           )}
         </span>
-        <Artwork
+        <div className="t-art-wrap">
+          <Artwork
             url={track.artwork_url}
             alt={track.title}
-            size={40}
+            size={44}
             seed={track.id.length}
             className="t-art"
             onPlayClick={async () => {
@@ -211,6 +219,7 @@ export function TrackRow({
             }}
             isPlaying={playing}
           />
+        </div>
         <div className="c-title">
           <span className="ttl">{track.title}</span>
           <span
@@ -241,17 +250,18 @@ export function TrackRow({
             })()}
           </span>
         </div>
-        {showAlbum ? <span className="c-album">—</span> : <span />}
+        {showAlbum && <span className="c-album">—</span>}
+        <span className="c-platform" title={providerLabel(track.provider)}>
+          <span className="platform-icon-wrap">
+            <PlatformIcon kind={track.provider as any} size={15} />
+          </span>
+          <span className="platform-name">{providerLabel(track.provider)}</span>
+        </span>
         <span className="c-src">
-          {!playable ? (
-            <span className="badge-unav">{t(lang, "trackrow.unavailable")}</span>
-          ) : (
-            <span className="src">{providerLabel(track.provider)}</span>
-          )}
           <span className="row-actions">
             <button
               type="button"
-              className={`heart ${fav ? "active" : ""}`}
+              className={`row-act-btn heart ${fav ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
                 void handleFav();
@@ -259,11 +269,11 @@ export function TrackRow({
               title={t(lang, "trackrow.favorite")}
               aria-label="Like"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill={fav ? "#ff4060" : "none"} stroke={fav ? "#ff4060" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>
             </button>
             <button
               type="button"
-              className="plus-btn"
+              className="row-act-btn plus-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 setPlPicker(true);
@@ -271,18 +281,28 @@ export function TrackRow({
               title={t(lang, "trackrow.addToPlaylist")}
               aria-label="Add to playlist"
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             </button>
-            <i onClick={openMenu} title={t(lang, "trackrow.more")}>
-              ⋯
-            </i>
+            <button
+              type="button"
+              className="row-act-btn more-btn"
+              onClick={openMenu}
+              title={t(lang, "trackrow.more")}
+              aria-label="More options"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="19" cy="12" r="2" />
+              </svg>
+            </button>
           </span>
         </span>
-        {showAdded ? <span className="c-added">{addedLabel ?? ""}</span> : <span />}
+        {showAdded && <span className="c-added">{addedLabel ?? ""}</span>}
         <span className="c-time">{formatDuration(track.duration_ms)}</span>
       </div>
 
-      {menu && (
+      {menu && createPortal(
         <div ref={menuRef} className="ctx show" style={menuStyle}>
           <div className="ctx-head">{track.title}</div>
           <div className="ctx-item" onClick={handlePlayNext}>{t(lang, "trackrow.playNext")}</div>
@@ -308,10 +328,11 @@ export function TrackRow({
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
-      {plPicker && (
+      {plPicker && createPortal(
         <div className="ov show" onMouseDown={(e) => e.stopPropagation()}>
           <div
             ref={pickerRef}
@@ -358,8 +379,11 @@ export function TrackRow({
               ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
 }
+
+export const TrackRow = memo(TrackRowComponent);

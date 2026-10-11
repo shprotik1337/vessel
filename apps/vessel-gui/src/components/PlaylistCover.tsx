@@ -7,20 +7,24 @@ interface PlaylistCoverProps {
   tracks: TrackRef[];
   coverUrl?: string | null;
   size?: number;
+  borderRadius?: number;
   className?: string;
   border?: boolean;
   onPlayClick?: () => void;
   isPlaying?: boolean;
+  style?: React.CSSProperties;
 }
 
 export function PlaylistCover({
   tracks,
   coverUrl,
   size,
+  borderRadius,
   className,
   border = true,
   onPlayClick,
   isPlaying = false,
+  style: customStyle,
 }: PlaylistCoverProps) {
   const [hover, setHover] = useState(false);
   const first = tracks.slice(0, 4);
@@ -28,7 +32,7 @@ export function PlaylistCover({
   const style: React.CSSProperties = {
     width: size ?? "100%",
     height: size ?? "100%",
-    borderRadius: 6,
+    borderRadius: borderRadius ?? 6,
     overflow: "hidden",
     display: "flex",
     flexWrap: "wrap",
@@ -36,6 +40,7 @@ export function PlaylistCover({
     position: "relative",
     ...(border ? { border: "1px solid var(--border2)" } : {}),
     background: "var(--elev)",
+    ...customStyle,
   };
 
   const cellSize = size ? size / 2 : "50%";

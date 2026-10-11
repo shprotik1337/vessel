@@ -1,13 +1,16 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { useApp } from "../store";
+import { useApp, usePlaybackProgress } from "../store";
+import { useCustomization } from "../customization";
 import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
+import { PlatformIcon } from "./PlatformIcon";
+import { IconSparkle } from "./Icons";
 import * as api from "../api/commands";
 import { fetchLyrics, type LyricsData } from "../lib/lyrics";
 
 const CLOSE_SVG = (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="18" y1="6" x2="6" y2="18" />
     <line x1="6" y1="6" x2="18" y2="18" />
   </svg>
@@ -79,13 +82,53 @@ const MUTE_SVG = (
 );
 
 export function FullscreenPlayer() {
-  const { state, refresh, showToast, navigateTo, lang, fullscreenOpen, setFullscreenOpen } = useApp();
+  const { state, refresh, showToast, navigateTo, lang, fullscreenOpen, setFullscreenOpen, smartShuffle, cycleShuffleMode, playNextTrack } = useApp();
+  const progress = usePlaybackProgress();
+  const { config, setFullscreenMode, setFullscreenFollowTrack } = useCustomization();
 
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
   const [loadingLyrics, setLoadingLyrics] = useState(false);
   const [userScrolled, setUserScrolled] = useState(false);
   const [scrolledTop, setScrolledTop] = useState(false);
   const userScrollTimeoutRef = useRef<number | null>(null);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const [isRendered, setIsRendered] = useState(fullscreenOpen);
+  const [isClosing, setIsClosing] = useState(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (fullscreenOpen) {
+      setIsRendered(true);
+      setIsClosing(false);
+    } else if (isRendered && !isClosing) {
+      setIsClosing(true);
+    }
+  }, [fullscreenOpen, isRendered, isClosing]);
+
+  const handleAnimationEnd = (e: React.AnimationEvent) => {
+    if (e.target === overlayRef.current && isClosing) {
+      setIsRendered(false);
+      setIsClosing(false);
+    }
+  };
+
+  const fullscreenMode = config.player?.fullscreenMode || "both";
+  const followTrack = config.player?.fullscreenFollowTrack !== false;
+  const lyricsPosition = config.player?.fullscreenLyricsPosition || "right";
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", onMouseDown);
+    return () => window.removeEventListener("mousedown", onMouseDown);
+  }, [menuOpen]);
 
   const activeLineRef = useRef<HTMLDivElement | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -104,28 +147,29 @@ export function FullscreenPlayer() {
   const loadedTrackKeyRef = useRef<string>("");
 
   // Real-time interpolated position for super-smooth lyric highlights
-  const [posMs, setPosMs] = useState(player?.position_ms ?? 0);
-  const syncRef = useRef({ pos: player?.position_ms ?? 0, time: Date.now() });
+  const [posMs, setPosMs] = useState(progress.position_ms || player?.position_ms || 0);
+  const syncRef = useRef({ pos: progress.position_ms || player?.position_ms || 0, time: Date.now() });
 
   useEffect(() => {
-    if (!player) return;
-    syncRef.current = { pos: player.position_ms, time: Date.now() };
-    setPosMs(player.position_ms);
-  }, [player?.position_ms, player?.status]);
+    const cur = progress.position_ms || player?.position_ms || 0;
+    syncRef.current = { pos: cur, time: Date.now() };
+    setPosMs(cur);
+  }, [progress.position_ms, player?.status]);
 
-  // Only interpolate time when ACTUALLY playing (prevents 2-second ghost playback during buffering)
+  const effectiveDuration = progress.duration_ms || player?.duration_ms || track?.duration_ms || 0;
+
   useEffect(() => {
     if (player?.status !== "playing") return;
     const timer = window.setInterval(() => {
       const elapsed = Date.now() - syncRef.current.time;
       const cur = syncRef.current.pos + elapsed;
-      const max = player?.duration_ms || Infinity;
+      const max = effectiveDuration || Infinity;
       setPosMs(Math.min(max, cur));
     }, 80);
     return () => window.clearInterval(timer);
-  }, [player?.status, player?.duration_ms]);
+  }, [player?.status, effectiveDuration]);
 
-  // Fetch lyrics only when track actually changes (not on poll or seek)
+  // Fetch lyrics only when track actually changes
   useEffect(() => {
     if (!track) {
       setLyricsData(null);
@@ -134,7 +178,6 @@ export function FullscreenPlayer() {
       return;
     }
 
-    // If lyrics for this exact track are already loaded or in progress, don't re-trigger
     if (loadedTrackKeyRef.current === currentTrackKey) {
       return;
     }
@@ -184,7 +227,7 @@ export function FullscreenPlayer() {
     }
   }
 
-  // Smooth auto-scroll ONLY within lyrics container, precisely centered with the artwork
+  // Smooth auto-scroll within lyrics container
   const scrollToActive = useCallback(() => {
     const container = lyricsContainerRef.current;
     const line = activeLineRef.current;
@@ -192,7 +235,6 @@ export function FullscreenPlayer() {
       const lineRect = line.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
       const relativeTop = lineRect.top - containerRect.top + container.scrollTop;
-      // Center active line at 40% of container height so it visually centers directly across from album art
       const targetScroll = relativeTop - container.clientHeight * 0.4 + lineRect.height / 2;
       container.scrollTo({
         top: Math.max(0, targetScroll),
@@ -202,11 +244,10 @@ export function FullscreenPlayer() {
   }, []);
 
   useEffect(() => {
-    if (userScrolled) return;
+    if (!followTrack || userScrolled) return;
     scrollToActive();
-  }, [activeIndex, userScrolled, scrollToActive]);
+  }, [activeIndex, userScrolled, followTrack, scrollToActive]);
 
-  // Detect user manual scroll in lyrics box (wheel, touch, or drag — avoids false triggers from programmatic scrollTo)
   const handleUserScrollInteraction = () => {
     setUserScrolled(true);
     if (userScrollTimeoutRef.current) {
@@ -221,7 +262,7 @@ export function FullscreenPlayer() {
     setScrolledTop(e.currentTarget.scrollTop > 8);
   };
 
-  // Keyboard shortcut listener (Esc to close, Space to toggle, etc.)
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -255,23 +296,9 @@ export function FullscreenPlayer() {
   };
 
   const handleNext = async () => {
-    try {
-      await api.next();
-      await refresh();
-    } catch (err) {
-      showToast(String(err), true);
-    }
+    await playNextTrack();
   };
 
-  const handleShuffle = async () => {
-    if (!player) return;
-    try {
-      await api.setShuffle(!player.shuffle);
-      await refresh();
-    } catch (err) {
-      showToast(String(err), true);
-    }
-  };
 
   const handleRepeat = async () => {
     if (!player) return;
@@ -318,11 +345,11 @@ export function FullscreenPlayer() {
       setDragPercent(pct);
       return;
     }
-    if (!player.duration_ms) {
+    if (!effectiveDuration) {
       setDragPercent(null);
       return;
     }
-    const targetMs = Math.round(ratio * player.duration_ms);
+    const targetMs = Math.round(ratio * effectiveDuration);
     try {
       await api.seek(targetMs);
       setPosMs(targetMs);
@@ -392,15 +419,262 @@ export function FullscreenPlayer() {
     }
   };
 
+  const getPlatformColor = (provider?: string): string => {
+    switch (provider?.toLowerCase()) {
+      case "soundcloud":
+        return "#ff5500";
+      case "spotify":
+        return "#1ed760";
+      case "you_tube_music":
+      case "youtube":
+        return "#ff0000";
+      case "deezer":
+        return "#a238ff";
+      case "yandex":
+        return "#fc3f1d";
+      case "vk":
+        return "#0077ff";
+      case "apple_music":
+      case "apple":
+        return "#fc3c44";
+      default:
+        return "var(--accent, #6366f1)";
+    }
+  };
+
   if (!fullscreenOpen || !track || !player) return null;
 
-  const durationMs = player.duration_ms || track.duration_ms || 0;
+  const durationMs = effectiveDuration;
   const rawPercent = durationMs > 0 ? Math.min(100, Math.max(0, (posMs / durationMs) * 100)) : 0;
   const shownPercent = dragPercent ?? rawPercent;
   const shownMs = dragPercent != null && durationMs > 0 ? (dragPercent / 100) * durationMs : posMs;
 
+  const renderPlayerBlock = () => (
+    <div className="fs-left">
+      <div className="fs-artwork-wrap">
+        <Artwork
+          url={track.artwork_url}
+          alt={track.title}
+          className="fs-art"
+          seed={track.id.length}
+        />
+      </div>
+
+      <div className="fs-track-info">
+        <div className="fs-platform-row" style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+          <PlatformIcon kind={track.provider as any} size={14} />
+          <span style={{
+            color: getPlatformColor(track.provider),
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}>
+            {providerLabel(track.provider)}
+          </span>
+        </div>
+
+        <div className="fs-track-title-row">
+          <div className="fs-track-title" title={track.title}>
+            {track.title}
+          </div>
+          <button
+            className={`fs-heart-btn ${fav ? "active" : ""}`}
+            onClick={handleFav}
+            title={t(lang, "bottom.favorite")}
+            aria-label="Favorite"
+          >
+            {HEART_SVG}
+          </button>
+        </div>
+        <div className="fs-track-artists">
+          {filterValidArtists(track.artists).map((artist, idx, arr) => (
+            <span key={`${artist}-${idx}`}>
+              <span
+                className="fs-artist-link"
+                onClick={() => {
+                  setFullscreenOpen(false);
+                  navigateTo("artist", { artist, provider: track.provider });
+                }}
+              >
+                {artist}
+              </span>
+              {idx < arr.length - 1 ? ", " : ""}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Progress Seek Bar */}
+      <div className="fs-progress-wrap">
+        <div
+          ref={seekBarRef}
+          className="fs-seek-bar"
+          onPointerDown={onSeekPointerDown}
+        >
+          <div className="fill" style={{ width: `${shownPercent}%` }} />
+          <div className="knob" style={{ left: `${shownPercent}%` }} />
+        </div>
+        <div className="fs-time-row">
+          <span>{formatTime(shownMs)}</span>
+          <span>{formatTime(durationMs)}</span>
+        </div>
+      </div>
+
+      {/* Playback Controls */}
+      <div className="fs-controls">
+        <button
+          className={`fs-ctrl-btn smart-shuffle ${smartShuffle ? "active" : player.shuffle ? "active" : "muted"}`}
+          style={smartShuffle ? { color: "#1db954" } : undefined}
+          onClick={() => void cycleShuffleMode()}
+          title={
+            smartShuffle
+              ? (lang === "ru" ? "Умное перемешивание (включено)" : "Smart Shuffle (On)")
+              : player.shuffle
+              ? (lang === "ru" ? "Перемешивание (нажмите для Умного)" : "Shuffle (Click for Smart)")
+              : t(lang, "bottom.shuffle")
+          }
+          aria-label="Shuffle"
+        >
+          {SHUFFLE_SVG}
+          {smartShuffle && <span className="fs-smart-sparkle"><IconSparkle size={12} /></span>}
+        </button>
+        <button
+          className="fs-ctrl-btn"
+          onClick={handlePrev}
+          title={t(lang, "bottom.previous")}
+          aria-label="Previous"
+        >
+          {PREV_SVG}
+        </button>
+        <button
+          className="fs-play-btn"
+          onClick={handleToggle}
+          title={t(lang, "bottom.playPause")}
+          aria-label={playing ? "Pause" : "Play"}
+        >
+          {playing ? PAUSE_SVG : PLAY_SVG}
+        </button>
+        <button
+          className="fs-ctrl-btn"
+          onClick={handleNext}
+          title={t(lang, "bottom.next")}
+          aria-label="Next"
+        >
+          {NEXT_SVG}
+        </button>
+        <button
+          className={`fs-ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
+          onClick={handleRepeat}
+          title={t(lang, "bottom.repeat")}
+          aria-label="Repeat"
+        >
+          {REPEAT_SVG}
+          {player.repeat === "one" && <span className="fs-rep-one">1</span>}
+        </button>
+      </div>
+
+      {/* Volume Control */}
+      <div className="fs-vol-wrap">
+        <button
+          className="fs-vol-btn"
+          onClick={handleMute}
+          title={muted ? "Включить звук" : "Выключить звук"}
+          aria-label={muted ? "Unmute" : "Mute"}
+        >
+          {muted ? MUTE_SVG : VOLUME_SVG}
+        </button>
+        <div
+          ref={volBarRef}
+          className="fs-vol-bar"
+          onPointerDown={onVolPointerDown}
+        >
+          <div className="fill" style={{ width: `${player.volume_percent}%` }} />
+          <div className="knob" style={{ left: `${player.volume_percent}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderLyricsBlock = () => (
+    <div className="fs-right">
+      <div className="fs-lyrics-header">
+        <span className="fs-lyrics-title">{t(lang, "fullscreen.lyrics")}</span>
+        {userScrolled && lyricsData?.synced && (
+          <button
+            className="fs-resume-scroll-btn"
+            onClick={() => {
+              setUserScrolled(false);
+              scrollToActive();
+            }}
+          >
+            К текущей строке
+          </button>
+        )}
+      </div>
+
+      <div
+        ref={lyricsContainerRef}
+        className={`fs-lyrics-container ${scrolledTop ? "scrolled-top" : ""}`}
+        onScroll={handleContainerScroll}
+        onWheel={handleUserScrollInteraction}
+        onTouchMove={handleUserScrollInteraction}
+        onPointerDown={handleUserScrollInteraction}
+      >
+        {loadingLyrics ? (
+          <div className="fs-lyrics-status">
+            <div className="fs-lyrics-spinner" />
+            <p>{t(lang, "fullscreen.searchingLyrics")}</p>
+          </div>
+        ) : lyricsData?.instrumental ? (
+          <div className="fs-lyrics-status">
+            <div className="fs-lyrics-icon">♪</div>
+            <p className="fs-status-main">{t(lang, "fullscreen.instrumental")}</p>
+            <p className="fs-status-sub">{lyricsData.plain}</p>
+          </div>
+        ) : lyricsData?.lines && lyricsData.lines.length > 0 ? (
+          <div className="fs-lyrics-list">
+            {lyricsData.lines.map((line, idx) => {
+              const isActive = lyricsData.synced && idx === activeIndex;
+              const isPast = lyricsData.synced && idx < activeIndex;
+              return (
+                <div
+                  key={`${line.time}-${idx}`}
+                  ref={isActive ? activeLineRef : null}
+                  className={`fs-lyric-line ${isActive ? "active" : ""} ${isPast ? "past" : ""}`}
+                  onClick={() => {
+                    if (lyricsData.synced) {
+                      void handleSeekToLyric(line.time);
+                    }
+                  }}
+                  title={lyricsData.synced ? `Перейти к ${formatTime(line.time * 1000)}` : undefined}
+                >
+                  {line.text}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="fs-lyrics-status">
+            <div className="fs-lyrics-icon">♪</div>
+            <p className="fs-status-main">{t(lang, "fullscreen.noLyrics")}</p>
+            <p className="fs-status-sub">
+              Для трека «{track.title}» текст пока отсутствует в базе LRCLIB
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  if (!isRendered) return null;
+
   return (
-    <div className="fs-overlay">
+    <div
+      ref={overlayRef}
+      className={`fs-overlay ${isClosing ? "is-closing" : ""}`}
+      onAnimationEnd={handleAnimationEnd}
+    >
       {/* Dynamic blurred ambient background from artwork */}
       <div
         className="fs-backdrop"
@@ -412,215 +686,95 @@ export function FullscreenPlayer() {
 
       {/* Top Header Bar */}
       <div className="fs-top-bar">
-        <div className="fs-top-badge">
-          <span>{providerLabel(track.provider)}</span>
+        <div style={{ flex: 1 }} />
+        <div className="fs-top-actions">
+          {/* Options Button [...] (Screenshot 3) */}
+          <div className="fs-options-wrap" ref={menuRef} style={{ position: "relative" }}>
+            <button
+              className={`fs-btn-dots ${menuOpen ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((prev) => !prev);
+              }}
+              title="Настройки показа"
+              aria-label="Options"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="2.2" />
+                <circle cx="12" cy="12" r="2.2" />
+                <circle cx="19" cy="12" r="2.2" />
+              </svg>
+            </button>
+
+            {menuOpen && (
+              <div
+                className="fs-options-popover"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="fs-popover-row">
+                  <span>Следовать за треком</span>
+                  <span
+                    className={`fs-follow-tag ${followTrack ? "on" : "off"}`}
+                    onClick={() => setFullscreenFollowTrack(!followTrack)}
+                  >
+                    {followTrack ? "Вкл" : "Выкл"}
+                  </span>
+                </div>
+                <div className="fs-popover-divider" />
+                <div className="fs-popover-title">Режим показа</div>
+                <div className="fs-popover-modes">
+                  <button
+                    className={`fs-mode-pill ${fullscreenMode === "both" ? "active" : ""}`}
+                    onClick={() => { setFullscreenMode("both"); setMenuOpen(false); }}
+                  >
+                    Текст и обложка
+                  </button>
+                  <button
+                    className={`fs-mode-pill ${fullscreenMode === "lyrics" ? "active" : ""}`}
+                    onClick={() => { setFullscreenMode("lyrics"); setMenuOpen(false); }}
+                  >
+                    Только текст
+                  </button>
+                  <button
+                    className={`fs-mode-pill ${fullscreenMode === "cover" ? "active" : ""}`}
+                    onClick={() => { setFullscreenMode("cover"); setMenuOpen(false); }}
+                  >
+                    Только обложка
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            className="fs-close-btn"
+            onClick={() => setFullscreenOpen(false)}
+            title={t(lang, "fullscreen.close")}
+            aria-label="Close fullscreen"
+          >
+            {CLOSE_SVG}
+          </button>
         </div>
-        <button
-          className="fs-close-btn"
-          onClick={() => setFullscreenOpen(false)}
-          title={t(lang, "fullscreen.close")}
-          aria-label="Close fullscreen"
-        >
-          {CLOSE_SVG}
-        </button>
       </div>
 
-      {/* Main Content Layout */}
-      <div className="fs-container">
-        {/* Left Column: Artwork, Metadata, Controls */}
-        <div className="fs-left">
-          <div className="fs-artwork-wrap">
-            <Artwork
-              url={track.artwork_url}
-              alt={track.title}
-              className="fs-art"
-              seed={track.id.length}
-            />
+      {/* Main Content Layout based on fullscreenMode */}
+      <div className={`fs-container mode-${fullscreenMode} ${lyricsPosition === "left" ? "lyrics-left" : ""}`}>
+        {fullscreenMode === "cover" ? (
+          <div className="fs-cover-centered">
+            {renderPlayerBlock()}
           </div>
-
-          <div className="fs-track-info">
-            <div className="fs-track-title-row">
-              <div className="fs-track-title" title={track.title}>
-                {track.title}
-              </div>
-              <button
-                className={`fs-heart-btn ${fav ? "active" : ""}`}
-                onClick={handleFav}
-                title={t(lang, "bottom.favorite")}
-                aria-label="Favorite"
-              >
-                {HEART_SVG}
-              </button>
-            </div>
-            <div className="fs-track-artists">
-              {filterValidArtists(track.artists).map((artist, idx, arr) => (
-                <span key={`${artist}-${idx}`}>
-                  <span
-                    className="fs-artist-link"
-                    onClick={() => {
-                      setFullscreenOpen(false);
-                      navigateTo("artist", { artist, provider: track.provider });
-                    }}
-                  >
-                    {artist}
-                  </span>
-                  {idx < arr.length - 1 ? ", " : ""}
-                </span>
-              ))}
-            </div>
+        ) : fullscreenMode === "lyrics" ? (
+          <div className="fs-lyrics-centered">
+            {renderLyricsBlock()}
           </div>
-
-          {/* Progress Seek Bar */}
-          <div className="fs-progress-wrap">
-            <div
-              ref={seekBarRef}
-              className="fs-seek-bar"
-              onPointerDown={onSeekPointerDown}
-            >
-              <div className="fill" style={{ width: `${shownPercent}%` }} />
-              <div className="knob" style={{ left: `${shownPercent}%` }} />
-            </div>
-            <div className="fs-time-row">
-              <span>{formatTime(shownMs)}</span>
-              <span>{formatTime(durationMs)}</span>
-            </div>
+        ) : (
+          <div className="fs-split-view">
+            {lyricsPosition === "left" && renderLyricsBlock()}
+            {renderPlayerBlock()}
+            {lyricsPosition === "right" && renderLyricsBlock()}
           </div>
-
-          {/* Playback Controls */}
-          <div className="fs-controls">
-            <button
-              className={`fs-ctrl-btn ${player.shuffle ? "active" : "muted"}`}
-              onClick={handleShuffle}
-              title={t(lang, "bottom.shuffle")}
-              aria-label="Shuffle"
-            >
-              {SHUFFLE_SVG}
-            </button>
-            <button
-              className="fs-ctrl-btn"
-              onClick={handlePrev}
-              title={t(lang, "bottom.previous")}
-              aria-label="Previous"
-            >
-              {PREV_SVG}
-            </button>
-            <button
-              className="fs-play-btn"
-              onClick={handleToggle}
-              title={t(lang, "bottom.playPause")}
-              aria-label={playing ? "Pause" : "Play"}
-            >
-              {playing ? PAUSE_SVG : PLAY_SVG}
-            </button>
-            <button
-              className="fs-ctrl-btn"
-              onClick={handleNext}
-              title={t(lang, "bottom.next")}
-              aria-label="Next"
-            >
-              {NEXT_SVG}
-            </button>
-            <button
-              className={`fs-ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
-              onClick={handleRepeat}
-              title={t(lang, "bottom.repeat")}
-              aria-label="Repeat"
-            >
-              {REPEAT_SVG}
-              {player.repeat === "one" && <span className="fs-rep-one">1</span>}
-            </button>
-          </div>
-
-          {/* Volume Control */}
-          <div className="fs-vol-wrap">
-            <button
-              className="fs-vol-btn"
-              onClick={handleMute}
-              title={muted ? "Включить звук" : "Выключить звук"}
-              aria-label={muted ? "Unmute" : "Mute"}
-            >
-              {muted ? MUTE_SVG : VOLUME_SVG}
-            </button>
-            <div
-              ref={volBarRef}
-              className="fs-vol-bar"
-              onPointerDown={onVolPointerDown}
-            >
-              <div className="fill" style={{ width: `${player.volume_percent}%` }} />
-              <div className="knob" style={{ left: `${player.volume_percent}%` }} />
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Synchronized Karaoke Lyrics */}
-        <div className="fs-right">
-          <div className="fs-lyrics-header">
-            <span className="fs-lyrics-title">{t(lang, "fullscreen.lyrics")}</span>
-            {userScrolled && lyricsData?.synced && (
-              <button
-                className="fs-resume-scroll-btn"
-                onClick={() => {
-                  setUserScrolled(false);
-                  scrollToActive();
-                }}
-              >
-                К текущей строке
-              </button>
-            )}
-          </div>
-
-          <div
-            ref={lyricsContainerRef}
-            className={`fs-lyrics-container ${scrolledTop ? "scrolled-top" : ""}`}
-            onScroll={handleContainerScroll}
-            onWheel={handleUserScrollInteraction}
-            onTouchMove={handleUserScrollInteraction}
-            onPointerDown={handleUserScrollInteraction}
-          >
-            {loadingLyrics ? (
-              <div className="fs-lyrics-status">
-                <div className="fs-lyrics-spinner" />
-                <p>{t(lang, "fullscreen.searchingLyrics")}</p>
-              </div>
-            ) : lyricsData?.instrumental ? (
-              <div className="fs-lyrics-status">
-                <div className="fs-lyrics-icon">♪</div>
-                <p className="fs-status-main">{t(lang, "fullscreen.instrumental")}</p>
-                <p className="fs-status-sub">{lyricsData.plain}</p>
-              </div>
-            ) : lyricsData?.lines && lyricsData.lines.length > 0 ? (
-              <div className="fs-lyrics-list">
-                {lyricsData.lines.map((line, idx) => {
-                  const isActive = lyricsData.synced && idx === activeIndex;
-                  const isPast = lyricsData.synced && idx < activeIndex;
-                  return (
-                    <div
-                      key={`${line.time}-${idx}`}
-                      ref={isActive ? activeLineRef : null}
-                      className={`fs-lyric-line ${isActive ? "active" : ""} ${isPast ? "past" : ""}`}
-                      onClick={() => {
-                        if (lyricsData.synced) {
-                          void handleSeekToLyric(line.time);
-                        }
-                      }}
-                      title={lyricsData.synced ? `Перейти к ${formatTime(line.time * 1000)}` : undefined}
-                    >
-                      {line.text}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="fs-lyrics-status">
-                <div className="fs-lyrics-icon">♪</div>
-                <p className="fs-status-main">{t(lang, "fullscreen.noLyrics")}</p>
-                <p className="fs-status-sub">
-                  Для трека «{track.title}» текст пока отсутствует в базе LRCLIB
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

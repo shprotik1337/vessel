@@ -20,7 +20,7 @@ use cbc::{
 use reqwest::{
     Client,
     cookie::Jar,
-    header::{ACCEPT, ACCEPT_LANGUAGE, CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT},
+    header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderValue, USER_AGENT},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -40,7 +40,7 @@ const GATEWAY: &str = "https://www.deezer.com/ajax/gw-light.php";
 const MEDIA: &str = "https://media.deezer.com/v1/get_url";
 const COOKIE_URL: &str = "https://www.deezer.com/";
 const COOKIE_URL_HTTP: &str = "http://www.deezer.com/";
-const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36";
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
 const LEGACY_AES_KEY: &[u8; 16] = b"jo6aey6haid2Teih";
 const BF_SECRET: &[u8; 16] = b"g4el58wc0zvf9na1";
 const BF_IV: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -52,33 +52,37 @@ pub struct DeezerProvider {
 
 impl DeezerProvider {
     pub fn new(value: impl AsRef<str>) -> Result<Self> {
-        let auth_token = normalize_auth_token(value.as_ref());
+        Self::with_optional_arl(Some(value.as_ref()))
+    }
+
+    pub fn with_optional_arl(value: Option<&str>) -> Result<Self> {
+        let auth_token = value.map(normalize_auth_token).unwrap_or_default();
         let arl = normalize_arl(&auth_token);
-        if arl.is_empty() {
-            bail!("для Deezer нужен cookie arl")
-        }
         let jar = Arc::new(Jar::default());
-        let https = Url::parse(COOKIE_URL)?;
-        let http_url = Url::parse(COOKIE_URL_HTTP)?;
-        let pairs = parse_cookie_pairs(&auth_token);
-        if pairs.is_empty() {
-            for url in [&https, &http_url] {
-                jar.add_cookie_str(
-                    &format!("arl={arl}; Domain=.deezer.com; Path=/; HttpOnly"),
-                    url,
-                );
-            }
-        } else {
-            for (name, cookie_value) in pairs {
+        if !arl.is_empty() {
+            let https = Url::parse(COOKIE_URL)?;
+            let http_url = Url::parse(COOKIE_URL_HTTP)?;
+            let pairs = parse_cookie_pairs(&auth_token);
+            if pairs.is_empty() {
                 for url in [&https, &http_url] {
                     jar.add_cookie_str(
-                        &format!("{name}={cookie_value}; Domain=.deezer.com; Path=/; HttpOnly"),
+                        &format!("arl={arl}; Domain=.deezer.com; Path=/; HttpOnly"),
                         url,
                     );
                 }
+            } else {
+                for (name, cookie_value) in pairs {
+                    for url in [&https, &http_url] {
+                        jar.add_cookie_str(
+                            &format!("{name}={cookie_value}; Domain=.deezer.com; Path=/; HttpOnly"),
+                            url,
+                        );
+                    }
+                }
             }
         }
-        let http = Client::builder()            .cookie_provider(jar)
+        let http = Client::builder()
+            .cookie_provider(jar)
             .user_agent(BROWSER_UA)
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(30))
@@ -88,19 +92,42 @@ impl DeezerProvider {
     }
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: Url) -> Result<T> {
-        let response = self
-            .http
-            .get(url)
-            .headers(deezer_headers())
-            .send()
-            .await
-            .context("Deezer не ответил")?
-            .error_for_status()
-            .context("Deezer отклонил запрос")?;
-        response
-            .json()
-            .await
-            .context("Deezer вернул непонятный JSON")
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let response = self
+                .http
+                .get(url.clone())
+                .headers(deezer_headers())
+                .send()
+                .await
+                .context("Deezer не ответил")?;
+            let status = response.status();
+            if (status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS) && attempts <= 4 {
+                let delay = std::time::Duration::from_millis(500 * (1 << attempts));
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            let response = response.error_for_status().context("Deezer отклонил запрос")?;
+            let text = response.text().await.context("не удалось прочитать ответ Deezer")?;
+
+            if text.starts_with("{\"error\"") {
+                if let Ok(err_val) = serde_json::from_str::<Value>(&text) {
+                    if let Some(err_obj) = err_val.get("error").and_then(Value::as_object) {
+                        let code = err_obj.get("code").and_then(Value::as_u64).unwrap_or(0);
+                        if (code == 4 || code == 429) && attempts <= 4 {
+                            let delay = std::time::Duration::from_millis(500 * (1 << attempts));
+                            tokio::time::sleep(delay).await;
+                            continue;
+                        }
+                        let msg = err_obj.get("message").and_then(Value::as_str).unwrap_or("неизвестная ошибка");
+                        bail!("Deezer API error ({code}): {msg}");
+                    }
+                }
+            }
+
+            return serde_json::from_str::<T>(&text).context("Deezer вернул непонятный JSON");
+        }
     }
 
     async fn playlist_page(&self, url: Url) -> Result<ApiPage<ApiTrack>> {
@@ -114,25 +141,36 @@ impl DeezerProvider {
             .append_pair("api_token", if token.is_empty() { "null" } else { token })
             .append_pair("input", "3")
             .append_pair("method", method);
-        let payload = self
-            .http
-            .post(url)
-            .headers(deezer_headers())
-            .json(&params)
-            .send()
-            .await
-            .context("Deezer gateway не ответил")?
-            .error_for_status()
-            .context("Deezer gateway отклонил запрос")?
-            .json::<Value>()
-            .await
-            .context("Deezer gateway вернул непонятный JSON")?;
-        if payload.get("error").is_some_and(gateway_has_error)
-            && !gateway_has_invalid_token(&payload)
-        {
-            bail!("Deezer gateway: {}", payload["error"])
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let response = self
+                .http
+                .post(url.clone())
+                .headers(deezer_headers())
+                .json(&params)
+                .send()
+                .await
+                .context("Deezer gateway не ответил")?;
+            let status = response.status();
+            if (status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS) && attempts <= 3 {
+                let delay = std::time::Duration::from_millis(400 * (1 << attempts));
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            let payload = response
+                .error_for_status()
+                .context("Deezer gateway отклонил запрос")?
+                .json::<Value>()
+                .await
+                .context("Deezer gateway вернул непонятный JSON")?;
+            if payload.get("error").is_some_and(gateway_has_error)
+                && !gateway_has_invalid_token(&payload)
+            {
+                bail!("Deezer gateway: {}", payload["error"])
+            }
+            return Ok(payload);
         }
-        Ok(payload)
     }
 
     async fn prepare_full_track(&self, track_id: &str) -> Result<PathBuf> {
@@ -666,9 +704,8 @@ fn parse_cookie_pairs(value: &str) -> Vec<(String, String)> {
 fn deezer_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static(BROWSER_UA));
-    headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
-    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(ACCEPT, HeaderValue::from_static("application/json, text/plain, */*"));
+    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9,ru;q=0.8"));
     headers
 }
 
@@ -881,6 +918,7 @@ fn map_track(track: ApiTrack) -> Option<TrackRef> {
         explicit: track.explicit_lyrics.unwrap_or(false),
         drm: true,
         isrc: track.isrc.filter(|value| !value.trim().is_empty()),
+        origin: crate::model::TrackOrigin::Original,
     })
 }
 
@@ -941,6 +979,7 @@ fn map_favorite_song(raw: &serde_json::Value) -> Option<TrackRef> {
         explicit: false,
         drm: true,
         isrc: raw_value(raw, "ISRC").pipe_option_string(),
+        origin: crate::model::TrackOrigin::Original,
     })
 }
 
@@ -1134,7 +1173,10 @@ mod tests {
     #[test]
     fn pc_gateway_headers_use_browser_identity() {
         let headers = deezer_headers();
-        assert_eq!(headers.get(reqwest::header::ACCEPT).unwrap(), "*/*");
+        assert_eq!(
+            headers.get(reqwest::header::ACCEPT).unwrap(),
+            "application/json, text/plain, */*"
+        );
         assert!(
             headers
                 .get(USER_AGENT)

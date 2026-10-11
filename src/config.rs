@@ -63,6 +63,11 @@ pub struct HotkeyBindings {
     pub volume_down: String,
 }
 
+pub const OFFICIAL_SERVER_ID: &str = "official";
+pub const OFFICIAL_SERVER_NAME: &str = "Vessel Server";
+pub const OFFICIAL_SERVER_URL: &str = "https://95.85.253.133.sslip.io";
+pub const OFFICIAL_SERVER_TOKEN: &str = "vessel-95-k7f2d9";
+
 /// Экземпляр Vessel Server (не тип! тип всегда Vessel Server, это конфиг
 /// подключения): id — стабильный ключ в provider_routing и в SecretStore
 /// (`vessel-server:<id>`), url — базовый адрес API.
@@ -142,16 +147,26 @@ pub struct AppConfig {
     pub discord_rpc: bool,
     #[serde(default)]
     pub discord_rpc_client_id: Option<String>,
+    /// Учитывать треки из плейлистов в рекомендациях и персональных миксах
+    #[serde(default = "default_include_playlists_in_recommendations")]
+    pub include_playlists_in_recommendations: bool,
+    /// Список ID плейлистов, исключённых из анализа музыкального вкуса
+    #[serde(default)]
+    pub excluded_recommendation_playlist_ids: Vec<String>,
 }
 
 fn default_discord_rpc() -> bool {
     true
 }
 
+fn default_include_playlists_in_recommendations() -> bool {
+    true
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            theme: "cyan".to_string(),
+            theme: "amoled".to_string(),
             language: "ru".to_string(),
             audio_output: None,
             volume_percent: 75,
@@ -179,10 +194,23 @@ impl Default for AppConfig {
             recommendation_providers: None,
             youtube_potoken_provider: None,
             spotify_playback_source: None,
-            vessel_servers: Vec::new(),
-            provider_routing: std::collections::BTreeMap::new(),
+            vessel_servers: vec![VesselServerConfig {
+                id: OFFICIAL_SERVER_ID.to_string(),
+                name: OFFICIAL_SERVER_NAME.to_string(),
+                url: OFFICIAL_SERVER_URL.to_string(),
+            }],
+            provider_routing: {
+                let mut map = std::collections::BTreeMap::new();
+                map.insert("soundcloud".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
+                map.insert("deezer".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
+                map.insert("spotify".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
+                map.insert("youtube_music".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
+                map
+            },
             discord_rpc: true,
             discord_rpc_client_id: None,
+            include_playlists_in_recommendations: true,
+            excluded_recommendation_playlist_ids: Vec::new(),
         }
     }
 }
@@ -215,6 +243,25 @@ impl AppConfig {
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
         self.history_limit = self.history_limit.clamp(500, 10_000);
+
+        // Всегда гарантируем наличие и актуальный адрес официального сервера
+        if let Some(official) = self.vessel_servers.iter_mut().find(|s| s.id == OFFICIAL_SERVER_ID) {
+            official.url = OFFICIAL_SERVER_URL.to_string();
+            official.name = OFFICIAL_SERVER_NAME.to_string();
+        } else {
+            self.vessel_servers.push(VesselServerConfig {
+                id: OFFICIAL_SERVER_ID.to_string(),
+                name: OFFICIAL_SERVER_NAME.to_string(),
+                url: OFFICIAL_SERVER_URL.to_string(),
+            });
+        }
+        self.vessel_servers.retain(|s| s.id != "4ec6d9b3e921694f");
+        // Миграция старых хэшей официального сервера на единый official ID
+        for target in self.provider_routing.values_mut() {
+            if target.contains("4ec6d9b3e921694f") {
+                *target = format!("server:{OFFICIAL_SERVER_ID}");
+            }
+        }
         self
     }
 }

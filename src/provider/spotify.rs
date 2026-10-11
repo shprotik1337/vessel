@@ -36,9 +36,9 @@ const SEARCH_TRACKS_HASH: &str = "5307479c18ff24aa1bd70691fdb0e77734bede8cce3bd7
 const SEARCH_ARTISTS_HASH: &str = "0e6f9020a66fe15b93b3bb5c7e6484d1d8cb3775963996eaede72bac4d97e909";
 const SEARCH_ALBUMS_HASH: &str = "a71d2c993fc98e1c880093738a55a38b57e69cc4ce5a8c113e6c5920f9513ee2";
 const SEARCH_PLAYLISTS_HASH: &str = "fc3a690182167dbad20ac7a03f842b97be4e9737710600874cb903f30112ad58";
-const GET_ALBUM_HASH: &str = "8f4cd5650f9d80349dbe68684057476d8bf27a5c51687b2b1686099ab5631589";
-const FETCH_PLAYLIST_HASH: &str = "19ff1327c29e99c208c86d7a9d8f1929cfdf3d3202a0ff4253c821f1901aa94d";
-const ARTIST_OVERVIEW_HASH: &str = "4bc52527bb77a5f8bbb9afe491e9aa725698d29ab73bff58d49169ee29800167";
+const GET_ALBUM_HASH: &str = "6a74b456cd1735c9193d9e8ec8cc5184cad7ce13572210315229db3975964361";
+const FETCH_PLAYLIST_HASH: &str = "243c0ba2736f16da721e3a227004bbcdb8df6c846f198bd478172e00aa1faf42";
+const ARTIST_OVERVIEW_HASH: &str = "9f8134ef565e78621f1e1793555bd6633c5ac144ae0f89604ed3ae3f80b3c8e6";
 const ARTIST_DISCOGRAPHY_HASH: &str = "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0";
 
 pub struct SpotifyProvider {
@@ -290,27 +290,40 @@ impl SpotifyProvider {
                 "persistedQuery": { "version": 1, "sha256Hash": hash }
             }
         });
-        let response = self
-            .http
-            .post(PATHFINDER)
-            .headers(browser_headers())
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .header("client-token", &client_token)
-            .json(&payload)
-            .send()
-            .await
-            .context("Pathfinder не ответил")?;
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        if !status.is_success() {
-            bail!("Pathfinder отклонил запрос ({status}): {text}")
+
+        let mut attempts = 0usize;
+        loop {
+            attempts += 1;
+            let response = self
+                .http
+                .post(PATHFINDER)
+                .headers(browser_headers())
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .header("client-token", &client_token)
+                .json(&payload)
+                .send()
+                .await
+                .context("Pathfinder не ответил")?;
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS && attempts <= 3 {
+                let delay_ms = 600 * (attempts as u64);
+                crate::dlog!("[spotify] Pathfinder 429 received for {operation}, retrying in {delay_ms}ms (attempt {attempts}/3)...");
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                continue;
+            }
+
+            if !status.is_success() {
+                bail!("Pathfinder отклонил запрос ({status}): {text}")
+            }
+            let value: Value = serde_json::from_str(&text)
+                .with_context(|| format!("Pathfinder вернул непонятный JSON: {text}"))?;
+            if let Some(errors) = value.get("errors") {
+                bail!("Pathfinder: {errors}")
+            }
+            return Ok(value);
         }
-        let value: Value = serde_json::from_str(&text)
-            .with_context(|| format!("Pathfinder вернул непонятный JSON: {text}"))?;
-        if let Some(errors) = value.get("errors") {
-            bail!("Pathfinder: {errors}")
-        }
-        Ok(value)
     }
 }
 
@@ -520,29 +533,68 @@ let popular_tracks: Vec<TrackRef> = artist
         let mut seen = std::collections::HashSet::new();
         let mut tracks = Vec::new();
 
-        // Релизы из полного discography-all: overview не содержит совместных
-        // альбомов («Kai Angel & 9mice — HEAVY METAL»), а all — содержит.
         let variables = serde_json::json!({
             "uri": format!("spotify:artist:{artist_id}"),
-            "offset": 0,
-            "limit": 50,
+            "locale": "",
         });
-        let Ok(all_value) = self
-            .pathfinder("queryArtistDiscographyAll", ARTIST_DISCOGRAPHY_HASH, variables)
-            .await
-        else {
-            return Ok(tracks);
-        };
-        let all_discography = all_value
-            .pointer("/data/artistUnion/discography")
+        let overview_value = self
+            .pathfinder("queryArtistOverview", ARTIST_OVERVIEW_HASH, variables)
+            .await?;
+
+        let artist_union = overview_value.pointer("/data/artistUnion");
+        if artist_union.is_none() {
+            crate::dlog!("[spotify] queryArtistOverview returned no artistUnion for {artist_id}");
+        }
+        let discography = artist_union
+            .and_then(|a| a.get("discography"))
             .cloned()
             .unwrap_or(Value::Null);
-        let releases = collect_discography_releases(&all_discography);
+
+        // Популярные треки первыми
+        if let Some(top) = discography
+            .get("topTracks")
+            .and_then(|t| t.get("items"))
+            .and_then(Value::as_array)
+        {
+            for wrapper in top {
+                if let Some(t) = wrapper.get("track").and_then(map_pf_track) {
+                    if seen.insert(t.provider_key()) {
+                        tracks.push(t);
+                    }
+                }
+            }
+        }
+
+        let mut releases = collect_discography_releases(&discography);
+
+        // Дополняем дискографию-all, если доступна (совместные релизы)
+        {
+            let discography_vars = serde_json::json!({
+                "uri": format!("spotify:artist:{artist_id}"),
+                "offset": 0,
+                "limit": 50,
+            });
+            if let Ok(all_value) = self
+                .pathfinder("queryArtistDiscographyAll", ARTIST_DISCOGRAPHY_HASH, discography_vars)
+                .await
+            {
+                let all = all_value
+                    .pointer("/data/artistUnion/discography")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                for release in collect_discography_releases(&all) {
+                    if !releases.iter().any(|r| r.id == release.id) {
+                        releases.push(release);
+                    }
+                }
+            }
+        }
+
         if releases.is_empty() {
             return Ok(tracks);
         }
+
         // Вся музыка идёт по свежим релизам: порядок как в карточке артиста
-        let mut releases = releases;
         sort_releases_by_date(&mut releases);
 
         for release in &releases {
@@ -558,6 +610,16 @@ let popular_tracks: Vec<TrackRef> = artist
             {
                 Ok(album_value) => {
                     let album_tracks = extract_album_tracks(&album_value);
+                    if album_tracks.is_empty() {
+                        crate::dlog!(
+                            "[spotify] getAlbum {} returned 0 tracks. Album response keys: {:?}",
+                            release.id,
+                            album_value
+                                .pointer("/data/albumUnion")
+                                .and_then(|u| u.as_object())
+                                .map(|o| o.keys().collect::<Vec<_>>())
+                        );
+                    }
                     for mut track in album_tracks {
                         // Обложку альбома — каждому треку
                         if track.artwork_url.is_none() {
@@ -590,6 +652,7 @@ let popular_tracks: Vec<TrackRef> = artist
             "uri": format!("spotify:playlist:{id}"),
             "offset": 0,
             "limit": 50,
+            "enableWatchFeedEntrypoint": false,
         });
         let value = self
             .pathfinder("fetchPlaylist", FETCH_PLAYLIST_HASH, variables)
@@ -624,6 +687,7 @@ let popular_tracks: Vec<TrackRef> = artist
                 "uri": format!("spotify:playlist:{id}"),
                 "offset": offset,
                 "limit": 50,
+                "enableWatchFeedEntrypoint": false,
             });
             let Ok(next_value) = self
                 .pathfinder("fetchPlaylist", FETCH_PLAYLIST_HASH, variables)
@@ -982,20 +1046,54 @@ fn generate_totp(secret: &[u8], timestamp_ms: i64) -> String {
     format!("{code:06}")
 }
 
-/// Достаёт треки из ответа getAlbum: data.albumUnion.discs.items[].items[].item
+/// Достаёт треки из ответа getAlbum: data.albumUnion.discs/tracks/tracksV2
 fn extract_album_tracks(value: &Value) -> Vec<TrackRef> {
-    // Треки альбома лежат в tracksV2.items[].track (плоский объект:
-    // uri, name, duration.totalMilliseconds, artists.items[].profile.name).
-    // Старый путь discs.items[].items[].item.data больше не наполняется.
     let mut out = Vec::new();
+    // 1. tracksV2.items[].track (основной путь нового GraphQL Pathfinder)
     if let Some(items) = value
         .pointer("/data/albumUnion/tracksV2/items")
         .and_then(Value::as_array)
     {
         for wrapper in items {
             let track = wrapper.get("track").unwrap_or(wrapper);
-            if let Some(t) = map_album_track(track) {
+            if let Some(t) = map_album_track(track).or_else(|| map_pf_track(track)) {
                 out.push(t);
+            }
+        }
+    }
+    // 2. tracks.items (классический Pathfinder)
+    if out.is_empty() {
+        if let Some(items) = value
+            .pointer("/data/albumUnion/tracks/items")
+            .and_then(Value::as_array)
+        {
+            for wrapper in items {
+                let track = wrapper.get("track").unwrap_or(wrapper);
+                if let Some(t) = map_album_track(track).or_else(|| map_pf_track(track)) {
+                    out.push(t);
+                }
+            }
+        }
+    }
+    // 3. discs.items[].items[].item.data (старый путь с дисками)
+    if out.is_empty() {
+        if let Some(discs) = value
+            .pointer("/data/albumUnion/discs/items")
+            .and_then(Value::as_array)
+        {
+            for disc in discs {
+                if let Some(items) = disc.get("items").and_then(Value::as_array) {
+                    for wrapper in items {
+                        let track = wrapper
+                            .pointer("/item/data")
+                            .or_else(|| wrapper.get("item"))
+                            .or_else(|| wrapper.get("track"))
+                            .unwrap_or(wrapper);
+                        if let Some(t) = map_album_track(track).or_else(|| map_pf_track(track)) {
+                            out.push(t);
+                        }
+                    }
+                }
             }
         }
     }
@@ -1048,7 +1146,8 @@ fn map_album_track(track: &Value) -> Option<TrackRef> {
         genres: Vec::new(),
         explicit,
         drm: true,
-            isrc: None,
+        isrc: None,
+        origin: crate::model::TrackOrigin::Original,
     })
 }
 
@@ -1215,6 +1314,7 @@ fn map_pf_track(item: &Value) -> Option<TrackRef> {
         explicit,
         drm: true,
         isrc,
+        origin: crate::model::TrackOrigin::Original,
     })
 }
 
@@ -1312,7 +1412,9 @@ fn extract_pathfinder_albums(value: &Value) -> Vec<CollectionItem> {
                         .and_then(|t| t.get("totalCount"))
                         .and_then(Value::as_u64)
                 })
-                .unwrap_or(0) as usize;
+                .map(|c| c as usize)
+                .filter(|&c| c > 0)
+                .unwrap_or(1);
             let web_url = Url::parse(&format!("{WEB_URL}/album/{id}")).expect("album url");
             Some(CollectionItem {
                 kind: CollectionKind::Album,
@@ -1351,7 +1453,9 @@ fn extract_pathfinder_playlists(value: &Value) -> Vec<CollectionItem> {
                 .get("content")
                 .and_then(|c| c.get("totalCount"))
                 .and_then(Value::as_u64)
-                .unwrap_or(0) as usize;
+                .map(|c| c as usize)
+                .filter(|&c| c > 0)
+                .unwrap_or(1);
             let artwork_url = item
                 .get("images")
                 .and_then(|i| i.get("items"))
@@ -1364,9 +1468,15 @@ fn extract_pathfinder_playlists(value: &Value) -> Vec<CollectionItem> {
                 .and_then(Value::as_str)
                 .and_then(|u| Url::parse(u).ok());
             let subtitle = if owner.is_empty() {
-                format!("{} треков", track_count)
-            } else {
+                if track_count > 1 {
+                    format!("{} треков", track_count)
+                } else {
+                    "Плейлист".to_string()
+                }
+            } else if track_count > 1 {
                 format!("{owner} · {track_count} треков")
+            } else {
+                format!("{owner} · Плейлист")
             };
             let web_url = Url::parse(&format!("{WEB_URL}/playlist/{id}")).expect("playlist url");
             Some(CollectionItem {

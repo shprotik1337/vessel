@@ -17,16 +17,22 @@ pub(super) fn spawn_wave(
     sender: UnboundedSender<RuntimeMessage>,
     generation: u64,
     primary_provider: ProviderKind,
+    include_playlists: bool,
+    excluded_playlist_ids: Vec<String>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let loaded = tokio::task::spawn_blocking(move || {
-            Ok::<_, anyhow::Error>((
-                storage.recent_history(10_000)?,
-                storage.liked_tracks_with_time()?,
-            ))
+            let history = storage.recent_history(10_000)?;
+            let liked = storage.liked_tracks_with_time()?;
+            let playlist_tracks = if include_playlists {
+                crate::recommendation::load_playlist_tracks(&storage, &excluded_playlist_ids)
+            } else {
+                Vec::new()
+            };
+            Ok::<_, anyhow::Error>((history, liked, playlist_tracks))
         })
         .await;
-        let (history, liked) = match loaded {
+        let (history, liked, playlist_tracks) = match loaded {
             Ok(Ok(data)) => data,
             Ok(Err(error)) => {
                 let _ = sender.send(RuntimeMessage::WaveFinished {
@@ -58,6 +64,7 @@ pub(super) fn spawn_wave(
                 },
                 history,
                 liked,
+                playlist_tracks,
                 manual_seeds: Vec::new(),
                 manual_seed_only: false,
                 preview: false,

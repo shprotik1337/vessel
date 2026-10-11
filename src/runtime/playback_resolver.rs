@@ -34,7 +34,7 @@ const SEARCH_LIMIT: usize = 15;
 /// Сколько лучших кандидатов хранить (если первый источник недоступен).
 const MAX_CANDIDATES: usize = 3;
 /// Таймаут поиска в чужом каталоге — LOADING не должен зависать навсегда.
-pub const SEARCH_TIMEOUT: Duration = Duration::from_secs(20);
+pub const SEARCH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// На каком этапе сломался резолвинг — для логов и понятных ошибок.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,11 +129,14 @@ impl PlaybackSourceKind {
     }
 }
 
+struct MatchCacheInner {
+    map: HashMap<String, Vec<TrackRef>>,
+    last_cleanup: Instant,
+}
+
 /// Кэш матчей: {провайдер}:{id} → список чужих TrackRef (лучший первым).
 struct MatchCache {
-    map: Mutex<HashMap<String, Vec<TrackRef>>>,
-    /// Ограничение размеров: ротация через простую очистку
-    last_cleanup: Instant,
+    inner: Mutex<MatchCacheInner>,
 }
 
 const CACHE_CLEANUP_EVERY: Duration = Duration::from_secs(10 * 60);
@@ -142,32 +145,35 @@ const CACHE_MAX_ENTRIES: usize = 2000;
 impl MatchCache {
     fn new() -> Self {
         Self {
-            map: Mutex::new(HashMap::new()),
-            last_cleanup: Instant::now(),
+            inner: Mutex::new(MatchCacheInner {
+                map: HashMap::new(),
+                last_cleanup: Instant::now(),
+            }),
         }
     }
 
     fn get(&self, key: &str) -> Option<Vec<TrackRef>> {
-        self.map.lock().ok()?.get(key).cloned()
+        self.inner.lock().ok()?.map.get(key).cloned()
     }
 
     fn put(&self, key: String, foreign: Vec<TrackRef>) {
-        if let Ok(mut map) = self.map.lock() {
+        if let Ok(mut inner) = self.inner.lock() {
             // Ротация: раз в 10 минут при переполнении чистим всё
             // (матчи недорого восстановить поисковым запросом)
-            if map.len() >= CACHE_MAX_ENTRIES
-                && self.last_cleanup.elapsed() > CACHE_CLEANUP_EVERY
+            if inner.map.len() >= CACHE_MAX_ENTRIES
+                && inner.last_cleanup.elapsed() > CACHE_CLEANUP_EVERY
             {
-                map.clear();
+                inner.map.clear();
+                inner.last_cleanup = Instant::now();
             }
-            map.insert(key, foreign);
+            inner.map.insert(key, foreign);
         }
     }
 
     /// Убрать матч из кэша (источник оказался непроигрываемым).
     fn drop_key(&self, key: &str) {
-        if let Ok(mut map) = self.map.lock() {
-            map.remove(key);
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.map.remove(key);
         }
     }
 }
@@ -381,10 +387,8 @@ impl PlaybackResolver {
             let candidates = match self.resolve_candidates_in(*source, track).await {
                 Ok((Some(candidates), _)) => candidates,
                 Ok((None, stage)) => {
-                    // клип-фолбэк так же, как в живом воспроизведении
-                    if requested == PlaybackSourceKind::Auto
-                        && *source == PlaybackSourceKind::YouTubeMusic
-                    {
+                    // клип-фолбэк для YouTube Music (и в Auto, и при прямом выборе источника)
+                    if *source == PlaybackSourceKind::YouTubeMusic {
                         match self.resolve_candidates_general(track).await {
                             Ok((Some(video), _)) => video,
                             _ => {
@@ -557,6 +561,56 @@ pub fn best_match(
     best_candidates(spotify, candidates, foreign_kind).into_iter().next()
 }
 
+/// Проверка совпадения артистов: точное, алиасы (Eldzhey/Allj) или подстрока.
+fn artist_matches(spotify: &TrackRef, candidate: &TrackRef) -> Option<f32> {
+    let sp_artists: Vec<String> = spotify
+        .artists
+        .iter()
+        .map(|a| normalize_title(a))
+        .filter(|s| !s.is_empty())
+        .collect();
+    let ca_artists: Vec<String> = candidate
+        .artists
+        .iter()
+        .map(|a| normalize_title(a))
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if sp_artists.is_empty() || ca_artists.is_empty() {
+        return None;
+    }
+
+    // 1. Точное совпадение любого артиста
+    for sa in &sp_artists {
+        for ca in &ca_artists {
+            if sa == ca {
+                return Some(0.95);
+            }
+        }
+    }
+
+    // 2. Алиасы (Allj <-> Eldzhey и т.д.)
+    for sa in &sp_artists {
+        let aliases = artist_alias_keys(sa);
+        for ca in &ca_artists {
+            if aliases.iter().any(|k| ca == k) {
+                return Some(0.95);
+            }
+        }
+    }
+
+    // 3. Подстрока (например, один каталог пишет артистов через запятую в одной строке)
+    for sa in &sp_artists {
+        for ca in &ca_artists {
+            if ca.contains(sa) || sa.contains(ca) {
+                return Some(0.90);
+            }
+        }
+    }
+
+    None
+}
+
 /// Уверенность совпадения пары треков (None — не совпадает).
 fn match_confidence(spotify: &TrackRef, candidate: &TrackRef) -> Option<f32> {
     // 0. ISRC — самый сильный сигнал: код записи уникален.
@@ -570,74 +624,68 @@ fn match_confidence(spotify: &TrackRef, candidate: &TrackRef) -> Option<f32> {
     }
 
     let title_norm = normalize_title(&spotify.title);
-    let artist_norm = spotify
-        .artists
-        .first()
-        .map(|a| normalize_title(a))
-        .unwrap_or_default();
     let cand_title = normalize_title(&candidate.title);
-    let cand_artist = candidate
-        .artists
-        .first()
-        .map(|a| normalize_title(a))
-        .unwrap_or_default();
 
-    // 1. Точное совпадение нормализованных title + artist.
-    // Нормализация включает транслитерацию кириллицы, поэтому
-    // «Eldzhey» (Spotify, латиница) и «Элджей» (Deezer/YT, кириллица)
-    // дают один и тот же ключ «eldzhey» и матчуются.
-    let mut confidence = if !artist_norm.is_empty()
-        && artist_norm == cand_artist
-        && title_norm == cand_title
-    {
-        0.95
-    } else if !artist_norm.is_empty()
-        && cand_artist.is_empty()
-        && title_norm == cand_title
-    {
-        // У кандидата не распарсился артист — матч по названию,
-        // длительность ниже всё равно проверяется
-        0.85
-    } else if title_norm == cand_title && cand_artist.contains(&artist_norm) {
-        0.90
-    } else if !title_norm.is_empty()
-        && (cand_title.contains(&title_norm) || title_norm.contains(&cand_title))
-        && !artist_norm.is_empty()
-        && (cand_artist.contains(&artist_norm) || artist_norm.contains(&cand_artist))
-    {
-        0.85
-    } else if !title_norm.is_empty()
-        && title_norm == cand_title
-        // 2. Ослабленная ступень: название точное, но артист не совпал
-        // (разные алфавиты в каталогах — «Eldzhey» vs «Элджей», имена
-        // с двойным написанием). Длительность обязательна и строго ±3с,
-        // иначе матч ненадёжен. Ставим ниже всех совпавших по артисту.
-        && duration_ok(spotify.duration_ms, candidate.duration_ms)
-        && spotify.duration_ms.is_some()
-        && candidate.duration_ms.is_some()
-    {
-        0.75
+    let artist_score = artist_matches(spotify, candidate);
+
+    let mut confidence = if let Some(score) = artist_score {
+        if !title_norm.is_empty() && title_norm == cand_title {
+            score
+        } else if !title_norm.is_empty()
+            && (cand_title.contains(&title_norm) || title_norm.contains(&cand_title))
+        {
+            (score - 0.10).max(0.75)
+        } else {
+            return None;
+        }
+    } else if !title_norm.is_empty() && title_norm == cand_title {
+        // У кандидата не распарсился артист или другой алфавит
+        // Проверяем: может имя артиста содержится в названии трека кандидата?
+        let artist_in_title = spotify.artists.iter().any(|a| {
+            let a_norm = normalize_title(a);
+            !a_norm.is_empty() && cand_title.contains(&a_norm)
+        });
+        if artist_in_title {
+            0.85
+        } else if candidate.artists.is_empty() {
+            // У кандидата вообще нет артистов
+            0.80
+        } else if duration_ok(spotify.duration_ms, candidate.duration_ms)
+            && spotify.duration_ms.is_some()
+            && candidate.duration_ms.is_some()
+        {
+            // Ослабленная ступень: название точное, но артист не совпал
+            // (разные алфавиты/имена). Длительность обязательна и строго ±3с.
+            0.75
+        } else {
+            return None;
+        }
     } else {
         return None;
     };
 
-    // 3. Длительность как подтверждение/штраф для остальных ступеней:
-    // ±3с — подтверждение, ±10с — штраф, дальше — отбраковка
-    if confidence >= 0.85 {
+    // Длительность как подтверждение/штраф
+    if confidence >= 0.75 {
         if !duration_ok(spotify.duration_ms, candidate.duration_ms) {
-            let diff_ok_soft = match (spotify.duration_ms, candidate.duration_ms) {
-                (Some(target), Some(dur)) => {
-                    (dur as i64 - target as i64).unsigned_abs() <= 10_000
-                }
-                _ => true,
+            let diff_ms = match (spotify.duration_ms, candidate.duration_ms) {
+                (Some(target), Some(dur)) => (dur as i64 - target as i64).unsigned_abs(),
+                _ => 0,
             };
-            if !diff_ok_soft {
+            if diff_ms > 25_000 {
                 return None;
+            } else if diff_ms > 10_000 {
+                confidence -= 0.10;
+            } else if diff_ms > 3_000 {
+                confidence -= 0.05;
             }
-            confidence -= 0.10;
         }
     }
-    Some(confidence)
+
+    if confidence >= MIN_CONFIDENCE {
+        Some(confidence)
+    } else {
+        None
+    }
 }
 
 /// Длительность в пределах ±3с (уверенное подтверждение).
@@ -685,11 +733,6 @@ pub fn best_candidates_video(
     candidates: &[TrackRef],
 ) -> Vec<MatchCandidate> {
     let title_norm = normalize_title(&target_track.title);
-    let artist_norm = target_track
-        .artists
-        .first()
-        .map(|a| normalize_title(a))
-        .unwrap_or_default();
 
     let mut matches: Vec<MatchCandidate> = Vec::new();
     for candidate in candidates {
@@ -705,9 +748,18 @@ pub fn best_candidates_video(
             && (cand_title == title_norm
                 || cand_title.contains(&title_norm)
                 || title_norm.contains(&cand_title));
-        // Артист: ключи с алиасами в артистах кандидата или в названии видео
-        let artist_match = !artist_norm.is_empty()
-            && video_artist_matches(&artist_norm, &cand_artist, &cand_title);
+        // Артист: проверяем всех артистов целевого трека (в артистах кандидата или названии видео)
+        let artist_match = target_track.artists.iter().any(|a| {
+            let a_norm = normalize_title(a);
+            if a_norm.is_empty() {
+                return false;
+            }
+            video_artist_matches(&a_norm, &cand_artist, &cand_title)
+                || candidate.artists.iter().any(|ca| {
+                    let ca_norm = normalize_title(ca);
+                    video_artist_matches(&a_norm, &ca_norm, &cand_title)
+                })
+        });
 
         if !title_match || !artist_match {
             continue;
@@ -767,7 +819,8 @@ pub fn normalize_title(raw: &str) -> String {
     let mut s = s.to_lowercase();
     // убираем содержимое скобок с типовыми маркерами
     for marker in [
-        "official", "audio", "video", "lyric", "remaster", "remix", "feat", "ft", "live",
+        "official", "audio", "video", "lyric", "remaster", "remix", "feat", "ft", "featuring",
+        "with", "live", "prod", "deluxe", "instrumental",
     ] {
         // (…marker…) и […]marker…]
         strip_parenthesized(&mut s, marker);
@@ -927,6 +980,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: crate::model::TrackOrigin::Original,
         }
     }
 
@@ -935,6 +989,10 @@ mod tests {
         assert_eq!(
             normalize_title("Get Lucky (feat. Pharrell Williams)"),
             "get lucky"
+        );
+        assert_eq!(
+            normalize_title("TWIN TRIM (with Lil Uzi Vert)"),
+            "twin trim"
         );
         assert_eq!(
             normalize_title("Harder, Better, Faster, Stronger [Official Audio]"),
@@ -1173,5 +1231,22 @@ mod tests {
             200_000,
         );
         assert_eq!(clean_search_query(&track2), "Artist - Song Name");
+    }
+
+    #[test]
+    fn multi_artist_and_soft_duration_matching() {
+        // Трек с разницей в длительности 12 секунд (например, интро/аутро в YTM)
+        let spotify = track(ProviderKind::Spotify, "sp_stranger", "stranger", "9mice", 130_000);
+        let ytm = track(ProviderKind::YouTubeMusic, "yt_stranger", "stranger", "9mice", 142_000);
+        let m = best_match(&spotify, &[ytm], ProviderKind::YouTubeMusic).expect("должен матчиться с мягкой длительностью");
+        assert!(m.confidence >= MIN_CONFIDENCE);
+
+        // Трек, где у Spotify два артиста, а у YTM второй артист первый
+        let mut sp_collab = track(ProviderKind::Spotify, "sp_collab", "Collab Track", "Artist A", 180_000);
+        sp_collab.artists = vec!["Artist A".into(), "Artist B".into()];
+        let mut ytm_collab = track(ProviderKind::YouTubeMusic, "yt_collab", "Collab Track", "Artist B", 180_000);
+        ytm_collab.artists = vec!["Artist B".into(), "Artist A".into()];
+        let m2 = best_match(&sp_collab, &[ytm_collab], ProviderKind::YouTubeMusic).expect("должен матчиться при смене порядка артистов");
+        assert!(m2.confidence >= 0.85);
     }
 }

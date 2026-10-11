@@ -74,11 +74,21 @@ pub(super) async fn search_playlists(
                 .clone()
                 .and_then(|value| url::Url::parse(&value).ok())?;
             let artwork_url = playlist
-                .tracks
-                .iter()
-                .find_map(|track| track.artwork_url.clone())
+                .artwork_url
+                .clone()
+                .or_else(|| {
+                    playlist
+                        .tracks
+                        .iter()
+                        .find_map(|track| track.artwork_url.clone())
+                })
                 .and_then(|value| url::Url::parse(&value).ok());
-            let subtitle = format!("{} треков", playlist.tracks.len());
+            let count = playlist.track_count.unwrap_or(playlist.tracks.len());
+            let subtitle = if count > 0 {
+                format!("{} треков", count)
+            } else {
+                "Плейлист".to_string()
+            };
             Some(CollectionItem {
                 kind: CollectionKind::Playlist,
                 provider: crate::model::ProviderKind::SoundCloud,
@@ -87,7 +97,7 @@ pub(super) async fn search_playlists(
                 subtitle,
                 artwork_url,
                 web_url,
-                track_count: playlist.tracks.len(),
+                track_count: count,
             })
         })
         .collect())
@@ -120,11 +130,21 @@ pub(super) async fn search_albums(
                 .clone()
                 .and_then(|value| url::Url::parse(&value).ok())?;
             let artwork_url = playlist
-                .tracks
-                .iter()
-                .find_map(|track| track.artwork_url.clone())
+                .artwork_url
+                .clone()
+                .or_else(|| {
+                    playlist
+                        .tracks
+                        .iter()
+                        .find_map(|track| track.artwork_url.clone())
+                })
                 .and_then(|value| url::Url::parse(&value).ok());
-            let subtitle = format!("{} треков", playlist.tracks.len());
+            let count = playlist.track_count.unwrap_or(playlist.tracks.len());
+            let subtitle = if count > 0 {
+                format!("{} треков", count)
+            } else {
+                "Альбом".to_string()
+            };
             Some(CollectionItem {
                 kind: CollectionKind::Album,
                 provider: crate::model::ProviderKind::SoundCloud,
@@ -133,7 +153,7 @@ pub(super) async fn search_albums(
                 subtitle,
                 artwork_url,
                 web_url,
-                track_count: playlist.tracks.len(),
+                track_count: count,
             })
         })
         .collect())

@@ -152,22 +152,7 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
         }
     }
 
-    // 2. VISIONOS: чистый direct AAC stream без cipher и без 1 MiB cap.
-    // Прекрасно работает на любых IP (включая датацентры и VPS) без блокировок.
-    match try_visionos(&http, client, cookie, video_id).await {
-        Ok(stream) => {
-            crate::dlog!(
-                "[Playback] VISIONOS ok: clen={} range_safe=true",
-                stream.content_length
-            );
-            return Ok(stream);
-        }
-        Err(error) => {
-            crate::dlog!("[Playback] VISIONOS путь не удался: {error:#}");
-        }
-    }
-
-    // 3. Аноним / без cookies: ANDROID_VR + POT — основной полноскоростной путь (без троттлинга)
+    // 2. Аноним / без cookies: ANDROID_VR + POT — основной полноскоростной путь (Kopuz pipeline)
     match try_android_vr_pot(&http, client, cookie, video_id, super::clients::ANDROID_VR_1_61_48).await {
         Ok(stream) => {
             crate::dlog!(
@@ -193,7 +178,21 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
         }
     }
 
-    // 3. Фолбэк: WEB_REMIX (нативный decipher n-трансформ + POT)
+    // 3. VISIONOS: фолбэк direct AAC stream
+    match try_visionos(&http, client, cookie, video_id).await {
+        Ok(stream) => {
+            crate::dlog!(
+                "[Playback] VISIONOS ok: clen={} range_safe=true",
+                stream.content_length
+            );
+            return Ok(stream);
+        }
+        Err(error) => {
+            crate::dlog!("[Playback] VISIONOS путь не удался: {error:#}");
+        }
+    }
+
+    // 4. Фолбэк: WEB_REMIX (нативный decipher n-трансформ + POT)
     match try_web_remix(&http, client, cookie, video_id).await {
         Ok(stream) => {
             crate::dlog!(
@@ -207,7 +206,7 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
         }
     }
 
-    // 4. Последний фолбэк: ANDROID_VR без POT
+    // 5. Последний фолбэк: ANDROID_VR без POT
     match try_android_vr(cookie, video_id).await {
         Ok(stream) => {
             crate::dlog!(
@@ -396,9 +395,6 @@ async fn try_android_vr_pot(
     }
     stream.source.headers.insert("User-Agent".to_string(), target_client.user_agent.to_string());
     stream.range_safe = true;
-    if !is_stream_url_alive(_http, &stream.source.url, &stream.source.headers).await {
-        bail!("ANDROID_VR+POT: CDN узел недоступен");
-    }
     Ok(stream)
 }
 
@@ -409,7 +405,7 @@ async fn is_stream_url_alive(
 ) -> bool {
     let mut builder = http
         .get(url.clone())
-        .timeout(std::time::Duration::from_millis(1500))
+        .timeout(std::time::Duration::from_millis(800))
         .header(reqwest::header::RANGE, "bytes=0-0");
     for (k, v) in headers {
         builder = builder.header(k, v);
@@ -429,31 +425,25 @@ async fn try_visionos(
     cookie: Option<&str>,
     video_id: &str,
 ) -> Result<ResolvedStream> {
-    for attempt in 0..3 {
-        let visitor_data = client.get_visitor_data().await;
-        let player = innertube::player(
-            VISIONOS,
-            video_id,
-            cookie,
-            PlayerExtras {
-                visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
-                ..Default::default()
-            },
-        )
-        .await?;
+    let visitor_data = client.get_visitor_data().await;
+    let player = innertube::player(
+        VISIONOS,
+        video_id,
+        cookie,
+        PlayerExtras {
+            visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
+            ..Default::default()
+        },
+    )
+    .await?;
 
-        let mut stream = stream_plain_client(player, VISIONOS.user_agent)?;
-        stream.range_safe = true;
-        if is_stream_url_alive(http, &stream.source.url, &stream.source.headers).await {
-            crate::dlog!("[Playback] VISIONOS stream probe OK (попытка {})", attempt + 1);
-            return Ok(stream);
-        }
-        crate::dlog!(
-            "[Playback] VISIONOS узел недоступен/таймаут ({}), повтор попытки...",
-            stream.source.url.host_str().unwrap_or("")
-        );
+    let mut stream = stream_plain_client(player, VISIONOS.user_agent)?;
+    stream.range_safe = true;
+    if is_stream_url_alive(http, &stream.source.url, &stream.source.headers).await {
+        crate::dlog!("[Playback] VISIONOS stream probe OK");
+        return Ok(stream);
     }
-    bail!("VISIONOS: все попытки вернули недоступные CDN узлы")
+    bail!("VISIONOS: узел недоступен")
 }
 
 fn stream_android_vr(player: Value) -> Result<ResolvedStream> {
@@ -698,6 +688,7 @@ mod tests {
             explicit: false,
             drm: false,
             isrc: None,
+            origin: crate::model::TrackOrigin::Original,
         };
 
         println!("[Server Test] Resolving track anmYryzI_9w via server relay: {}", server_url);

@@ -69,7 +69,7 @@ impl WaveCandidate {
     }
 }
 
-fn is_tracklike(track: &TrackRef) -> bool {
+pub fn is_tracklike(track: &TrackRef) -> bool {
     if track.id.trim().is_empty() || track.title.trim().is_empty() {
         return false;
     }
