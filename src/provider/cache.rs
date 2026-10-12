@@ -64,7 +64,11 @@ pub fn cached_track_path(track: &TrackRef) -> Option<PathBuf> {
     for ext in ["mp3", "m4a", "mp4", "aac", "flac", "ogg", "wav"] {
         let path = dir.join(format!("{stem}.{ext}"));
         if path.is_file() {
-            return Some(path);
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() >= 32 * 1024 {
+                    return Some(path);
+                }
+            }
         }
     }
     None
@@ -123,13 +127,26 @@ pub async fn download_track_to_cache(
     let stem = cache_stem(track);
     let dest = dir.join(format!("{stem}.{ext}"));
     if dest.is_file() {
-        return validate_cached_file(track, &dest).map(|_| dest);
+        if let Ok(meta) = std::fs::metadata(&dest) {
+            if meta.len() >= 32 * 1024 {
+                return Ok(dest);
+            }
+        }
     }
     if let Some(existing) = cached_track_path(track) {
-        return validate_cached_file(track, &existing).map(|_| existing);
+        return Ok(existing);
     }
-    download_playback_source(source, &dest).await?;
-    validate_cached_file(track, &dest).map(|_| dest)
+    let part_dest = dir.join(format!("{stem}.{ext}.part"));
+    download_playback_source(source, &part_dest).await?;
+    if let Err(e) = validate_cached_file(track, &part_dest) {
+        let _ = std::fs::remove_file(&part_dest);
+        return Err(e);
+    }
+    // Атомарное перемещение из .part в целевой файл
+    std::fs::rename(&part_dest, &dest).with_context(|| {
+        format!("не удалось сохранить кэш-файл в {}", dest.display())
+    })?;
+    Ok(dest)
 }
 
 /// Привязать закэшированный файл к другому треку (алиас, например sp_{id} -> yt_{id}).

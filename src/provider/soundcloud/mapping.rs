@@ -65,5 +65,7 @@ pub fn normalizovat_track(track: ScTrack) -> Option<TrackRef> {
         drm: false,
         isrc: None,
         origin: crate::model::TrackOrigin::Original,
+        album_url: None,
+        album_title: None,
     })
 }

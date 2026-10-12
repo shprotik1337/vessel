@@ -18,7 +18,8 @@ pub(super) fn open_media(source: &PlaybackSource, position_ms: u64) -> Result<Op
             .url
             .to_file_path()
             .map_err(|_| anyhow::anyhow!("повреждённый локальный аудиопуть"))?;
-        let file = std::fs::File::open(&path)?;
+        let file = std::fs::File::open(&path)
+            .map_err(|e| anyhow::anyhow!("локальный кэш-файл не найден: {e}"))?;
         return Ok(OpenedMedia {
             source: Box::new(file),
             extension: path

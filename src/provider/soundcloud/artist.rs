@@ -102,9 +102,19 @@ pub(super) async fn artist_profile(
         .collect();
 
     if releases.is_empty() {
-        if let Ok(searched) = super::search::search_albums(client, &name).await {
-            releases = searched;
-        }
+        releases = popular_tracks
+            .iter()
+            .map(|tr| CollectionItem {
+                kind: CollectionKind::Album,
+                provider: ProviderKind::SoundCloud,
+                id: tr.id.clone(),
+                title: tr.title.clone(),
+                subtitle: "Сингл".to_string(),
+                artwork_url: tr.artwork_url.clone(),
+                web_url: tr.web_url.clone(),
+                track_count: 1,
+            })
+            .collect();
     }
 
     Ok(ArtistProfile {

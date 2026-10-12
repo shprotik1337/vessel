@@ -671,10 +671,12 @@ fn match_confidence(spotify: &TrackRef, candidate: &TrackRef) -> Option<f32> {
                 (Some(target), Some(dur)) => (dur as i64 - target as i64).unsigned_abs(),
                 _ => 0,
             };
-            if diff_ms > 25_000 {
+            let is_exact_title = title_norm == cand_title;
+            let max_allowed_diff = if is_exact_title { 20_000 } else { 12_000 };
+            if diff_ms > max_allowed_diff {
                 return None;
-            } else if diff_ms > 10_000 {
-                confidence -= 0.10;
+            } else if diff_ms > 8_000 {
+                confidence -= 0.15;
             } else if diff_ms > 3_000 {
                 confidence -= 0.05;
             }
@@ -1248,5 +1250,12 @@ mod tests {
         ytm_collab.artists = vec!["Artist B".into(), "Artist A".into()];
         let m2 = best_match(&sp_collab, &[ytm_collab], ProviderKind::YouTubeMusic).expect("должен матчиться при смене порядка артистов");
         assert!(m2.confidence >= 0.85);
+    }
+
+    #[test]
+    fn different_title_same_artist_rejected() {
+        let track_target = track(ProviderKind::SoundCloud, "sc_otorvu", "Оторву руки", "THRILL PILL", 150_000);
+        let track_wrong = track(ProviderKind::YouTubeMusic, "yt_shpric", "Наступил шприц", "THRILL PILL", 150_000);
+        assert!(best_match(&track_target, &[track_wrong], ProviderKind::YouTubeMusic).is_none());
     }
 }

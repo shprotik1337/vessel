@@ -907,8 +907,9 @@ fn map_track(track: ApiTrack) -> Option<TrackRef> {
         duration_ms: track.duration.map(|seconds| seconds.saturating_mul(1000)),
         artwork_url: track
             .album
-            .and_then(|album| album.cover_xl.or(album.cover_big))
-            .and_then(|url| Url::parse(&url).ok()),
+            .as_ref()
+            .and_then(|album| album.cover_xl.as_ref().or(album.cover_big.as_ref()))
+            .and_then(|url| Url::parse(url).ok()),
         web_url: track
             .link
             .and_then(|url| Url::parse(&url).ok())
@@ -919,6 +920,12 @@ fn map_track(track: ApiTrack) -> Option<TrackRef> {
         drm: true,
         isrc: track.isrc.filter(|value| !value.trim().is_empty()),
         origin: crate::model::TrackOrigin::Original,
+        album_url: track
+            .album
+            .as_ref()
+            .and_then(|a| a.id)
+            .and_then(|alb_id| Url::parse(&format!("https://www.deezer.com/album/{alb_id}")).ok()),
+        album_title: track.album.as_ref().and_then(|a| a.title.clone()),
     })
 }
 
@@ -980,6 +987,14 @@ fn map_favorite_song(raw: &serde_json::Value) -> Option<TrackRef> {
         drm: true,
         isrc: raw_value(raw, "ISRC").pipe_option_string(),
         origin: crate::model::TrackOrigin::Original,
+        album_url: album_id
+            .parse::<u64>()
+            .ok()
+            .and_then(|_| Url::parse(&format!("https://www.deezer.com/album/{album_id}")).ok()),
+        album_title: {
+            let alb_title = raw_value(raw, "ALB_TITLE");
+            if alb_title.is_empty() { None } else { Some(alb_title) }
+        },
     })
 }
 
@@ -1032,6 +1047,8 @@ struct ApiArtist {
 
 #[derive(Deserialize)]
 struct ApiAlbum {
+    id: Option<u64>,
+    title: Option<String>,
     cover_xl: Option<String>,
     cover_big: Option<String>,
 }

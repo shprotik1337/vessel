@@ -140,6 +140,67 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       return;
     }
 
+function formatAuthError(err: any, mode: "login" | "register"): string {
+  const raw = String(typeof err === "string" ? err : err?.message || "").toLowerCase();
+
+  if (raw.includes("captcha") || raw.includes("challenge") || raw.includes("капч")) {
+    return "Неверно введены символы проверки. Попробуйте ещё раз.";
+  }
+
+  if (
+    raw.includes("invalid credential") ||
+    raw.includes("unauthorized") ||
+    raw.includes("401") ||
+    raw.includes("password") ||
+    raw.includes("user not found") ||
+    raw.includes("not found") ||
+    raw.includes("wrong password") ||
+    raw.includes("неверный") ||
+    raw.includes("bad credentials")
+  ) {
+    return mode === "login"
+      ? "Неверное имя пользователя или пароль"
+      : "Проверьте правильность введенных данных";
+  }
+
+  if (
+    raw.includes("already exist") ||
+    raw.includes("taken") ||
+    raw.includes("conflict") ||
+    raw.includes("409") ||
+    raw.includes("уже существует")
+  ) {
+    return "Пользователь с таким никнеймом уже зарегистрирован";
+  }
+
+  if (
+    raw.includes("timeout") ||
+    raw.includes("network") ||
+    raw.includes("connect") ||
+    raw.includes("fetch") ||
+    raw.includes("502") ||
+    raw.includes("503") ||
+    raw.includes("504")
+  ) {
+    return "Не удалось связаться с сервером. Проверьте интернет-соединение.";
+  }
+
+  if (raw.includes("username") || raw.includes("ник")) {
+    return "Недопустимое имя пользователя";
+  }
+
+  if (typeof err === "string") {
+    const cleaned = err.replace(/^Vessel Server \[[^\]]+\] [^:]+: */i, "").trim();
+    if (cleaned && cleaned.length < 80 && !cleaned.startsWith("{")) {
+      return cleaned;
+    }
+  }
+
+  return mode === "login"
+    ? "Неверные данные для входа. Попробуйте снова."
+    : "Не удалось создать аккаунт. Попробуйте снова.";
+}
+
     setLoading(true);
     try {
       if (mode === "register") {
@@ -160,8 +221,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         onSuccess(false, false);
       }
     } catch (err: any) {
-      const msg = typeof err === "string" ? err : err?.message || "Ошибка авторизации";
-      setErrorMsg(msg);
+      setErrorMsg(formatAuthError(err, mode));
       void fetchCaptcha();
     } finally {
       setLoading(false);
@@ -173,29 +233,37 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       style={{
         width: "100%",
         minHeight: "calc(100vh - 36px)",
+        height: "calc(100vh - 36px)",
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
-        background: "var(--app-bg, #000000)",
+        justifyContent: "flex-start",
+        background: "transparent",
         padding: "24px 16px",
         boxSizing: "border-box",
         overflowY: "auto",
+        position: "relative",
+        zIndex: 10,
       }}
     >
       <div
         style={{
           width: "100%",
           maxWidth: "460px",
+          margin: "auto 0",
+          flexShrink: 0,
           background: "var(--card-bg, #000000)",
-          border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+          backdropFilter: "blur(24px) saturate(160%)",
+          WebkitBackdropFilter: "blur(24px) saturate(160%)",
+          border: "1px solid var(--border)",
           borderRadius: "20px",
-          padding: "28px 32px",
-          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.95)",
-          color: "var(--text, #ffffff)",
+          padding: "24px 28px",
+          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.85)",
+          color: "var(--text)",
           fontFamily: "inherit",
           display: "flex",
           flexDirection: "column",
-          gap: "18px",
+          gap: "14px",
           boxSizing: "border-box",
         }}
       >
@@ -206,7 +274,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               fontSize: "20px",
               fontWeight: 800,
               letterSpacing: "-0.02em",
-              color: "var(--text, #ffffff)",
+              color: "var(--text)",
             }}
           >
             Vessel
@@ -215,10 +283,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           <div
             style={{
               display: "flex",
-              background: "var(--elev, rgba(255, 255, 255, 0.04))",
+              background: "var(--elev)",
               borderRadius: "10px",
               padding: "3px",
-              border: "1px solid var(--border, rgba(255, 255, 255, 0.06))",
+              border: "1px solid var(--border)",
             }}
           >
             <button
@@ -228,8 +296,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 setErrorMsg(null);
               }}
               style={{
-                background: mode === "login" ? "rgba(255, 255, 255, 0.14)" : "transparent",
-                color: mode === "login" ? "#ffffff" : "var(--text3, rgba(255, 255, 255, 0.5))",
+                background: mode === "login" ? "var(--accent)" : "transparent",
+                color: mode === "login" ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
                 border: "none",
                 borderRadius: "8px",
                 padding: "6px 14px",
@@ -248,8 +316,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 setErrorMsg(null);
               }}
               style={{
-                background: mode === "register" ? "rgba(255, 255, 255, 0.14)" : "transparent",
-                color: mode === "register" ? "#ffffff" : "var(--text3, rgba(255, 255, 255, 0.5))",
+                background: mode === "register" ? "var(--accent)" : "transparent",
+                color: mode === "register" ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
                 border: "none",
                 borderRadius: "8px",
                 padding: "6px 14px",
@@ -272,12 +340,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               fontSize: "24px",
               fontWeight: 700,
               letterSpacing: "-0.02em",
-              color: "var(--text, #ffffff)",
+              color: "var(--text)",
             }}
           >
             {mode === "login" ? "Вход" : "Регистрация"}
           </h2>
-          <p style={{ margin: 0, fontSize: "13px", color: "var(--text3, rgba(255, 255, 255, 0.5))", lineHeight: 1.4 }}>
+          <p style={{ margin: 0, fontSize: "13px", color: "var(--text3)", lineHeight: 1.4 }}>
             {mode === "login"
               ? "Войди в профиль или продолжи гостем для локального режима."
               : "Создай профиль или продолжи гостем для локального режима."}
@@ -308,7 +376,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               style={{
                 fontSize: "10.5px",
                 fontWeight: 700,
-                color: "var(--text3, rgba(255, 255, 255, 0.4))",
+                color: "var(--text3)",
                 letterSpacing: "0.06em",
               }}
             >
@@ -321,11 +389,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               placeholder="Имя пользователя"
               autoFocus
               style={{
-                background: "var(--elev, rgba(255, 255, 255, 0.04))",
-                border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+                background: "var(--elev)",
+                border: "1px solid var(--border)",
                 borderRadius: "10px",
                 padding: "11px 14px",
-                color: "var(--text, #ffffff)",
+                color: "var(--text)",
                 fontSize: "13.5px",
                 outline: "none",
                 transition: "border 0.15s ease",
@@ -339,7 +407,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               style={{
                 fontSize: "10.5px",
                 fontWeight: 700,
-                color: "var(--text3, rgba(255, 255, 255, 0.4))",
+                color: "var(--text3)",
                 letterSpacing: "0.06em",
               }}
             >
@@ -354,13 +422,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 style={{
                   width: "100%",
                   boxSizing: "border-box",
-                  background: "var(--elev, rgba(255, 255, 255, 0.04))",
-                  border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+                  background: "var(--elev)",
+                  border: "1px solid var(--border)",
                   borderRadius: "10px",
                   padding: "11px 40px 11px 14px",
-                  color: "var(--text, #ffffff)",
+                  color: "var(--text)",
                   fontSize: "13.5px",
                   outline: "none",
+                  transition: "border 0.15s ease",
                 }}
               />
               <button
@@ -373,7 +442,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   transform: "translateY(-50%)",
                   background: "none",
                   border: "none",
-                  color: "var(--text3, rgba(255, 255, 255, 0.4))",
+                  color: "var(--text3)",
                   cursor: "pointer",
                   padding: "4px",
                   display: "flex",
@@ -388,8 +457,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           {/* Interactive CAPTCHA */}
           <div
             style={{
-              background: "#050505",
-              border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+              background: "var(--elev)",
+              border: "1px solid var(--border)",
               borderRadius: "14px",
               padding: "14px",
               display: "flex",
@@ -400,8 +469,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             {/* Captcha Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
-                <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--text, #ffffff)" }}>Проверка</div>
-                <div style={{ fontSize: "10.5px", color: "var(--text3, rgba(255, 255, 255, 0.4))" }}>Нажмите символы по порядку</div>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--text)" }}>Проверка</div>
+                <div style={{ fontSize: "10.5px", color: "var(--text3)" }}>Нажмите символы по порядку</div>
               </div>
               <button
                 type="button"
@@ -410,7 +479,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 style={{
                   background: "transparent",
                   border: "none",
-                  color: "var(--text3, rgba(255, 255, 255, 0.5))",
+                  color: "var(--text3)",
                   cursor: "pointer",
                   padding: "4px",
                   display: "flex",
@@ -429,8 +498,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "10px",
-                  background: "rgba(255, 255, 255, 0.03)",
-                  border: "1px dashed rgba(255, 255, 255, 0.12)",
+                  background: "var(--card-bg, #000000)",
+                  border: "1px dashed var(--border)",
                   borderRadius: "10px",
                   padding: "10px 14px",
                   position: "relative",
@@ -448,7 +517,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   }}
                 />
 
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text3, rgba(255, 255, 255, 0.4))", marginRight: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text3)", marginRight: "4px" }}>
                   Цель:
                 </span>
 
@@ -466,9 +535,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                         width: "32px",
                         height: "32px",
                         borderRadius: "8px",
-                        background: selectedClicks.length > i ? "rgba(34, 197, 94, 0.15)" : "rgba(255, 255, 255, 0.07)",
-                        border: selectedClicks.length > i ? "1px solid rgba(34, 197, 94, 0.5)" : "1px solid rgba(255, 255, 255, 0.12)",
-                        color: selectedClicks.length > i ? "#22c55e" : "#ffffff",
+                        background: selectedClicks.length > i ? "var(--elev)" : "var(--elev)",
+                        border: selectedClicks.length > i ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                        color: selectedClicks.length > i ? "var(--accent)" : "var(--text)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -479,7 +548,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       {SYMBOL_SVGS[tgt] || tgt}
                     </div>
                     {i < challenge.targets.length - 1 && (
-                      <span style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.2)" }}>→</span>
+                      <span style={{ fontSize: "11px", color: "var(--text3)" }}>→</span>
                     )}
                   </div>
                 ))}
@@ -489,9 +558,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             {/* Clickable Symbols Canvas */}
             <div
               style={{
-                height: "140px",
-                background: "rgba(0, 0, 0, 0.6)",
-                border: "1px solid rgba(255, 255, 255, 0.06)",
+                height: "125px",
+                background: "var(--card-bg, #000000)",
+                border: "1px solid var(--border)",
                 borderRadius: "10px",
                 position: "relative",
                 overflow: "hidden",
@@ -501,9 +570,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <svg
                 style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", opacity: 0.15 }}
               >
-                <line x1="10%" y1="20%" x2="90%" y2="80%" stroke="#ffffff" strokeDasharray="4 4" strokeWidth="1" />
-                <line x1="5%" y1="50%" x2="95%" y2="50%" stroke="#ffffff" strokeWidth="1" />
-                <line x1="15%" y1="85%" x2="85%" y2="15%" stroke="#ffffff" strokeDasharray="3 3" strokeWidth="1" />
+                <line x1="10%" y1="20%" x2="90%" y2="80%" stroke="var(--border)" strokeDasharray="4 4" strokeWidth="1" />
+                <line x1="5%" y1="50%" x2="95%" y2="50%" stroke="var(--border)" strokeWidth="1" />
+                <line x1="15%" y1="85%" x2="85%" y2="15%" stroke="var(--border)" strokeDasharray="3 3" strokeWidth="1" />
               </svg>
 
               {challenge?.items.map((item) => {
@@ -522,16 +591,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       width: "36px",
                       height: "36px",
                       borderRadius: "10px",
-                      background: isClicked ? "var(--accent, #6366f1)" : "rgba(255, 255, 255, 0.08)",
-                      border: isClicked ? "1.5px solid #ffffff" : "1px solid rgba(255, 255, 255, 0.15)",
-                      color: isClicked ? "var(--accent-contrast-text, #ffffff)" : "#ffffff",
+                      background: isClicked ? "var(--accent)" : "var(--elev)",
+                      border: isClicked ? "1.5px solid var(--accent-contrast-text, #ffffff)" : "1px solid var(--border)",
+                      color: isClicked ? "var(--accent-contrast-text, #ffffff)" : "var(--text)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       cursor: "pointer",
                       transition: "transform 0.12s ease, background 0.15s ease",
                       transform: isClicked ? "scale(1.08)" : "scale(1)",
-                      boxShadow: isClicked ? "0 4px 12px rgba(99, 102, 241, 0.4)" : "none",
+                      boxShadow: isClicked ? "0 4px 12px var(--accent-glow, rgba(0,0,0,0.4))" : "none",
                       zIndex: isClicked ? 10 : 2,
                     }}
                   >
@@ -546,8 +615,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                           width: "16px",
                           height: "16px",
                           borderRadius: "50%",
-                          background: "#ffffff",
-                          color: "#000000",
+                          background: "var(--accent-contrast-text, #ffffff)",
+                          color: "var(--accent, #000000)",
                           fontSize: "10px",
                           fontWeight: 800,
                           display: "flex",
@@ -566,7 +635,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
             {/* Captcha Footer Status */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "11px" }}>
-              <span style={{ color: isCaptchaComplete ? "#22c55e" : "var(--text3, rgba(255, 255, 255, 0.4))" }}>
+              <span style={{ color: isCaptchaComplete ? "var(--accent)" : "var(--text3)" }}>
                 Выбрано {selectedClicks.length} из {challenge?.targets.length || 4}
               </span>
               {selectedClicks.length > 0 && (
@@ -576,7 +645,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   style={{
                     background: "none",
                     border: "none",
-                    color: "var(--text3, rgba(255, 255, 255, 0.5))",
+                    color: "var(--text3)",
                     cursor: "pointer",
                     textDecoration: "underline",
                     fontSize: "11px",
@@ -598,8 +667,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               padding: "13px",
               borderRadius: "12px",
               border: "none",
-              background: isCaptchaComplete ? "var(--accent, #6366f1)" : "rgba(255, 255, 255, 0.08)",
-              color: isCaptchaComplete ? "var(--accent-contrast-text, #ffffff)" : "rgba(255, 255, 255, 0.3)",
+              background: isCaptchaComplete ? "var(--accent)" : "var(--elev)",
+              color: isCaptchaComplete ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
               fontSize: "14px",
               fontWeight: 700,
               cursor: isCaptchaComplete && !loading ? "pointer" : "not-allowed",
@@ -631,11 +700,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               type="button"
               onClick={onContinueGuest}
               style={{
-                background: "rgba(255, 255, 255, 0.05)",
-                border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+                background: "var(--elev)",
+                border: "1px solid var(--border)",
                 borderRadius: "11px",
                 padding: "11px",
-                color: "var(--text, rgba(255, 255, 255, 0.8))",
+                color: "var(--text)",
                 fontSize: "12.5px",
                 fontWeight: 600,
                 cursor: "pointer",
@@ -651,11 +720,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 setErrorMsg(null);
               }}
               style={{
-                background: "rgba(255, 255, 255, 0.05)",
-                border: "1px solid var(--border, rgba(255, 255, 255, 0.08))",
+                background: "var(--elev)",
+                border: "1px solid var(--border)",
                 borderRadius: "11px",
                 padding: "11px",
-                color: "var(--text, rgba(255, 255, 255, 0.8))",
+                color: "var(--text)",
                 fontSize: "12.5px",
                 fontWeight: 600,
                 cursor: "pointer",

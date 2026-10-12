@@ -15,6 +15,8 @@ export interface TrackRef {
   explicit: boolean;
   drm: boolean;
   origin?: TrackOrigin;
+  album_url?: string | null;
+  album_title?: string | null;
 }
 
 export type PlaybackCapability =

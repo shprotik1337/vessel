@@ -20,6 +20,13 @@ export interface ThemeColors {
   windowOpacity?: number; // 0..100 % (Непрозрачность фона окна)
   glassForce?: number; // 0..100 % (Сила стекла - интенсивность акрилового слоя)
   backdropBlur?: number; // 0..40 px (Размытие стекла - радиус размытия заднего плана)
+  customTrackArt?: string | null;
+}
+
+export interface ImageLibraryItem {
+  id: string;
+  url: string;
+  name: string;
 }
 
 export type BorderRadiusPreset = "sharp" | "small" | "medium" | "round";
@@ -86,6 +93,7 @@ export interface CustomizationConfig {
     freeLayoutSections?: number[];
   };
   theme: ThemeColors;
+  imageLibrary?: ImageLibraryItem[];
 }
 
 export interface ThemePreset {
@@ -106,6 +114,7 @@ export interface ThemePreset {
   wallpaperDim?: number;
   borderRadius?: BorderRadiusPreset;
   ambientMode?: "off" | "dynamic" | "theme";
+  customTrackArt?: string | null;
 }
 
 export const BUILTIN_THEMES: ThemePreset[] = [
@@ -313,7 +322,7 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
     widthPercent: 100,
     largeIcons: false,
     hideDetails: false,
-    showMiniPlayer: false,
+    showMiniPlayer: true,
     queuePosition: "right",
     fullscreenMode: "both",
     fullscreenFollowTrack: true,
@@ -389,7 +398,9 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
     trackRowActiveOpacity: 0.08,
     trackRowActiveStyle: "glass",
     ambientMode: "dynamic",
+    customTrackArt: null,
   },
+  imageLibrary: [],
 };
 
 const STORAGE_KEY = "vessel_customization_v2";
@@ -492,7 +503,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     ? raw.player.miniPlayerPreset
     : "default";
 
-  const showMiniPlayer = raw.player?.showMiniPlayer === true;
+  const showMiniPlayer = raw.player?.showMiniPlayer !== false;
   const validFsModes = ["both", "lyrics", "cover"] as const;
   const fullscreenMode = validFsModes.includes(raw.player?.fullscreenMode)
     ? raw.player.fullscreenMode
@@ -616,6 +627,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     windowOpacity: typeof raw.theme?.windowOpacity === "number" ? Math.max(0, Math.min(100, raw.theme.windowOpacity)) : 50,
     glassForce: typeof raw.theme?.glassForce === "number" ? Math.max(0, Math.min(100, raw.theme.glassForce)) : 65,
     backdropBlur: typeof raw.theme?.backdropBlur === "number" ? Math.max(0, Math.min(40, raw.theme.backdropBlur)) : 15,
+    customTrackArt: typeof raw.theme?.customTrackArt === "string" ? raw.theme.customTrackArt : null,
   };
 
   const validAligns: BlockAlign[] = ["left", "center", "right"];
@@ -703,6 +715,15 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       freeLayoutSections,
     },
     theme,
+    imageLibrary: Array.isArray(raw.imageLibrary)
+      ? raw.imageLibrary
+          .filter((item: any) => item && typeof item.id === "string" && typeof item.url === "string")
+          .map((item: any) => ({
+            id: item.id,
+            url: item.url,
+            name: typeof item.name === "string" ? item.name : "Изображение",
+          }))
+      : [],
   };
 }
 
@@ -775,6 +796,12 @@ export interface CustomizationContextType {
   setActiveDragTarget: (target: "sidebar" | "player" | null) => void;
   activeDropZone: "left" | "right" | "top" | "bottom" | null;
   setActiveDropZone: (zone: "left" | "right" | "top" | "bottom" | null) => void;
+  customTrackArt: string | null;
+  setCustomTrackArt: (url: string | null) => void;
+  imageLibrary: ImageLibraryItem[];
+  addToImageLibrary: (item: { url: string; name: string }) => void;
+  removeFromImageLibrary: (id: string) => void;
+  setWallpaperData: (url: string | null) => void;
 }
 
 const CustomizationContext = createContext<CustomizationContextType | null>(null);
@@ -909,6 +936,8 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     root.style.setProperty("--border2", hexToRgba(theme.textColor, 0.18));
     root.style.setProperty("--border3", hexToRgba(theme.textColor, 0.28));
     root.style.setProperty("--glass-border", hexToRgba(theme.textColor, 0.12));
+    root.style.setProperty("--app-bg", theme.appBgColor);
+    root.style.setProperty("--titlebar-bg", "transparent");
   }, [activeConfig]);
 
   const enterEditMode = () => {
@@ -1653,6 +1682,60 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     try { localStorage.removeItem(STORAGE_KEY); } catch {}
   };
 
+  const customTrackArt = activeConfig.theme?.customTrackArt ?? null;
+  const imageLibrary = activeConfig.imageLibrary ?? [];
+
+  const setCustomTrackArt = (url: string | null) => {
+    updateThemeDirectly({ customTrackArt: url });
+  };
+
+  const setWallpaperData = (url: string | null) => {
+    updateThemeDirectly({ wallpaperData: url });
+  };
+
+  const addToImageLibrary = (item: { url: string; name: string }) => {
+    const newItem: ImageLibraryItem = {
+      id: "img_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+      url: item.url,
+      name: item.name || "Изображение",
+    };
+    setSavedConfig((prev) => {
+      const existing = prev.imageLibrary ?? [];
+      const updated = [newItem, ...existing.filter((x) => x.url !== item.url)];
+      const next = { ...prev, imageLibrary: updated };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {
+        console.error("Failed to save imageLibrary", e);
+      }
+      return next;
+    });
+    setDraftConfig((prev) => {
+      const existing = prev.imageLibrary ?? [];
+      const updated = [newItem, ...existing.filter((x) => x.url !== item.url)];
+      return { ...prev, imageLibrary: updated };
+    });
+  };
+
+  const removeFromImageLibrary = (id: string) => {
+    setSavedConfig((prev) => {
+      const existing = prev.imageLibrary ?? [];
+      const updated = existing.filter((x) => x.id !== id);
+      const next = { ...prev, imageLibrary: updated };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {
+        console.error("Failed to save imageLibrary", e);
+      }
+      return next;
+    });
+    setDraftConfig((prev) => {
+      const existing = prev.imageLibrary ?? [];
+      const updated = existing.filter((x) => x.id !== id);
+      return { ...prev, imageLibrary: updated };
+    });
+  };
+
   return (
     <CustomizationContext.Provider
       value={{
@@ -1724,6 +1807,12 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         setActiveDragTarget,
         activeDropZone,
         setActiveDropZone,
+        customTrackArt,
+        setCustomTrackArt,
+        imageLibrary,
+        addToImageLibrary,
+        removeFromImageLibrary,
+        setWallpaperData,
       }}
     >
       {children}

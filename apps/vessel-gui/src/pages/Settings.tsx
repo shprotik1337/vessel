@@ -30,7 +30,6 @@ import {
   IconDisc,
   IconPlaylist,
   IconFileText,
-  IconFolder,
   IconLayoutBottom,
   IconLayoutTop,
   IconLayoutLeft,
@@ -286,7 +285,17 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
     deleteUserSlot,
     startPreview,
     resetToDefaults,
+    customTrackArt,
+    setCustomTrackArt,
+    imageLibrary,
+    addToImageLibrary,
+    removeFromImageLibrary,
+    setWallpaperData,
   } = useCustomization();
+
+  const [libraryUrlInput, setLibraryUrlInput] = useState("");
+  const [pickerTarget, setPickerTarget] = useState<"trackArt" | "wallpaper" | null>(null);
+  const [activeImageMenuId, setActiveImageMenuId] = useState<string | null>(null);
 
   const [isClosing, setIsClosing] = useState(false);
 
@@ -1508,7 +1517,6 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
                               gap: 8,
                             }}
                           >
-                            <span style={{ display: "inline-flex", width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
                             <span>{lang === "ru" ? "Локальный файл" : "Local file"}</span>
                           </div>
                         ) : (
@@ -1612,7 +1620,6 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
                               gap: 8,
                             }}
                           >
-                            <span style={{ display: "inline-flex", width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
                             <span>{lang === "ru" ? "Локальный файл" : "Local file"}</span>
                           </div>
                         ) : (
@@ -2217,29 +2224,13 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
                     <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
                       {state?.account_state?.kind === "authenticated"
                         ? (lang === "ru"
-                            ? `Подключено как @${state.account_state.username.replace(/^@+/, "")} • Синхронизация с сервером vessel-music.ru`
-                            : `Connected as @${state.account_state.username.replace(/^@+/, "")} • Sync with vessel-music.ru`)
+                            ? `Подключено как @${state.account_state.username.replace(/^@+/, "")}`
+                            : `Connected as @${state.account_state.username.replace(/^@+/, "")}`)
                         : (lang === "ru"
                             ? "Войдите в аккаунт Vessel для автоматической синхронизации треков между всеми вашими ПК"
                             : "Log into Vessel account to sync tracks across all your devices")}
                     </div>
                   </div>
-
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: "3px 10px",
-                      borderRadius: 12,
-                      background: state?.account_state?.kind === "authenticated" ? "rgba(34, 197, 94, 0.15)" : "var(--elev)",
-                      color: state?.account_state?.kind === "authenticated" ? "#22c55e" : "var(--text3)",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    {state?.account_state?.kind === "authenticated"
-                      ? (lang === "ru" ? "● Авторизован" : "● Authenticated")
-                      : (lang === "ru" ? "○ Гостевой режим" : "○ Guest Mode")}
-                  </span>
                 </div>
 
                 {state?.account_state?.kind === "authenticated" ? (
@@ -3365,99 +3356,6 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
                 </div>
               </div>
 
-              <div className="sett-section-title">ОБОИ И КАСТОМНЫЙ ФОН (JPG / PNG / GIF)</div>
-              <div className="sett-card" style={{ marginBottom: 20 }}>
-                <div className="sett-card-row">
-                  <div className="sett-card-info">
-                    <div className="sett-card-title">Пользовательские обои</div>
-                    <div className="sett-card-desc">Поддерживаются форматы JPG, PNG, WEBP и анимированные GIF</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button
-                      type="button"
-                      className="sett-token-action-btn submit"
-                      onClick={async () => {
-                        try {
-                          const file = await api.pickFile(["jpg", "jpeg", "png", "webp", "gif"]);
-                          if (file) {
-                            const dataUrl = await api.loadImageAsDataUrl(file);
-                            updateThemeDirectly({ wallpaperData: dataUrl });
-                            showToast("Обои успешно установлены!");
-                          }
-                        } catch (e) {
-                          showToast(String(e), true);
-                        }
-                      }}
-                    >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <IconFolder size={15} />
-                        <span>Выбрать файл</span>
-                      </span>
-                    </button>
-                    {config.theme?.wallpaperData && (
-                      <button
-                        type="button"
-                        className="sett-token-action-btn"
-                        onClick={() => {
-                          updateThemeDirectly({ wallpaperData: null });
-                          showToast("Обои удалены");
-                        }}
-                      >
-                        Удалить
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {config.theme?.wallpaperData && (
-                  <>
-                    <div style={{ marginTop: 16, height: 140, borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)" }}>
-                      <img
-                        src={config.theme.wallpaperData}
-                        alt="Wallpaper preview"
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    </div>
-
-                    <div className="sett-slider-row" style={{ marginTop: 16 }}>
-                      <div className="sett-card-info">
-                        <div className="sett-card-title">Затемнение обоев</div>
-                        <div className="sett-card-desc">Снижение яркости фонового изображения</div>
-                      </div>
-                      <div className="sett-slider-control-wrap">
-                        <input
-                          type="range"
-                          min="0"
-                          max="90"
-                          value={config.theme?.wallpaperDim ?? 45}
-                          onChange={(e) => updateThemeDirectly({ wallpaperDim: Number(e.target.value) })}
-                          className="sett-range-input"
-                        />
-                        <span className="sett-slider-value">{config.theme?.wallpaperDim ?? 45}%</span>
-                      </div>
-                    </div>
-
-                    <div className="sett-slider-row" style={{ marginTop: 14 }}>
-                      <div className="sett-card-info">
-                        <div className="sett-card-title">Размытие обоев</div>
-                        <div className="sett-card-desc">Эффект матового стекла на обоях</div>
-                      </div>
-                      <div className="sett-slider-control-wrap">
-                        <input
-                          type="range"
-                          min="0"
-                          max="40"
-                          value={config.theme?.wallpaperBlur ?? 14}
-                          onChange={(e) => updateThemeDirectly({ wallpaperBlur: Number(e.target.value) })}
-                          className="sett-range-input"
-                        />
-                        <span className="sett-slider-value">{config.theme?.wallpaperBlur ?? 14}px</span>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
               <div className="sett-section-title">СКРУГЛЕНИЕ УГЛОВ</div>
               <div className="sett-card">
                 <div className="sett-segmented-group">
@@ -3756,57 +3654,377 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
                 </div>
               </div>
 
-              <div className="sett-section-title">ОБОИ (ФОНОВОЕ ИЗОБРАЖЕНИЕ / GIF)</div>
-              <div className="sett-card">
-                <div className="sett-card-row">
-                  <div className="sett-card-info">
-                    <div className="sett-card-title">Пользовательские обои</div>
-                    <div className="sett-card-desc">Поддерживаются форматы JPG, PNG, WEBP и анимированные GIF</div>
+              <div className="sett-section-title">КАСТОМИЗАЦИЯ</div>
+              <div style={{ fontSize: 13, color: "var(--text3)", marginTop: -8, marginBottom: 16 }}>
+                Своя обложка, фон приложения и постоянная библиотека изображений.
+              </div>
+
+              {/* 2 Карточки: Обложка трека и Фон приложения */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, marginBottom: 16 }}>
+                {/* Карточка 1. Обложка трека */}
+                <div className="sett-card" style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <div style={{ width: 72, height: 72, minWidth: 72, minHeight: 72, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)", background: "var(--elev)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {customTrackArt ? (
+                      <img
+                        src={customTrackArt}
+                        alt="Обложка трека"
+                        style={{ width: 72, height: 72, objectFit: "cover" }}
+                      />
+                    ) : (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="10" r="10" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
                   </div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button
-                      type="button"
-                      className="sett-token-action-btn submit"
-                      onClick={async () => {
-                        try {
-                          const file = await api.pickFile(["jpg", "jpeg", "png", "webp", "gif"]);
-                          if (file) {
-                            const dataUrl = await api.loadImageAsDataUrl(file);
-                            updateThemeDirectly({ wallpaperData: dataUrl });
-                            showToast("Обои успешно установлены!");
-                          }
-                        } catch (e) {
-                          showToast(String(e), true);
-                        }
-                      }}
-                    >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <IconFolder size={15} />
-                        <span>Выбрать файл</span>
-                      </span>
-                    </button>
-                    {config.theme?.wallpaperData && (
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", marginBottom: 2 }}>Обложка трека</div>
+                    <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>Только для текущего трека в плеере.</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button
                         type="button"
-                        className="sett-token-action-btn"
-                        onClick={() => {
-                          updateThemeDirectly({ wallpaperData: null });
-                          showToast("Обои удалены");
-                        }}
+                        className="sett-token-action-btn submit"
+                        style={{ padding: "5px 10px", fontSize: 12 }}
+                        onClick={() => setPickerTarget("trackArt")}
                       >
-                        Удалить
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                          </svg>
+                          <span>Выбрать из библиотеки</span>
+                        </span>
                       </button>
-                    )}
+                      {customTrackArt && (
+                        <button
+                          type="button"
+                          className="sett-token-action-btn"
+                          style={{ padding: "5px 10px", fontSize: 12 }}
+                          onClick={() => {
+                            setCustomTrackArt(null);
+                            showToast("Обложка сброшена к оригиналу");
+                          }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"/>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            <span>Сброс</span>
+                          </span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {config.theme?.wallpaperData && (
-                  <div style={{ marginTop: 16, height: 140, borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)" }}>
-                    <img
-                      src={config.theme.wallpaperData}
-                      alt="Wallpaper preview"
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
+                {/* Карточка 2. Фон приложения */}
+                <div className="sett-card" style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <div style={{ width: 72, height: 72, minWidth: 72, minHeight: 72, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)", background: "var(--elev)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {config.theme?.wallpaperData ? (
+                      <img
+                        src={config.theme.wallpaperData}
+                        alt="Фон приложения"
+                        style={{ width: 72, height: 72, objectFit: "cover" }}
+                      />
+                    ) : (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", marginBottom: 2 }}>Фон приложения</div>
+                    <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>Картинка под интерфейсными слоями.</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        className="sett-token-action-btn submit"
+                        style={{ padding: "5px 10px", fontSize: 12 }}
+                        onClick={() => setPickerTarget("wallpaper")}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                          </svg>
+                          <span>Выбрать из библиотеки</span>
+                        </span>
+                      </button>
+                      {config.theme?.wallpaperData && (
+                        <button
+                          type="button"
+                          className="sett-token-action-btn"
+                          style={{ padding: "5px 10px", fontSize: 12 }}
+                          onClick={() => {
+                            setWallpaperData(null);
+                            showToast("Фон сброшен");
+                          }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"/>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            <span>Сброс</span>
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Карточка на всю ширину: Библиотека изображений */}
+              <div className="sett-card" style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div className="sett-card-title" style={{ fontSize: 15, fontWeight: 700 }}>Библиотека изображений</div>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: 12,
+                      background: "var(--elev)",
+                      color: "var(--accent)",
+                      border: "1px solid var(--border)",
+                    }}>
+                      {imageLibrary.length}
+                    </span>
+                  </div>
+                </div>
+                <div className="sett-card-desc" style={{ marginBottom: 16 }}>
+                  URL, картинки и GIF с ПК остаются здесь для быстрого выбора.
+                </div>
+
+                {/* Панель добавления URL и Загрузки */}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+                  <input
+                    type="text"
+                    value={libraryUrlInput}
+                    onChange={(e) => setLibraryUrlInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const trimmed = libraryUrlInput.trim();
+                        if (!trimmed) {
+                          showToast("Введите URL картинки или GIF", true);
+                          return;
+                        }
+                        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && !trimmed.startsWith("data:")) {
+                          showToast("URL должен начинаться с http://, https:// или data:", true);
+                          return;
+                        }
+                        let name = "Изображение";
+                        try {
+                          const urlObj = new URL(trimmed);
+                          const pathPart = urlObj.pathname.split("/").pop();
+                          if (pathPart) name = decodeURIComponent(pathPart);
+                        } catch {
+                          name = trimmed.substring(0, 24);
+                        }
+                        addToImageLibrary({ url: trimmed, name });
+                        setLibraryUrlInput("");
+                        showToast("Изображение добавлено в библиотеку");
+                      }
+                    }}
+                    placeholder="URL картинки или GIF"
+                    className="sett-token-input"
+                    style={{ flex: 1, minWidth: 200 }}
+                  />
+                  <button
+                    type="button"
+                    className="sett-token-action-btn submit"
+                    onClick={() => {
+                      const trimmed = libraryUrlInput.trim();
+                      if (!trimmed) {
+                        showToast("Введите URL картинки или GIF", true);
+                        return;
+                      }
+                      if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://") && !trimmed.startsWith("data:")) {
+                        showToast("URL должен начинаться с http://, https:// или data:", true);
+                        return;
+                      }
+                      let name = "Изображение";
+                      try {
+                        const urlObj = new URL(trimmed);
+                        const pathPart = urlObj.pathname.split("/").pop();
+                        if (pathPart) name = decodeURIComponent(pathPart);
+                      } catch {
+                        name = trimmed.substring(0, 24);
+                      }
+                      addToImageLibrary({ url: trimmed, name });
+                      setLibraryUrlInput("");
+                      showToast("Изображение добавлено в библиотеку");
+                    }}
+                  >
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                      </svg>
+                      <span>Добавить URL</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sett-token-action-btn"
+                    onClick={async () => {
+                      try {
+                        const file = await api.pickFile(["jpg", "jpeg", "png", "webp", "gif"]);
+                        if (file) {
+                          const dataUrl = await api.loadImageAsDataUrl(file);
+                          const name = file.split(/[\/\\]/).pop() || "Картинка";
+                          addToImageLibrary({ url: dataUrl, name });
+                          showToast("Изображение сохранено в библиотеку!");
+                        }
+                      } catch (e) {
+                        showToast(String(e), true);
+                      }
+                    }}
+                  >
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                      <span>Загрузить</span>
+                    </span>
+                  </button>
+                </div>
+
+                {/* Сетка элементов библиотеки */}
+                {imageLibrary.length === 0 ? (
+                  <div style={{
+                    padding: "32px 16px",
+                    textAlign: "center",
+                    borderRadius: 10,
+                    border: "1px dashed var(--border)",
+                    color: "var(--text3)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 10,
+                  }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <div style={{ fontSize: 13 }}>В библиотеке пока нет изображений. Вставьте ссылку или загрузите файл с компьютера.</div>
+                  </div>
+                ) : (
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                    gap: 12,
+                  }}>
+                    {imageLibrary.map((item) => {
+                      const isMenuOpen = activeImageMenuId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            borderRadius: 10,
+                            overflow: "hidden",
+                            border: isMenuOpen ? "1px solid var(--accent)" : "1px solid var(--border)",
+                            background: "var(--elev)",
+                            position: "relative",
+                            display: "flex",
+                            flexDirection: "column",
+                            transition: "border-color 0.15s ease",
+                          }}
+                        >
+                          <div
+                            style={{ height: 96, position: "relative", cursor: "pointer", overflow: "hidden" }}
+                            onClick={() => setActiveImageMenuId(isMenuOpen ? null : item.id)}
+                            title="Нажмите для действий"
+                          >
+                            <img
+                              src={item.url}
+                              alt={item.name}
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            />
+                            {/* Кнопка удаления */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeFromImageLibrary(item.id);
+                                showToast("Изображение удалено из библиотеки");
+                              }}
+                              style={{
+                                position: "absolute",
+                                top: 6,
+                                right: 6,
+                                width: 24,
+                                height: 24,
+                                borderRadius: 6,
+                                background: "rgba(0, 0, 0, 0.7)",
+                                color: "#ffffff",
+                                border: "none",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                                transition: "background 0.15s ease",
+                              }}
+                              title="Удалить из библиотеки"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div style={{ padding: "6px 8px", fontSize: 11, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.name}>
+                            {item.name}
+                          </div>
+
+                          {/* Аккуратное выпадающее меню действий */}
+                          {isMenuOpen && (
+                            <div style={{
+                              padding: "6px 8px 8px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 6,
+                              borderTop: "1px solid var(--border)",
+                              background: "var(--card-bg)",
+                            }}>
+                              <button
+                                type="button"
+                                className="sett-token-action-btn submit"
+                                style={{ width: "100%", padding: "4px 6px", fontSize: 11, textAlign: "center" }}
+                                onClick={() => {
+                                  setCustomTrackArt(item.url);
+                                  setActiveImageMenuId(null);
+                                  showToast("Обложка трека обновлена!");
+                                }}
+                              >
+                                Как обложку
+                              </button>
+                              <button
+                                type="button"
+                                className="sett-token-action-btn"
+                                style={{ width: "100%", padding: "4px 6px", fontSize: 11, textAlign: "center" }}
+                                onClick={() => {
+                                  setWallpaperData(item.url);
+                                  setActiveImageMenuId(null);
+                                  showToast("Фон приложения обновлен!");
+                                }}
+                              >
+                                Как фон
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -4535,6 +4753,123 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
           }}
           onClose={() => setDirModal(null)}
         />
+      )}
+
+      {/* Модальное окно выбора из библиотеки */}
+      {pickerTarget !== null && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.75)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onClick={() => setPickerTarget(null)}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              maxHeight: "80vh",
+              background: "var(--card-bg)",
+              border: "1px solid var(--border)",
+              borderRadius: 14,
+              padding: 20,
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 24px 64px rgba(0, 0, 0, 0.8)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text)" }}>
+                {pickerTarget === "trackArt" ? "Выбрать обложку трека" : "Выбрать фон приложения"}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPickerTarget(null)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--text3)",
+                  cursor: "pointer",
+                  padding: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", minHeight: 180, marginBottom: 16 }}>
+              {imageLibrary.length === 0 ? (
+                <div style={{ textAlign: "center", color: "var(--text3)", padding: "40px 10px", fontSize: 13 }}>
+                  В библиотеке пока нет сохранённых картинок. Сначала добавьте их в блоке «Библиотека изображений».
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
+                  {imageLibrary.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        if (pickerTarget === "trackArt") {
+                          setCustomTrackArt(item.url);
+                          showToast("Обложка трека установлена!");
+                        } else {
+                          setWallpaperData(item.url);
+                          showToast("Фон приложения установлен!");
+                        }
+                        setPickerTarget(null);
+                      }}
+                      style={{
+                        borderRadius: 8,
+                        overflow: "hidden",
+                        border: "1px solid var(--border)",
+                        background: "var(--elev)",
+                        cursor: "pointer",
+                        transition: "transform 0.15s ease, border-color 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = "var(--accent)";
+                        e.currentTarget.style.transform = "scale(1.02)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = "var(--border)";
+                        e.currentTarget.style.transform = "scale(1)";
+                      }}
+                    >
+                      <div style={{ height: 80, overflow: "hidden" }}>
+                        <img src={item.url} alt={item.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      </div>
+                      <div style={{ padding: "4px 6px", fontSize: 11, color: "var(--text)", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                        {item.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="sett-token-action-btn"
+                onClick={() => setPickerTarget(null)}
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

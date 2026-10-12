@@ -263,17 +263,30 @@ function AppContent() {
           }}
         />
       )}
-      {/* Fixed Ambient Backdrop for fullscreen player view */}
-      {view === "player" && (config.theme?.ambientMode === "off" ? null : config.theme?.ambientMode === "theme" ? (
-        <div className="app-ambient-backdrop-theme app-ambient-backdrop-fs" />
-      ) : globalAmbientArt ? (
-        <div
-          className="app-ambient-backdrop app-ambient-backdrop-fs"
-          style={{ backgroundImage: `url("${globalAmbientArt}")` }}
-        />
-      ) : (
-        <div className="app-ambient-backdrop-fallback app-ambient-backdrop-fs" />
-      ))}
+      {/* Seamless Ambient Backdrop starting from the very top of window (Y = 0) */}
+      {config.theme?.ambientMode !== "off" && (
+        view === "player" ? (
+          config.theme?.ambientMode === "theme" ? (
+            <div className="app-ambient-backdrop-theme app-ambient-backdrop-fs" />
+          ) : globalAmbientArt ? (
+            <div
+              className="app-ambient-backdrop app-ambient-backdrop-fs"
+              style={{ backgroundImage: `url("${globalAmbientArt}")` }}
+            />
+          ) : (
+            <div className="app-ambient-backdrop-fallback app-ambient-backdrop-fs" />
+          )
+        ) : (
+          config.theme?.ambientMode === "theme" ? (
+            <div className="app-ambient-backdrop-theme app-ambient-backdrop-top" />
+          ) : globalAmbientArt ? (
+            <div
+              className="app-ambient-backdrop app-ambient-backdrop-top"
+              style={{ backgroundImage: `url("${globalAmbientArt}")` }}
+            />
+          ) : null
+        )
+      )}
       <Titlebar />
       {isPreviewActive && (
         <div className="preview-floating-bar">
@@ -351,15 +364,6 @@ function AppContent() {
                 !showBottomPlayer ? "no-player-bottom" : ""
               }`}
             >
-              {/* Scrollable Ambient Backdrop tied to content coordinate space */}
-              {view !== "player" && (config.theme?.ambientMode === "off" ? null : config.theme?.ambientMode === "theme" ? (
-                <div className="app-ambient-backdrop-theme app-ambient-backdrop-scroll" />
-              ) : globalAmbientArt ? (
-                <div
-                  className="app-ambient-backdrop app-ambient-backdrop-scroll"
-                  style={{ backgroundImage: `url("${globalAmbientArt}")` }}
-                />
-              ) : null)}
               {renderPage()}
             </main>
             {showBottomPlayer && <BottomPlayer />}

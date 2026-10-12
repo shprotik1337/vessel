@@ -233,15 +233,33 @@ export function BottomPlayer() {
 
     showToast(lang === "ru" ? "Загрузка релиза…" : "Loading release…", false, 2000);
 
+    // 1. Прямой переход к альбому/релизу, если ссылка уже известна у трека
+    if (track.album_url) {
+      try {
+        const pl = await api.previewPlaylistUrl(track.album_url);
+        if (pl && pl.tracks && pl.tracks.length > 0) {
+          setExternalPlaylist(pl);
+          navigateTo("playlist", { playlistId: "external" });
+          return;
+        }
+      } catch (err) {
+        console.warn("Direct album preview failed:", err);
+      }
+    }
+
     const primaryArtist = track.artists?.[0] || "";
     const cleanTitle = track.title.replace(/\s*\([^)]*\)|\s*\[[^\]]*\]/g, "").trim();
     const query = `${cleanTitle} ${primaryArtist}`.trim();
 
+    // 2. Поиск релиза в каталоге со строгим сопоставлением названия
     try {
       const albums = await api.searchCollections(query, "albums");
+      const normTitle = cleanTitle.toLowerCase();
       const matched = albums.find(
-        (a) => a.provider === track.provider && a.web_url
-      ) || albums.find((a) => a.web_url) || albums[0];
+        (a) => a.provider === track.provider && a.web_url && a.title.toLowerCase().includes(normTitle)
+      ) || albums.find(
+        (a) => a.web_url && a.title.toLowerCase().includes(normTitle)
+      );
 
       if (matched && matched.web_url) {
         const pl = await api.previewPlaylistUrl(matched.web_url);
@@ -255,6 +273,7 @@ export function BottomPlayer() {
       console.warn("Release search failed:", err);
     }
 
+    // 3. Сингл-релиз по собственной ссылке трека (работает для SoundCloud и других)
     if (track.web_url) {
       try {
         const pl = await api.previewPlaylistUrl(track.web_url);
@@ -266,6 +285,7 @@ export function BottomPlayer() {
       } catch {}
     }
 
+    // 4. Fallback на профиль артиста
     if (primaryArtist) {
       navigateTo("artist", { artist: primaryArtist, provider: track.provider });
     }
@@ -339,7 +359,7 @@ export function BottomPlayer() {
             title={lang === "ru" ? "Открыть плеер" : "Open player"}
           >
             <Artwork
-              url={track.artwork_url}
+              url={config.theme?.customTrackArt || track.artwork_url}
               alt={track.title}
               className="pl-art"
               seed={track.id.length}

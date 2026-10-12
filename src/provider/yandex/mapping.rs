@@ -37,6 +37,15 @@ pub fn normalizovat_track(track: Track) -> Option<TrackRef> {
         PlaybackCapability::Full
     };
 
+    let (album_url, album_title) = if let Some(alb) = track.albums.first() {
+        let alb_url = alb
+            .id
+            .and_then(|alb_id| Url::parse(&format!("https://music.yandex.ru/album/{alb_id}")).ok());
+        (alb_url, alb.title.clone())
+    } else {
+        (None, None)
+    };
+
     Some(TrackRef {
         provider: ProviderKind::YandexMusic,
         id: id.clone(),
@@ -54,6 +63,8 @@ pub fn normalizovat_track(track: Track) -> Option<TrackRef> {
         drm: false,
         isrc: None,
         origin: crate::model::TrackOrigin::Original,
+        album_url,
+        album_title,
     })
 }
 

@@ -39,6 +39,8 @@ pub fn normalize_track(video_id: &str, title: &str, artists: Vec<String>, durati
         drm: false,
         isrc: None,
         origin: crate::model::TrackOrigin::Original,
+        album_url: None,
+        album_title: None,
     }
 }
 

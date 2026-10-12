@@ -1148,6 +1148,8 @@ fn map_album_track(track: &Value) -> Option<TrackRef> {
         drm: true,
         isrc: None,
         origin: crate::model::TrackOrigin::Original,
+        album_url: None,
+        album_title: None,
     })
 }
 
@@ -1276,8 +1278,15 @@ fn map_pf_track(item: &Value) -> Option<TrackRef> {
             item.pointer("/trackDuration/totalMilliseconds")
                 .and_then(Value::as_u64)
         });
-    let artwork_url = item
-        .get("albumOfTrack")
+    let album_data = item.get("albumOfTrack");
+    let album_uri = album_data.and_then(|a| a.get("uri")).and_then(Value::as_str);
+    let album_id = album_uri.and_then(pf_bare_id);
+    let album_url = album_id.and_then(|alb_id| Url::parse(&format!("{WEB_URL}/album/{alb_id}")).ok());
+    let album_title = album_data
+        .and_then(|a| a.get("name"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let artwork_url = album_data
         .and_then(|a| a.get("coverArt"))
         .and_then(|c| c.get("sources"))
         .and_then(Value::as_array)
@@ -1315,6 +1324,8 @@ fn map_pf_track(item: &Value) -> Option<TrackRef> {
         drm: true,
         isrc,
         origin: crate::model::TrackOrigin::Original,
+        album_url,
+        album_title,
     })
 }
 

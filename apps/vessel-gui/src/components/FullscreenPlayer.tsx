@@ -453,7 +453,7 @@ export function FullscreenPlayer() {
     <div className="fs-left">
       <div className="fs-artwork-wrap">
         <Artwork
-          url={track.artwork_url}
+          url={config.theme?.customTrackArt || track.artwork_url}
           alt={track.title}
           className="fs-art"
           seed={track.id.length}

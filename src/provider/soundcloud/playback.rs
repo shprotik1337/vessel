@@ -36,41 +36,68 @@ pub(super) async fn poluchit_istochnik(
         .get_json(client.v2_url(&["tracks", track_id])?, &[])
         .await
         .context("SoundCloud не отдал данные для воспроизведения")?;
-    let transcoding = select_transcoding(&details.media.transcodings, &track.capability)
-        .context("SoundCloud не предложил открытый поток для этого трека")?;
-    let mut query = Vec::new();
-    if let Some(auth) = details.track_authorization.as_deref() {
-        query.push(("track_authorization", auth.to_string()));
-    }
-    let resolved: ScResolvedStream = client
-        .get_json(Url::parse(&transcoding.url)?, &query)
-        .await
-        .context("SoundCloud не разрешил адрес потока")?;
-    let url = Url::parse(resolved.url.trim()).context("SoundCloud вернул неверный адрес потока")?;
+    let candidates = ordered_transcodings(&details.media.transcodings, &track.capability);
     ensure!(
-        url.scheme() == "https" && url.host_str().is_some(),
-        "SoundCloud вернул небезопасный адрес потока"
+        !candidates.is_empty(),
+        "SoundCloud не предложил открытый поток для этого трека"
     );
 
-    let hls = transcoding.format.protocol.eq_ignore_ascii_case("hls");
-    Ok(PlaybackSource {
-        url,
-        headers: BTreeMap::new(),
-        mime_type: Some(if hls {
-            "application/vnd.apple.mpegurl".to_string()
-        } else {
-            transcoding.format.mime_type.clone()
-        }),
-        supports_range: !hls,
-        expires_at_ms: None,
-        capability: track.capability.clone(),
-    })
+    let mut last_err = None;
+    for transcoding in candidates {
+        let mut query = Vec::new();
+        if let Some(auth) = details.track_authorization.as_deref() {
+            query.push(("track_authorization", auth.to_string()));
+        }
+        let Ok(transcoding_url) = Url::parse(&transcoding.url) else {
+            continue;
+        };
+        let resolved: Result<ScResolvedStream> = client.get_json(transcoding_url, &query).await;
+        match resolved {
+            Ok(resolved_stream) => {
+                let Ok(url) = Url::parse(resolved_stream.url.trim()) else {
+                    continue;
+                };
+                if url.scheme() != "https" || url.host_str().is_none() {
+                    continue;
+                }
+                let hls = transcoding.format.protocol.eq_ignore_ascii_case("hls");
+                let mut headers = BTreeMap::new();
+                headers.insert("Referer".to_string(), "https://soundcloud.com/".to_string());
+                headers.insert("Origin".to_string(), "https://soundcloud.com".to_string());
+                headers.insert(
+                    "User-Agent".to_string(),
+                    super::client::SOUNDCLOUD_BROWSER_UA.to_string(),
+                );
+
+                return Ok(PlaybackSource {
+                    url,
+                    headers,
+                    mime_type: Some(if hls {
+                        "application/vnd.apple.mpegurl".to_string()
+                    } else {
+                        transcoding.format.mime_type.clone()
+                    }),
+                    supports_range: !hls,
+                    expires_at_ms: None,
+                    capability: track.capability.clone(),
+                });
+            }
+            Err(e) => {
+                last_err = Some(e);
+            }
+        }
+    }
+
+    if let Some(err) = last_err {
+        return Err(err).context("SoundCloud не разрешил поток для воспроизведения");
+    }
+    Err(bail_no_stream(matches!(track.capability, PlaybackCapability::Preview { .. })))
 }
 
-fn select_transcoding<'a>(
+fn ordered_transcodings<'a>(
     transcodings: &'a [ScTranscoding],
     capability: &PlaybackCapability,
-) -> Result<&'a ScTranscoding> {
+) -> Vec<&'a ScTranscoding> {
     let needs_preview = matches!(capability, PlaybackCapability::Preview { .. });
     let mut candidates = transcodings
         .iter()
@@ -82,9 +109,18 @@ fn select_transcoding<'a>(
             )
         })
         .collect::<Vec<_>>();
-    // Сортировка скучная, зато потом никто не слушает opus из ведра при живом aac
+    // Сортировка: лучший формат вперёд
     candidates.sort_by_key(|item| transcoding_weight(item));
     candidates
+}
+
+#[allow(dead_code)]
+fn select_transcoding<'a>(
+    transcodings: &'a [ScTranscoding],
+    capability: &PlaybackCapability,
+) -> Result<&'a ScTranscoding> {
+    let needs_preview = matches!(capability, PlaybackCapability::Preview { .. });
+    ordered_transcodings(transcodings, capability)
         .into_iter()
         .next()
         .ok_or_else(|| bail_no_stream(needs_preview))
@@ -177,9 +213,16 @@ pub(super) async fn zagruzit_progressivnyi(
         url.scheme() == "https" && url.host_str().is_some(),
         "SoundCloud вернул небезопасный адрес потока"
     );
+    let mut headers = BTreeMap::new();
+    headers.insert("Referer".to_string(), "https://soundcloud.com/".to_string());
+    headers.insert("Origin".to_string(), "https://soundcloud.com".to_string());
+    headers.insert(
+        "User-Agent".to_string(),
+        super::client::SOUNDCLOUD_BROWSER_UA.to_string(),
+    );
     Ok(PlaybackSource {
         url,
-        headers: BTreeMap::new(),
+        headers,
         mime_type: Some("audio/mpeg".to_string()),
         supports_range: true,
         expires_at_ms: None,

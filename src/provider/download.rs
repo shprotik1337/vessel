@@ -95,7 +95,11 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
             Ok(())
         }
         "http" | "https" => {
-            let temporary = dest.with_extension("part");
+            let temporary = {
+                let mut name = dest.file_name().unwrap_or_default().to_os_string();
+                name.push(".download");
+                dest.with_file_name(name)
+            };
 
             if crate::audio::is_hls(source) {
                 let url = source.url.clone();

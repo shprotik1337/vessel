@@ -484,12 +484,40 @@ impl App {
 
     fn handle_audio_event(&mut self, event: crate::audio::AudioEvent) {
         match event {
-            crate::audio::AudioEvent::Buffering => self.player.status = PlaybackStatus::Buffering,
-            crate::audio::AudioEvent::Playing => self.player.status = PlaybackStatus::Playing,
+            crate::audio::AudioEvent::Buffering => {
+                self.player.status = PlaybackStatus::Buffering;
+                self.status_message.clear();
+            }
+            crate::audio::AudioEvent::Playing => {
+                self.player.status = PlaybackStatus::Playing;
+                self.status_message.clear();
+            }
             crate::audio::AudioEvent::Paused => self.player.status = PlaybackStatus::Paused,
             crate::audio::AudioEvent::Stopped => self.player.status = PlaybackStatus::Stopped,
             crate::audio::AudioEvent::Ended => self.next_track(),
             crate::audio::AudioEvent::Failed(error) | crate::audio::AudioEvent::OutputFailed(error) => {
+                let was_file_err = error.contains("os error 2")
+                    || error.contains("Не удается найти указанный файл")
+                    || error.contains("кэш-файл не найден")
+                    || error.contains("локальный кэш")
+                    || error.contains("No such file or directory");
+
+                if let Some(track) = self.now_playing.clone() {
+                    let key = track.provider_key();
+                    if was_file_err && self.retried_corrupt_cache.insert(key) {
+                        crate::dlog!("[cache] локальный файл недоступен ({error}) — очищаю кэш и перескачиваю стрим");
+                        crate::provider::cache::delete_cached_track(&track);
+                        self.effects.push(AppEffect::Play(Box::new(track)));
+                        return;
+                    }
+                }
+                if was_file_err {
+                    crate::dlog!("[audio] сбой чтения локального файла: {error}");
+                    self.player.status = PlaybackStatus::Stopped;
+                    self.status_message.clear();
+                    self.next_track();
+                    return;
+                }
                 self.player.status = PlaybackStatus::Error;
                 self.status_message = format!("Аудио сломалось: {error}");
             }

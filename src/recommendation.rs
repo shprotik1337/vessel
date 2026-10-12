@@ -776,6 +776,8 @@ pub async fn generate_home_recommendations(
                 drm: false,
                 isrc: None,
                 origin: crate::model::TrackOrigin::Original,
+                album_url: None,
+                album_title: None,
             }) > 0.0 {
                 "hip hop hits"
             } else {

@@ -9,34 +9,60 @@ interface AuthModalProps {
   onContinueGuest: () => void;
 }
 
+function IconRefresh({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+    </svg>
+  );
+}
+
+function IconEye({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function IconEyeOff({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
 const SYMBOL_SVGS: Record<string, React.ReactNode> = {
   cloud: (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
       <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" />
     </svg>
   ),
   diamond: (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
       <path d="M12 2L2 12l10 10 10-10L12 2z" />
     </svg>
   ),
   note: (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
       <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
     </svg>
   ),
   crown: (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
       <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .55-.45 1-1 1H6c-.55 0-1-.45-1-1v-1h14v1z" />
     </svg>
   ),
   star: (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
       <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
     </svg>
   ),
   bolt: (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
       <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.13-5.9 10.36z" />
     </svg>
   ),
@@ -105,6 +131,67 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     );
   }, [username, password, mode, isCaptchaSolved, loading]);
 
+function formatAuthError(err: any, mode: "login" | "register"): string {
+  const raw = String(typeof err === "string" ? err : err?.message || "").toLowerCase();
+
+  if (raw.includes("captcha") || raw.includes("challenge") || raw.includes("капч")) {
+    return "Неверно введены символы проверки. Попробуйте ещё раз.";
+  }
+
+  if (
+    raw.includes("invalid credential") ||
+    raw.includes("unauthorized") ||
+    raw.includes("401") ||
+    raw.includes("password") ||
+    raw.includes("user not found") ||
+    raw.includes("not found") ||
+    raw.includes("wrong password") ||
+    raw.includes("неверный") ||
+    raw.includes("bad credentials")
+  ) {
+    return mode === "login"
+      ? "Неверное имя пользователя или пароль"
+      : "Проверьте правильность введенных данных";
+  }
+
+  if (
+    raw.includes("already exist") ||
+    raw.includes("taken") ||
+    raw.includes("conflict") ||
+    raw.includes("409") ||
+    raw.includes("уже существует")
+  ) {
+    return "Пользователь с таким никнеймом уже зарегистрирован";
+  }
+
+  if (
+    raw.includes("timeout") ||
+    raw.includes("network") ||
+    raw.includes("connect") ||
+    raw.includes("fetch") ||
+    raw.includes("502") ||
+    raw.includes("503") ||
+    raw.includes("504")
+  ) {
+    return "Не удалось связаться с сервером. Проверьте интернет-соединение.";
+  }
+
+  if (raw.includes("username") || raw.includes("ник")) {
+    return "Недопустимое имя пользователя";
+  }
+
+  if (typeof err === "string") {
+    const cleaned = err.replace(/^Vessel Server \[[^\]]+\] [^:]+: */i, "").trim();
+    if (cleaned && cleaned.length < 80 && !cleaned.startsWith("{")) {
+      return cleaned;
+    }
+  }
+
+  return mode === "login"
+    ? "Неверные данные для входа. Попробуйте снова."
+    : "Не удалось создать аккаунт. Попробуйте снова.";
+}
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
@@ -115,7 +202,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       if (mode === "register") {
         if (!challenge) {
-          setErrorMsg("Пройдите проверку");
+          setErrorMsg("Капча не загружена. Нажмите кнопку обновления капчи.");
+          setLoading(false);
+          return;
+        }
+        if (selectedClicks.length !== challenge.targets.length) {
+          setErrorMsg(`Пожалуйста, выберите все ${challenge.targets.length} символа по порядку`);
           setLoading(false);
           return;
         }
@@ -137,9 +229,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } catch (err: any) {
       console.error("Auth error", err);
-      const msg = typeof err === "string" ? err : err?.message || "Ошибка авторизации";
-      setErrorMsg(msg);
-      // Reload captcha on failure
+      setErrorMsg(formatAuthError(err, mode));
       void fetchCaptcha();
     } finally {
       setLoading(false);
@@ -154,13 +244,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         position: "fixed",
         inset: 0,
         zIndex: 60000,
-        background: "rgba(0, 0, 0, 0.82)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
+        background: "rgba(0, 0, 0, 0.75)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
-        padding: "20px",
+        justifyContent: "flex-start",
+        padding: "24px 16px",
+        overflowY: "auto",
+        boxSizing: "border-box",
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -169,56 +262,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       <div
         style={{
           width: "100%",
-          maxWidth: "480px",
-          background: "#000000",
-          border: "1px solid rgba(255, 255, 255, 0.08)",
+          maxWidth: "460px",
+          margin: "auto 0",
+          flexShrink: 0,
+          background: "var(--card-bg, #000000)",
+          backdropFilter: "blur(24px) saturate(160%)",
+          WebkitBackdropFilter: "blur(24px) saturate(160%)",
+          border: "1px solid var(--border)",
           borderRadius: "20px",
-          padding: "28px 32px",
-          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.95)",
-          color: "#ffffff",
+          padding: "24px 28px",
+          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.85)",
+          color: "var(--text)",
           fontFamily: "inherit",
           display: "flex",
           flexDirection: "column",
-          gap: "18px",
+          gap: "14px",
           position: "relative",
           boxSizing: "border-box",
         }}
       >
-        {/* Top Header: Badge + Tabs */}
+        {/* Top Header: Vessel text + Tabs */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div
-              style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "10px",
-                background: "rgba(255, 255, 255, 0.06)",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#ffffff",
-              }}
-            >
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
-            </div>
-            <div>
-              <div style={{ fontSize: "15px", fontWeight: 700, letterSpacing: "-0.01em" }}>Vessel</div>
-              <div style={{ fontSize: "10px", fontWeight: 600, color: "rgba(255, 255, 255, 0.4)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                Аккаунт
-              </div>
-            </div>
+          <div
+            style={{
+              fontSize: "20px",
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              color: "var(--text)",
+            }}
+          >
+            Vessel
           </div>
 
           <div
             style={{
               display: "flex",
-              background: "rgba(255, 255, 255, 0.04)",
+              background: "var(--elev)",
               borderRadius: "10px",
               padding: "3px",
-              border: "1px solid rgba(255, 255, 255, 0.06)",
+              border: "1px solid var(--border)",
             }}
           >
             <button
@@ -228,8 +310,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setErrorMsg(null);
               }}
               style={{
-                background: mode === "login" ? "rgba(255, 255, 255, 0.14)" : "transparent",
-                color: mode === "login" ? "#ffffff" : "rgba(255, 255, 255, 0.5)",
+                background: mode === "login" ? "var(--accent)" : "transparent",
+                color: mode === "login" ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
                 border: "none",
                 borderRadius: "8px",
                 padding: "6px 14px",
@@ -248,8 +330,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setErrorMsg(null);
               }}
               style={{
-                background: mode === "register" ? "rgba(255, 255, 255, 0.14)" : "transparent",
-                color: mode === "register" ? "#ffffff" : "rgba(255, 255, 255, 0.5)",
+                background: mode === "register" ? "var(--accent)" : "transparent",
+                color: mode === "register" ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
                 border: "none",
                 borderRadius: "8px",
                 padding: "6px 14px",
@@ -266,10 +348,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Title & Subtitle */}
         <div>
-          <h2 style={{ margin: "4px 0 6px", fontSize: "24px", fontWeight: 700, letterSpacing: "-0.02em" }}>
+          <h2 style={{ margin: "0 0 6px 0", fontSize: "24px", fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text)" }}>
             {mode === "login" ? "Вход" : "Регистрация"}
           </h2>
-          <p style={{ margin: 0, fontSize: "13px", color: "rgba(255, 255, 255, 0.5)", lineHeight: 1.4 }}>
+          <p style={{ margin: 0, fontSize: "13px", color: "var(--text3)", lineHeight: 1.4 }}>
             {mode === "login"
               ? "Войди в профиль или продолжи гостем для локального режима."
               : "Создай профиль или продолжи гостем для локального режима."}
@@ -300,14 +382,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               style={{
                 fontSize: "10.5px",
                 fontWeight: 700,
-                color: "rgba(255, 255, 255, 0.4)",
+                color: "var(--text3)",
                 letterSpacing: "0.06em",
-                display: "flex",
-                alignItems: "center",
-                gap: "5px",
               }}
             >
-              <span>👤</span> НИК
+              <span>НИК</span>
             </label>
             <input
               type="text"
@@ -316,11 +395,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               placeholder="Имя пользователя"
               autoFocus
               style={{
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
+                background: "var(--elev)",
+                border: "1px solid var(--border)",
                 borderRadius: "10px",
                 padding: "11px 14px",
-                color: "#ffffff",
+                color: "var(--text)",
                 fontSize: "13.5px",
                 outline: "none",
                 transition: "border 0.15s ease",
@@ -334,14 +413,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               style={{
                 fontSize: "10.5px",
                 fontWeight: 700,
-                color: "rgba(255, 255, 255, 0.4)",
+                color: "var(--text3)",
                 letterSpacing: "0.06em",
-                display: "flex",
-                alignItems: "center",
-                gap: "5px",
               }}
             >
-              <span>🔑</span> ПАРОЛЬ
+              <span>ПАРОЛЬ</span>
             </label>
             <div style={{ position: "relative" }}>
               <input
@@ -352,13 +428,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 style={{
                   width: "100%",
                   boxSizing: "border-box",
-                  background: "rgba(255, 255, 255, 0.04)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--elev)",
+                  border: "1px solid var(--border)",
                   borderRadius: "10px",
                   padding: "11px 40px 11px 14px",
-                  color: "#ffffff",
+                  color: "var(--text)",
                   fontSize: "13.5px",
                   outline: "none",
+                  transition: "border 0.15s ease",
                 }}
               />
               <button
@@ -371,22 +448,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   transform: "translateY(-50%)",
                   background: "none",
                   border: "none",
-                  color: "rgba(255, 255, 255, 0.4)",
+                  color: "var(--text3)",
                   cursor: "pointer",
                   padding: "4px",
                   display: "flex",
                   alignItems: "center",
                 }}
               >
-                {showPassword ? (
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-                  </svg>
-                )}
+                {showPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
               </button>
             </div>
           </div>
@@ -394,8 +463,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* Interactive CAPTCHA */}
           <div
             style={{
-              background: "#050505",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "var(--elev)",
+              border: "1px solid var(--border)",
               borderRadius: "14px",
               padding: "14px",
               display: "flex",
@@ -405,12 +474,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           >
             {/* Captcha Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ fontSize: "14px", color: "rgba(255, 255, 255, 0.7)" }}>🛡️</span>
-                <div>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#ffffff" }}>Проверка</div>
-                  <div style={{ fontSize: "10.5px", color: "rgba(255, 255, 255, 0.4)" }}>Нажмите символы по порядку</div>
-                </div>
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--text)" }}>Проверка</div>
+                <div style={{ fontSize: "10.5px", color: "var(--text3)" }}>Нажмите символы по порядку</div>
               </div>
               <button
                 type="button"
@@ -419,15 +485,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 style={{
                   background: "transparent",
                   border: "none",
-                  color: "rgba(255, 255, 255, 0.5)",
+                  color: "var(--text3)",
                   cursor: "pointer",
                   padding: "4px",
                   display: "flex",
                   alignItems: "center",
-                  fontSize: "14px",
                 }}
               >
-                🔄
+                <IconRefresh size={14} />
               </button>
             </div>
 
@@ -438,13 +503,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: "8px",
-                  background: "rgba(255, 255, 255, 0.03)",
-                  padding: "8px 12px",
+                  gap: "10px",
+                  background: "var(--card-bg, #000000)",
+                  border: "1px dashed var(--border)",
                   borderRadius: "10px",
-                  border: "1px solid rgba(255, 255, 255, 0.04)",
+                  padding: "10px 14px",
+                  position: "relative",
+                  overflow: "hidden",
                 }}
               >
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text3)", marginRight: "4px" }}>
+                  Цель:
+                </span>
                 {challenge.targets.map((tgt, i) => {
                   const isDone = selectedClicks.length > i;
                   return (
@@ -454,32 +524,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         display: "flex",
                         alignItems: "center",
                         gap: "6px",
-                        background: isDone ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.04)",
-                        border: isDone ? "1px solid rgba(255, 255, 255, 0.25)" : "1px solid rgba(255, 255, 255, 0.06)",
-                        padding: "4px 8px",
-                        borderRadius: "8px",
-                        transition: "all 0.15s ease",
                       }}
                     >
-                      <span
+                      <div
                         style={{
-                          width: "16px",
-                          height: "16px",
-                          borderRadius: "50%",
-                          background: isDone ? "#ffffff" : "rgba(255, 255, 255, 0.2)",
-                          color: isDone ? "#000000" : "#ffffff",
-                          fontSize: "10px",
-                          fontWeight: 800,
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: "8px",
+                          background: "var(--elev)",
+                          border: isDone ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                          color: isDone ? "var(--accent)" : "var(--text)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
+                          transition: "all 0.2s ease",
                         }}
+                        title={tgt}
                       >
-                        {i + 1}
-                      </span>
-                      <span style={{ color: "#ffffff", display: "flex", alignItems: "center" }}>
                         {SYMBOL_SVGS[tgt] ?? tgt}
-                      </span>
+                      </div>
+                      {i < challenge.targets.length - 1 && (
+                        <span style={{ fontSize: "11px", color: "var(--text3)" }}>→</span>
+                      )}
                     </div>
                   );
                 })}
@@ -491,10 +557,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               style={{
                 position: "relative",
                 width: "100%",
-                height: "120px",
-                background: "#030303",
+                height: "125px",
+                background: "var(--card-bg, #000000)",
                 borderRadius: "10px",
-                border: "1px solid rgba(255, 255, 255, 0.04)",
+                border: "1px solid var(--border)",
                 overflow: "hidden",
                 userSelect: "none",
               }}
@@ -507,12 +573,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   position: "absolute",
                   inset: 0,
                   pointerEvents: "none",
-                  opacity: 0.1,
+                  opacity: 0.15,
                 }}
               >
-                <line x1="10%" y1="20%" x2="90%" y2="80%" stroke="#ffffff" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="20%" y1="90%" x2="80%" y2="10%" stroke="#ffffff" strokeWidth="1" strokeDasharray="4 2" />
-                <line x1="5%" y1="50%" x2="95%" y2="45%" stroke="#ffffff" strokeWidth="1" />
+                <line x1="10%" y1="20%" x2="90%" y2="80%" stroke="var(--border)" strokeWidth="1" strokeDasharray="4 4" />
+                <line x1="20%" y1="90%" x2="80%" y2="10%" stroke="var(--border)" strokeWidth="1" strokeDasharray="3 3" />
+                <line x1="5%" y1="50%" x2="95%" y2="45%" stroke="var(--border)" strokeWidth="1" />
               </svg>
 
               {challenge?.items.map((item) => {
@@ -528,19 +594,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       position: "absolute",
                       left: `${item.x}%`,
                       top: `${item.y}%`,
-                      transform: "translate(-50%, -50%)",
-                      background: isSelected ? "rgba(255, 255, 255, 0.16)" : "transparent",
-                      border: isSelected ? "1.5px solid #ffffff" : "1px solid rgba(255, 255, 255, 0.1)",
+                      transform: isSelected ? "translate(-50%, -50%) scale(1.08)" : "translate(-50%, -50%)",
+                      background: isSelected ? "var(--accent)" : "var(--elev)",
+                      border: isSelected ? "1.5px solid var(--accent-contrast-text, #ffffff)" : "1px solid var(--border)",
                       borderRadius: "10px",
-                      width: "38px",
-                      height: "38px",
+                      width: "36px",
+                      height: "36px",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       cursor: "pointer",
-                      color: isSelected ? "#ffffff" : "rgba(255, 255, 255, 0.8)",
-                      boxShadow: isSelected ? "0 0 12px rgba(255, 255, 255, 0.3)" : "none",
-                      transition: "transform 0.1s ease, border 0.15s ease",
+                      color: isSelected ? "var(--accent-contrast-text, #ffffff)" : "var(--text)",
+                      boxShadow: isSelected ? "0 4px 12px var(--accent-glow, rgba(0,0,0,0.4))" : "none",
+                      transition: "transform 0.12s ease, background 0.15s ease",
+                      zIndex: isSelected ? 10 : 2,
                     }}
                   >
                     {isSelected && (
@@ -552,13 +619,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           width: "16px",
                           height: "16px",
                           borderRadius: "50%",
-                          background: "#ffffff",
-                          color: "#000000",
+                          background: "var(--accent-contrast-text, #ffffff)",
+                          color: "var(--accent, #000000)",
                           fontSize: "10px",
                           fontWeight: 800,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
+                          boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
                         }}
                       >
                         {clickOrder + 1}
@@ -577,28 +645,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 alignItems: "center",
                 justifyContent: "space-between",
                 fontSize: "11px",
-                color: "rgba(255, 255, 255, 0.45)",
                 padding: "0 4px",
               }}
             >
-              <span>
+              <span style={{ color: isCaptchaSolved ? "var(--accent)" : "var(--text3)" }}>
                 Выбрано {selectedClicks.length} из {challenge?.targets.length ?? 4}
               </span>
-              <button
-                type="button"
-                onClick={handleResetClicks}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "rgba(255, 255, 255, 0.6)",
-                  cursor: "pointer",
-                  fontSize: "11px",
-                  padding: 0,
-                  textDecoration: "underline",
-                }}
-              >
-                Сбросить выбор
-              </button>
+              {selectedClicks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetClicks}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--text3)",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                    padding: 0,
+                    textDecoration: "underline",
+                  }}
+                >
+                  Сбросить выбор
+                </button>
+              )}
             </div>
           </div>
 
@@ -607,10 +676,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             type="submit"
             disabled={!canSubmit}
             style={{
+              marginTop: "4px",
               width: "100%",
               padding: "13px",
-              background: canSubmit ? "#ffffff" : "rgba(255, 255, 255, 0.15)",
-              color: canSubmit ? "#000000" : "rgba(255, 255, 255, 0.3)",
+              background: canSubmit ? "var(--accent)" : "var(--elev)",
+              color: canSubmit ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
               border: "none",
               borderRadius: "12px",
               fontSize: "14px",
@@ -623,20 +693,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               transition: "all 0.15s ease",
             }}
           >
-            {loading ? "Загрузка…" : mode === "login" ? "➔  Войти" : "➔  Создать аккаунт"}
+            {loading ? (
+              <span>Обработка...</span>
+            ) : mode === "login" ? (
+              <>
+                <span>Войти в аккаунт</span>
+                <span>→</span>
+              </>
+            ) : (
+              <>
+                <span>Создать аккаунт</span>
+                <span>→</span>
+              </>
+            )}
           </button>
 
           {/* Secondary Buttons Row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "2px" }}>
             <button
               type="button"
               onClick={onContinueGuest}
               style={{
-                background: "rgba(255, 255, 255, 0.05)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
+                background: "var(--elev)",
+                border: "1px solid var(--border)",
                 borderRadius: "11px",
                 padding: "11px",
-                color: "rgba(255, 255, 255, 0.8)",
+                color: "var(--text)",
                 fontSize: "12.5px",
                 fontWeight: 600,
                 cursor: "pointer",
@@ -652,11 +734,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setErrorMsg(null);
               }}
               style={{
-                background: "rgba(255, 255, 255, 0.05)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
+                background: "var(--elev)",
+                border: "1px solid var(--border)",
                 borderRadius: "11px",
                 padding: "11px",
-                color: "rgba(255, 255, 255, 0.8)",
+                color: "var(--text)",
                 fontSize: "12.5px",
                 fontWeight: 600,
                 cursor: "pointer",
@@ -665,20 +747,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             >
               {mode === "login" ? "Нет профиля? Создать" : "Есть профиль? Войти"}
             </button>
-          </div>
-
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: "11px",
-              color: "rgba(255, 255, 255, 0.3)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "4px",
-            }}
-          >
-            <span>✓</span> Защищённый вход Vessel Server
           </div>
         </form>
       </div>

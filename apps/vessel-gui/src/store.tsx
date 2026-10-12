@@ -490,7 +490,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (state?.player.status === "error" && state?.status_message) {
       if (lastErrorRef.current !== state.status_message) {
         lastErrorRef.current = state.status_message;
-        showToast(state.status_message, true);
+        const msg = state.status_message.toLowerCase();
+        const isFileCacheErr =
+          msg.includes("os error 2") ||
+          msg.includes("не удается найти указанный файл") ||
+          msg.includes("no such file or directory") ||
+          msg.includes("кэш-файл") ||
+          msg.includes("локальный кэш");
+        if (!isFileCacheErr) {
+          showToast(state.status_message, true);
+        }
       }
     } else if (state?.player.status !== "error") {
       lastErrorRef.current = null;

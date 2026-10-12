@@ -160,6 +160,12 @@ pub struct TrackRef {
     /// Происхождение трека в очереди воспроизведения
     #[serde(default)]
     pub origin: TrackOrigin,
+    /// Ссылка на альбом/релиз
+    #[serde(default)]
+    pub album_url: Option<Url>,
+    /// Название альбома/релиза
+    #[serde(default)]
+    pub album_title: Option<String>,
 }
 
 impl TrackRef {
@@ -266,6 +272,8 @@ mod tests {
             drm: false,
             isrc: None,
             origin: TrackOrigin::Original,
+            album_url: None,
+            album_title: None,
         }
     }
 

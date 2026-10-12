@@ -22,6 +22,22 @@ pub(super) async fn import_playlist(
         .context("SoundCloud не разобрал ссылку на плейлист")?;
 
     let kind = resolve_raw.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    if kind == "track" {
+        let sc_track: super::models::ScTrack = serde_json::from_value(resolve_raw)
+            .context("SoundCloud: не удалось распарсить трек")?;
+        let track = normalizovat_track(sc_track)
+            .context("SoundCloud: трек недоступен для импорта")?;
+        let title = track.title.clone();
+        let cover_url = track.artwork_url.clone();
+        return Ok(ImportedPlaylist {
+            title,
+            description: "Сингл".to_string(),
+            source_url: source_url.clone(),
+            cover_url,
+            tracks: vec![track],
+        });
+    }
+
     if kind == "user" || source_url.path().ends_with("/likes") {
         let user_id = resolve_raw
             .get("id")

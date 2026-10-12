@@ -91,6 +91,8 @@ impl SoundCloudClient {
             let mut req = self
                 .http
                 .get(url.clone())
+                .header(reqwest::header::REFERER, "https://soundcloud.com/")
+                .header(reqwest::header::ORIGIN, "https://soundcloud.com")
                 .query(query)
                 .query(&[("client_id", client_id.as_str())]);
 

@@ -482,7 +482,7 @@ export function PlayerPage() {
         >
           {track ? (
             <Artwork
-              url={track.artwork_url}
+              url={config.theme?.customTrackArt || track.artwork_url}
               alt={track.title}
               seed={track.id.length}
               style={{ width: "100%", height: "100%", objectFit: "cover" }}

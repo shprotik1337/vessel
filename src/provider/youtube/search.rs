@@ -234,6 +234,8 @@ fn map_song(renderer: &Value) -> Option<TrackRef> {
         drm: false,
         isrc: None,
         origin: crate::model::TrackOrigin::Original,
+        album_url: None,
+        album_title: None,
     })
 }
 
