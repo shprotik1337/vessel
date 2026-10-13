@@ -46,3 +46,7 @@ CLAUDE.md
 
 # VPN core (качается из CI, не хранится в git)
 apps/vessel-gui/src-tauri/resources/vpn/amnezia-box.exe
+
+# Deploy scripts with secrets
+deploy.py
+deploy*.py
