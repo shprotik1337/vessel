@@ -593,6 +593,12 @@ pub async fn open_path(app: AppHandle, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url, None::<String>).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_data_dir(core: CoreState<'_>) -> Result<String, String> {
     let core = lock(&core);
     Ok(core.paths.data_dir.display().to_string())

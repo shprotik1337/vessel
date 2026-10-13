@@ -3,9 +3,22 @@ import { useApp } from "../store";
 import { t } from "../i18n";
 import * as api from "../api/commands";
 
-const APP_VERSION = "1.4.1";
+const APP_VERSION = "1.4.2";
 
-export function Titlebar() {
+interface TitlebarProps {
+  hasUpdate?: boolean;
+  onOpenUpdate?: () => void;
+}
+
+const UPDATE_DOWNLOAD_SVG = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+export function Titlebar({ hasUpdate, onOpenUpdate }: TitlebarProps = {}) {
   const { lang } = useApp();
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -67,6 +80,20 @@ export function Titlebar() {
       <div className="titlebar-drag-space" data-tauri-drag-region />
 
       <div className="titlebar-right" data-tauri-drag-region="false">
+        {hasUpdate && (
+          <button
+            className="titlebar-update-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenUpdate?.();
+            }}
+            title={lang === "ru" ? "Доступно обновление Vessel" : "Vessel update available"}
+            aria-label="Обновить"
+          >
+            {UPDATE_DOWNLOAD_SVG}
+            <span>{lang === "ru" ? "Обновить" : "Update"}</span>
+          </button>
+        )}
         <button
           className="titlebar-btn minimize"
           onClick={handleMinimize}

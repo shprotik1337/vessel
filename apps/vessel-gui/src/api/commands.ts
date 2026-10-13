@@ -663,3 +663,8 @@ export async function authGetProfile(): Promise<UserInfo> {
 export async function authUpdateProfile(req: UpdateProfileRequest): Promise<UserInfo> {
   return invoke<UserInfo>("auth_update_profile", { req });
 }
+
+export async function openUrl(url: string): Promise<void> {
+  return invoke("open_url", { url });
+}
+

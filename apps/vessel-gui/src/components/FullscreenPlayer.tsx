@@ -726,19 +726,31 @@ export function FullscreenPlayer() {
                 <div className="fs-popover-modes">
                   <button
                     className={`fs-mode-pill ${fullscreenMode === "both" ? "active" : ""}`}
-                    onClick={() => { setFullscreenMode("both"); setMenuOpen(false); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFullscreenMode("both");
+                      setMenuOpen(false);
+                    }}
                   >
                     Текст и обложка
                   </button>
                   <button
                     className={`fs-mode-pill ${fullscreenMode === "lyrics" ? "active" : ""}`}
-                    onClick={() => { setFullscreenMode("lyrics"); setMenuOpen(false); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFullscreenMode("lyrics");
+                      setMenuOpen(false);
+                    }}
                   >
                     Только текст
                   </button>
                   <button
                     className={`fs-mode-pill ${fullscreenMode === "cover" ? "active" : ""}`}
-                    onClick={() => { setFullscreenMode("cover"); setMenuOpen(false); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFullscreenMode("cover");
+                      setMenuOpen(false);
+                    }}
                   >
                     Только обложка
                   </button>

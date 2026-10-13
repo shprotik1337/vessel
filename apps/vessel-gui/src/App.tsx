@@ -1,5 +1,7 @@
-import { Component, ErrorInfo, ReactNode, useEffect } from "react";
+import { Component, ErrorInfo, ReactNode, useEffect, useState } from "react";
 import { AppProvider, PlaybackProgressProvider, useApp, usePlaybackProgress } from "./store";
+import { UpdateModal } from "./components/UpdateModal";
+import { checkForUpdates, UpdateInfo } from "./services/updater";
 import { Sidebar } from "./components/Sidebar";
 import { BottomPlayer } from "./components/BottomPlayer";
 import { Home } from "./pages/Home";
@@ -162,6 +164,24 @@ function AppContent() {
     cancelPreview,
   } = useCustomization();
 
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void checkForUpdates().then((info) => {
+      if (active && info) {
+        setUpdateInfo(info);
+        if (info.hasUpdate) {
+          setIsUpdateModalOpen(true);
+        }
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const renderPage = () => {
     switch (view) {
       case "home":
@@ -287,7 +307,10 @@ function AppContent() {
           ) : null
         )
       )}
-      <Titlebar />
+      <Titlebar
+        hasUpdate={Boolean(updateInfo?.hasUpdate)}
+        onOpenUpdate={() => setIsUpdateModalOpen(true)}
+      />
       {isPreviewActive && (
         <div className="preview-floating-bar">
           <div className="preview-floating-info">
@@ -383,6 +406,11 @@ function AppContent() {
           void refresh();
           showToast("Данные успешно перенесены в облако");
         }}
+      />
+      <UpdateModal
+        isOpen={isUpdateModalOpen}
+        updateInfo={updateInfo}
+        onClose={() => setIsUpdateModalOpen(false)}
       />
       {cacheProgress && (
         <div

@@ -599,6 +599,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::pick_file,
             commands::save_file_as,
             commands::open_path,
+            commands::open_url,
             commands::get_data_dir,
             commands::get_database_path,
             commands::write_text_file,
