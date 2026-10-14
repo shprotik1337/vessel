@@ -140,6 +140,9 @@ impl YouTubeMusicProvider {
     pub async fn stream(&self, video_id: &str) -> Result<PlaybackSource> {
         let resolved = super::player::resolve_stream(&self.client, video_id).await?;
         let mut source = resolved.source;
+        if source.duration_ms.is_none() {
+            source.duration_ms = resolved.duration_ms;
+        }
         if !resolved.range_safe {
             // ANDROID_VR без POT: сервер отдаст ~1 MiB; запрещаем seek,
             // чтобы плеер не получил 403 на глубоком range.
@@ -356,7 +359,11 @@ impl MusicProvider for YouTubeMusicProvider {
         if let Some(source) = crate::provider::cache::cached_source(track) {
             return Ok(source);
         }
-        self.stream(&track.id).await
+        let mut source = self.stream(&track.id).await?;
+        if source.duration_ms.is_none() {
+            source.duration_ms = track.duration_ms;
+        }
+        Ok(source)
     }
 }
 

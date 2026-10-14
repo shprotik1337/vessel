@@ -514,19 +514,27 @@ export function balanceProvidersOrganic(tracks: TrackRef[], targetCount: number)
   return result;
 }
 
+export function normalizeProvider(provider: string | null | undefined): string {
+  if (!provider) return "";
+  const p = provider.trim().toLowerCase();
+  if (p === "you_tube_music" || p === "youtube") return "youtube_music";
+  if (p === "yandex_music") return "yandex";
+  if (p === "sound_cloud") return "soundcloud";
+  return p;
+}
+
 export function parseActiveProviders(
   pref: string | null | undefined,
-  defaultProviders: string[] = ["spotify", "soundcloud", "deezer", "youtube_music"]
+  defaultProviders: string[] = ["spotify", "soundcloud", "deezer", "youtube_music", "yandex"]
 ): string[] {
   if (!pref || pref.trim() === "" || pref === "all") {
-    return defaultProviders;
+    return defaultProviders.map(normalizeProvider);
   }
   const parts = pref
     .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .map((s) => (s === "you_tube_music" || s === "youtube" ? "youtube_music" : s))
+    .map(normalizeProvider)
     .filter(Boolean);
-  return parts.length > 0 ? parts : defaultProviders;
+  return parts.length > 0 ? parts : defaultProviders.map(normalizeProvider);
 }
 
 export function balanceProvidersRoundRobin(tracks: TrackRef[], targetCount: number): TrackRef[] {

@@ -240,3 +240,37 @@ export interface SmartShuffleResult {
   interleaved_queue: TrackRef[];
   injected_track_keys: string[];
 }
+
+export interface DownloadBatchResult {
+  downloaded: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
+
+export interface TrackTime {
+  key: string;
+  timestamp_ms: number;
+}
+
+export interface VesselServerView {
+  id: string;
+  name: string;
+  url: string;
+  has_token: boolean;
+  providers: string[];
+}
+
+export interface VesselServerProbe {
+  name: string;
+  version: string;
+  api_version: string;
+  providers: string[];
+  capabilities: { processing: boolean; user_storage: boolean; playback_relay: boolean };
+}
+
+export interface CloudSyncResult {
+  tracks_count: number;
+  playlists_count: number;
+}
+

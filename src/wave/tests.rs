@@ -330,6 +330,8 @@ fn track(id: &str, artist: &str) -> TrackRef {
         drm: false,
         isrc: None,
         origin: crate::model::TrackOrigin::Original,
+        album_url: None,
+        album_title: None,
     }
 }
 

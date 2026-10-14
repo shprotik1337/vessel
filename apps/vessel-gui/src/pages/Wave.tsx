@@ -32,8 +32,8 @@ export function WavePage() {
     const onProvidersChanged = (e: any) => {
       setProviders(e.detail || "all");
     };
-    window.addEventListener("vessel:providers-changed", onProvidersChanged);
-    return () => window.removeEventListener("vessel:providers-changed", onProvidersChanged);
+    window.addEventListener("vessel:wave-providers-changed", onProvidersChanged);
+    return () => window.removeEventListener("vessel:wave-providers-changed", onProvidersChanged);
   }, []);
 
   useEffect(() => {
@@ -92,6 +92,7 @@ export function WavePage() {
     try {
       await api.setWaveProviders(val);
     } catch {}
+    window.dispatchEvent(new CustomEvent("vessel:wave-providers-changed", { detail: val }));
   };
 
   const handleLaunchWave = async () => {

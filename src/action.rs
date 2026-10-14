@@ -36,6 +36,7 @@ pub enum Action {
         failures: Vec<String>,
     },
     AudioProgress {
+        generation: u64,
         position_ms: u64,
         buffered_ms: u64,
         /// Длительность от декодера (0 = не изменилась/неизвестна)

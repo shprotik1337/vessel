@@ -47,6 +47,7 @@ pub(super) async fn poluchit_istochnik(
         supports_range: true,
         expires_at_ms: None,
         capability: PlaybackCapability::Full,
+        duration_ms: track.duration_ms,
     })
 }
 

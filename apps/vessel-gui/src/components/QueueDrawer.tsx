@@ -8,18 +8,13 @@ import { PlatformIcon } from "./PlatformIcon";
 import { formatDuration, filterValidArtists, isFavorite, trackKey, providerLabel } from "../lib/utils";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
+import { PlayerContextMenu, type ContextMenuState } from "../pages/player";
 
 export function QueueDrawer() {
   const { state, refresh, showToast, lang, smartShuffle, cycleShuffleMode, smartTrackKeys } = useApp();
   const { isQueueOpen, toggleQueue, config } = useCustomization();
   const drawerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [menu, setMenu] = useState<{
-    track: TrackRef;
-    index: number;
-    x: number;
-    y: number;
-  } | null>(null);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropOverIndex, setDropOverIndex] = useState<number | null>(null);
@@ -44,14 +39,6 @@ export function QueueDrawer() {
   const nowPlayingSectionRef = useRef<HTMLDivElement>(null);
 
   const position = config.player?.queuePosition || "right";
-
-  // Close context menu on click outside
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [menu]);
 
   // Close on Escape key
   useEffect(() => {
@@ -592,43 +579,16 @@ export function QueueDrawer() {
         document.body
       )}
 
-      {menu && createPortal(
-        <div
-          ref={menuRef}
-          className="ctx show"
-          style={{
-            position: "fixed",
-            left: menu.x,
-            top: menu.y,
-            zIndex: 99999,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="ctx-head">{menu.track.title}</div>
-          <div className="ctx-item" onClick={() => void handlePlayNext(menu.track)}>
-            {lang === "ru" ? "Сыграть следующим" : "Play next"}
-          </div>
-          <div
-            className="ctx-item"
-            onClick={() => void handleToggleFav(menu.track)}
-          >
-            {state && isFavorite(state.library, menu.track)
-              ? (lang === "ru" ? "Удалить из избранного" : "Remove from favorites")
-              : (lang === "ru" ? "В избранное" : "Add to favorites")}
-          </div>
-          <div className="ctx-item" onClick={() => void handleCache(menu.track)}>
-            {lang === "ru" ? "Сохранить в кэш" : "Save to cache"}
-          </div>
-          <div className="ctx-sep" />
-          <div
-            className="ctx-item danger"
-            onClick={() => void handleRemoveTrack(menu.index)}
-          >
-            {lang === "ru" ? "Удалить из очереди" : "Remove from queue"}
-          </div>
-        </div>,
-        document.body
-      )}
+      <PlayerContextMenu
+        menu={menu}
+        onClose={() => setMenu(null)}
+        onPlayNext={(t) => void handlePlayNext(t)}
+        onToggleFavorite={(t) => void handleToggleFav(t)}
+        onCacheTrack={(t) => void handleCache(t)}
+        onRemoveTrack={(idx) => void handleRemoveTrack(idx)}
+        isFav={menu && state ? isFavorite(state.library, menu.track) : false}
+        lang={lang}
+      />
     </>
   );
 }

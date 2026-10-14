@@ -32,26 +32,36 @@ export function WaveSection() {
   // Загружаем сохранённые настройки волны при монтировании
   useEffect(() => {
     let cancelled = false;
+    const applyVal = (val: string) => {
+      if (val === "all") {
+        setAllProviders(true);
+        setSelectedProviders(PROVIDER_OPTIONS.map((o) => o.key));
+      } else if (!val) {
+        setAllProviders(false);
+        setSelectedProviders([]);
+      } else {
+        const list = val.split(",").filter((k) => PROVIDER_OPTIONS.some((o) => o.key === k));
+        setAllProviders(list.length === PROVIDER_OPTIONS.length);
+        setSelectedProviders(list);
+      }
+    };
     void (async () => {
       try {
         const val = await api.getWaveProviders();
         if (cancelled) return;
-        if (val === "all") {
-          setAllProviders(true);
-          setSelectedProviders(PROVIDER_OPTIONS.map((o) => o.key));
-        } else if (!val) {
-          setAllProviders(false);
-          setSelectedProviders([]);
-        } else {
-          const list = val.split(",").filter((k) => PROVIDER_OPTIONS.some((o) => o.key === k));
-          setAllProviders(list.length === PROVIDER_OPTIONS.length);
-          setSelectedProviders(list);
-        }
+        applyVal(val);
       } catch {
         if (!cancelled) setAllProviders(true);
       }
     })();
-    return () => { cancelled = true; };
+    const onWaveChanged = (e: any) => {
+      applyVal(e.detail || "all");
+    };
+    window.addEventListener("vessel:wave-providers-changed", onWaveChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("vessel:wave-providers-changed", onWaveChanged);
+    };
   }, []);
 
   const waveNow = state?.now_playing
@@ -147,7 +157,7 @@ export function WaveSection() {
       await api.setWaveProviders(filter);
     } catch {}
 
-    window.dispatchEvent(new CustomEvent("vessel:providers-changed", { detail: filter }));
+    window.dispatchEvent(new CustomEvent("vessel:wave-providers-changed", { detail: filter }));
   };
 
   const applyProviderSettings = async () => {
@@ -156,7 +166,7 @@ export function WaveSection() {
     try {
       await api.setWaveProviders(filter);
     } catch {}
-    window.dispatchEvent(new CustomEvent("vessel:providers-changed", { detail: filter }));
+    window.dispatchEvent(new CustomEvent("vessel:wave-providers-changed", { detail: filter }));
     if (waveTracks.length > 0) {
       await buildWave("favorites", null);
     }

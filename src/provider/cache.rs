@@ -96,9 +96,16 @@ pub fn delete_cached_track(track: &TrackRef) -> bool {
     std::fs::remove_file(&path).is_ok()
 }
 
-/// Источник воспроизведения из кэша (file://), если файл уже скачан.
+/// Источник воспроизведения из кэша (file://), если файл уже скачан и валиден.
 pub fn cached_source(track: &TrackRef) -> Option<PlaybackSource> {
     let path = cached_track_path(track)?;
+    if let Err(err) = validate_cached_file(track, &path) {
+        crate::dlog!(
+            "[cache] локальный файл «{}» не прошёл валидацию ({err}) — пропускаем кэш",
+            track.title
+        );
+        return None;
+    }
     let url = Url::from_file_path(&path).ok()?;
     let ext = path
         .extension()
@@ -111,6 +118,7 @@ pub fn cached_source(track: &TrackRef) -> Option<PlaybackSource> {
         supports_range: true,
         expires_at_ms: None,
         capability: track.capability.clone(),
+        duration_ms: track.duration_ms,
     })
 }
 
@@ -193,7 +201,7 @@ pub async fn download_track_to_cache_with_alias(
 /// Валидация скачанного файла: размер не нулевой, а если известна длительность
 /// трека — декодер не должен показывать сильно меньшую длительность
 /// (файл обрезан). Битый файл удаляется, чтобы следующий download перескачал.
-fn validate_cached_file(track: &TrackRef, path: &Path) -> Result<()> {
+pub fn validate_cached_file(track: &TrackRef, path: &Path) -> Result<()> {
     let metadata = std::fs::metadata(path)
         .with_context(|| format!("кэш-файл исчез: {}", path.display()))?;
     if metadata.len() == 0 {
@@ -251,7 +259,7 @@ fn probe_duration_ms(path: &Path) -> Option<u64> {
         // Файл с побитым time_base — не паникуем, считаем что длительность неизвестна
         return None;
     }
-    Some(duration.get() as u64 * numer / denom * 1000)
+    Some((duration.get() as u64 * numer * 1000) / denom)
 }
 
 /// Пустой источник для file-кэша без capability (для тестов/заглушек).
@@ -269,6 +277,7 @@ pub fn cache_file_source(path: &Path) -> Result<PlaybackSource> {
         supports_range: true,
         expires_at_ms: None,
         capability: PlaybackCapability::Full,
+        duration_ms: None,
     })
 }
 
@@ -403,6 +412,44 @@ mod cleanup_tests {
         let (removed, errors) =
             cleanup_caches_in(temp.path(), offline.path());
         assert_eq!((removed, errors), (0, 0));
+    }
+
+    #[test]
+    fn corrupt_small_cached_file_is_skipped_and_cleaned() {
+        let temp = tempfile::tempdir().unwrap();
+        set_track_cache_dir(Some(temp.path().to_path_buf()));
+
+        let track = TrackRef {
+            provider: ProviderKind::Spotify,
+            id: "corrupt_test_track".to_string(),
+            title: "Corrupt Test".to_string(),
+            artists: vec!["Artist".to_string()],
+            duration_ms: Some(180_000),
+            artwork_url: None,
+            web_url: url::Url::parse("https://open.spotify.com/track/corrupt").unwrap(),
+            capability: PlaybackCapability::Full,
+            genres: Vec::new(),
+            explicit: false,
+            drm: false,
+            isrc: None,
+            origin: crate::model::TrackOrigin::Original,
+            album_url: None,
+            album_title: None,
+        };
+
+        let file_path = temp.path().join("sp_corrupttesttrack.mp3");
+        // Записываем битый файл размером 35 КБ (больше 32 КБ, но меньше 64 КБ)
+        std::fs::write(&file_path, vec![0u8; 35 * 1024]).unwrap();
+        assert!(file_path.is_file());
+
+        // cached_source должен отклонить его и вернуть None (не пропустит битый кэш в аудиодвижок)
+        let source = cached_source(&track);
+        assert!(source.is_none());
+
+        // Битый файл должен быть удалён
+        assert!(!file_path.exists());
+
+        set_track_cache_dir(None);
     }
 }
 

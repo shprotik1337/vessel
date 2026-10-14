@@ -243,6 +243,8 @@ pub struct PlaybackSource {
     pub supports_range: bool,
     pub expires_at_ms: Option<i64>,
     pub capability: PlaybackCapability,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
 }
 
 fn normalizovat_text(value: &str) -> String {

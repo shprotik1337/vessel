@@ -36,6 +36,8 @@ pub enum AppEffect {
         volume_percent: u8,
     },
     Play(Box<TrackRef>),
+    /// Принудительный онлайн-запуск трека в обход локального кэша (fallback при сбое кэш-файла)
+    PlayWithoutCache(Box<TrackRef>),
     Pause,
     Resume,
     Seek(u64),

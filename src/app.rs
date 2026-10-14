@@ -98,9 +98,11 @@ pub struct App {
     pub unshuffled_queue: Option<Vec<TrackRef>>,
     onboarding_result: Option<OnboardingResult>,
     effects: Vec<AppEffect>,
-    /// Треки, для которых уже был перезапуск из-за обрезанного кэш-файла
-    /// (защита от бесконечного цикла переигрывания)
-    retried_corrupt_cache: std::collections::HashSet<String>,
+    /// Поколение воспроизведения на стороне App для фильтрации устаревших событий AudioProgress
+    pub playback_generation: u64,
+    /// Треки, для которых в текущей сессии уже был выполнен fallback на онлайн-поток
+    /// (защита от бесконечного цикла повторных попыток)
+    failed_cache_fallbacks: std::collections::HashSet<String>,
 }
 
 impl App {
@@ -142,7 +144,8 @@ impl App {
             unshuffled_queue: None,
             onboarding_result: None,
             effects: Vec::new(),
-            retried_corrupt_cache: std::collections::HashSet::new(),
+            playback_generation: 0,
+            failed_cache_fallbacks: std::collections::HashSet::new(),
         })
     }
 
@@ -202,46 +205,18 @@ impl App {
             Action::ControlSearchFinished { .. } => {}
             Action::WaveFinished { .. } => {}
             Action::ControlWaveFinished { .. } => {}
-            Action::AudioProgress { position_ms, buffered_ms, duration_ms } => {
-                // Декодерная длительность применяется только для локальных
-                // файлов (file://): скачанные старым пайплайном файлы бывают
-                // обрезаны (1 MiB лимит) — тогда доверяем декодеру и
-                // перескачиваем битый кэш.
-                // Для потоков (http/hls) декодерная длительность ненадёжна
-                // (SoundCloud HLS отдаёт длительность сегмента ~10с) — там
-                // всегда используем метаданные трека.
-                let is_local_file = self
-                    .now_playing
-                    .as_ref()
-                    .is_some_and(|track| {
-                        crate::provider::cache::cached_track_path(track).is_some_and(|p| {
-                            p.file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .is_some_and(|s| {
-                                    let id: String = track.id.trim().chars().take(64).collect();
-                                    s.contains(&id)
-                                })
-                        })
-                    });
-                // Обрезанный кэш-файл: декодерная длительность сильно меньше
-                // метаданных — удаляем битый кэш и перезапускаем трек (только для локальных файлов)
-                if is_local_file
-                    && let Some(track) = self.now_playing.clone()
-                    && let Some(meta) = track.duration_ms
-                    && duration_ms > 0
-                    && duration_ms + 10_000 < meta
-                {
-                    let key = track.provider_key();
-                    if self.retried_corrupt_cache.insert(key) {
-                        crate::dlog!(
-                            "[cache] файл обрезан: декодер {}ms < метаданные {}ms — перескачиваю",
-                            duration_ms, meta
-                        );
-                        crate::provider::cache::delete_cached_track(&track);
-                        self.effects.push(AppEffect::Play(Box::new(track)));
-                        return;
-                    }
+            Action::AudioProgress {
+                generation,
+                position_ms,
+                buffered_ms,
+                duration_ms,
+            } => {
+                // Отбрасываем устаревшие события прогресса от предыдущей сессии/трека
+                if generation != self.playback_generation {
+                    return;
                 }
+
+
 
                 // Честная длительность: декодерная — для локальных файлов,
                 // метаданные — для потоков
@@ -250,9 +225,9 @@ impl App {
                         crate::provider::cache::cached_source(track)
                             .is_some_and(|s| s.url.scheme() == "file")
                     });
-                    if decoded_is_truth {
+                    if self.player.duration_ms == 0 {
                         self.player.duration_ms = duration_ms;
-                    } else if self.player.duration_ms == 0 {
+                    } else if decoded_is_truth && duration_ms > self.player.duration_ms / 2 {
                         self.player.duration_ms = duration_ms;
                     }
                 }
@@ -337,6 +312,8 @@ impl App {
     }
 
     pub fn control_play(&mut self, track: TrackRef) {
+        self.playback_generation = self.playback_generation.wrapping_add(1);
+        self.failed_cache_fallbacks.clear();
         if let Some(index) = self.queue.iter().position(|current| current.provider_key() == track.provider_key()) {
             self.queue_index = Some(index);
         } else {
@@ -359,6 +336,7 @@ impl App {
     }
 
     pub fn control_queue_clear(&mut self) {
+        self.playback_generation = self.playback_generation.wrapping_add(1);
         self.queue.clear();
         self.queue_index = None;
         self.now_playing = None;
@@ -366,6 +344,7 @@ impl App {
         self.queue_dirty = true;
         self.effects.push(AppEffect::Stop);
     }
+
 
     pub fn control_pause(&mut self) -> Result<(), String> {
         if self.now_playing.is_none() {
@@ -413,9 +392,11 @@ impl App {
     }
 
     pub fn control_stop(&mut self) {
+        self.playback_generation = self.playback_generation.wrapping_add(1);
         self.player.status = PlaybackStatus::Stopped;
         self.effects.push(AppEffect::Stop);
     }
+
 
     pub fn take_effects(&mut self) -> Vec<AppEffect> {
         std::mem::take(&mut self.effects)
@@ -442,10 +423,12 @@ impl App {
             }
             0
         } else {
+            self.playback_generation = self.playback_generation.wrapping_add(1);
             self.player.status = PlaybackStatus::Stopped;
             self.effects.push(AppEffect::Stop);
             return;
         };
+
         self.set_queue_track(next);
     }
 
@@ -470,6 +453,8 @@ impl App {
     }
 
     fn set_queue_track(&mut self, index: usize) {
+        self.playback_generation = self.playback_generation.wrapping_add(1);
+        self.failed_cache_fallbacks.clear();
         self.queue_index = Some(index);
         self.now_playing = self.queue.get(index).cloned();
         self.player.position_ms = 0;
@@ -491,12 +476,14 @@ impl App {
             crate::audio::AudioEvent::Playing => {
                 self.player.status = PlaybackStatus::Playing;
                 self.status_message.clear();
+                self.failed_cache_fallbacks.clear();
             }
             crate::audio::AudioEvent::Paused => self.player.status = PlaybackStatus::Paused,
             crate::audio::AudioEvent::Stopped => self.player.status = PlaybackStatus::Stopped,
             crate::audio::AudioEvent::Ended => self.next_track(),
             crate::audio::AudioEvent::Failed(error) | crate::audio::AudioEvent::OutputFailed(error) => {
-                let was_file_err = error.contains("os error 2")
+                let is_cache_err = error.contains("сбой локального кэша")
+                    || error.contains("os error 2")
                     || error.contains("Не удается найти указанный файл")
                     || error.contains("кэш-файл не найден")
                     || error.contains("локальный кэш")
@@ -504,20 +491,19 @@ impl App {
 
                 if let Some(track) = self.now_playing.clone() {
                     let key = track.provider_key();
-                    if was_file_err && self.retried_corrupt_cache.insert(key) {
-                        crate::dlog!("[cache] локальный файл недоступен ({error}) — очищаю кэш и перескачиваю стрим");
+                    if is_cache_err && self.failed_cache_fallbacks.insert(key) {
+                        crate::dlog!(
+                            "[cache] локальный файл недоступен ({error}) — мгновенный онлайн-фоллбек без переключения трека"
+                        );
                         crate::provider::cache::delete_cached_track(&track);
-                        self.effects.push(AppEffect::Play(Box::new(track)));
+                        self.player.status = PlaybackStatus::Buffering;
+                        self.playback_generation = self.playback_generation.wrapping_add(1);
+                        self.effects.push(AppEffect::PlayWithoutCache(Box::new(track)));
                         return;
+
                     }
                 }
-                if was_file_err {
-                    crate::dlog!("[audio] сбой чтения локального файла: {error}");
-                    self.player.status = PlaybackStatus::Stopped;
-                    self.status_message.clear();
-                    self.next_track();
-                    return;
-                }
+
                 self.player.status = PlaybackStatus::Error;
                 self.status_message = format!("Аудио сломалось: {error}");
             }
@@ -546,6 +532,8 @@ impl App {
             self.queue_index = Some(index);
         }
         let track = self.queue[self.queue_index.unwrap()].clone();
+        self.playback_generation = self.playback_generation.wrapping_add(1);
+        self.failed_cache_fallbacks.clear();
         self.now_playing = Some(track.clone());
         self.player.position_ms = 0;
         self.player.buffered_ms = 0;
@@ -799,6 +787,8 @@ mod tests {
             drm: false,
             isrc: None,
             origin: crate::model::TrackOrigin::Original,
+            album_url: None,
+            album_title: None,
         }
     }
 
@@ -847,8 +837,122 @@ mod tests {
     fn audio_progress_clamps_to_duration() {
         let (_temp, mut app) = test_app();
         app.player.duration_ms = 100_000;
-        app.handle(Action::AudioProgress { position_ms: 200_000, buffered_ms: 50_000, duration_ms: 0 });
+        app.handle(Action::AudioProgress {
+            generation: app.playback_generation,
+            position_ms: 200_000,
+            buffered_ms: 50_000,
+            duration_ms: 0,
+        });
         assert_eq!(app.player.position_ms, 100_000);
         assert_eq!(app.player.buffered_ms, 50_000);
+    }
+
+    #[test]
+    fn stale_progress_from_previous_track_ignored() {
+        let (_temp, mut app) = test_app();
+        let mut track_a = test_track();
+        track_a.id = "track_a".to_string();
+        track_a.duration_ms = Some(150_000);
+
+        let mut track_b = test_track();
+        track_b.id = "track_b".to_string();
+        track_b.duration_ms = Some(240_000);
+
+        app.control_play(track_a);
+        let gen_a = app.playback_generation;
+        let _ = app.take_effects();
+
+        app.control_play(track_b.clone());
+        let gen_b = app.playback_generation;
+        assert_ne!(gen_a, gen_b);
+        let _ = app.take_effects();
+
+        // Устаревшее событие прогресса от трека A с duration = 10000ms
+        app.handle(Action::AudioProgress {
+            generation: gen_a,
+            position_ms: 50_000,
+            buffered_ms: 60_000,
+            duration_ms: 10_000,
+        });
+
+        // Длительность и позиция трека B не должны были быть повреждены старым событием
+        assert_eq!(app.player.duration_ms, 240_000);
+        assert_eq!(app.player.position_ms, 0);
+
+        // Актуальное событие поколения B применяется корректно
+        app.handle(Action::AudioProgress {
+            generation: gen_b,
+            position_ms: 15_000,
+            buffered_ms: 30_000,
+            duration_ms: 240_000,
+        });
+        assert_eq!(app.player.position_ms, 15_000);
+        assert_eq!(app.player.buffered_ms, 30_000);
+    }
+
+    #[test]
+    fn local_cache_failure_triggers_seamless_online_fallback_without_skipping() {
+        let (_temp, mut app) = test_app();
+        let mut track_a = test_track();
+        track_a.id = "track_a".to_string();
+
+        let mut track_b = test_track();
+        track_b.id = "track_b".to_string();
+
+        // Заполняем очередь двумя треками [A, B] и включаем трек A
+        app.gui_play_tracks(vec![track_a.clone(), track_b.clone()], 0);
+        assert_eq!(app.queue_index, Some(0));
+        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_a"));
+        let _ = app.take_effects();
+
+        // Имитируем сбой открытия локального кэш-файла
+        app.handle(Action::Audio(crate::audio::AudioEvent::Failed(
+            "локальный кэш-файл не найден: Не удается найти указанный файл. (os error 2)".to_string(),
+        )));
+
+        // КРИТИЧНО: очередь НЕ должна была перескочить на трек B!
+        assert_eq!(app.queue_index, Some(0));
+        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_a"));
+        assert_eq!(app.player.status, PlaybackStatus::Buffering);
+
+        // Должен быть порожден эффект PlayWithoutCache для трека A
+        let effects = app.take_effects();
+        assert_eq!(
+            effects,
+            vec![AppEffect::PlayWithoutCache(Box::new(track_a.clone()))]
+        );
+
+        // Если повторный онлайн-запуск тоже окончательно падает,
+        // то бесконечный цикл не возникает — статус переходит в Error без перескока очереди
+        app.handle(Action::Audio(crate::audio::AudioEvent::Failed(
+            "сбой локального кэша: сеть недоступна".to_string(),
+        )));
+        assert_eq!(app.player.status, PlaybackStatus::Error);
+        assert_eq!(app.queue_index, Some(0));
+        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_a"));
+    }
+
+    #[test]
+    fn fast_track_switch_prevents_stale_fallback_race() {
+        let (_temp, mut app) = test_app();
+        let mut track_a = test_track();
+        track_a.id = "track_a".to_string();
+
+        let mut track_b = test_track();
+        track_b.id = "track_b".to_string();
+
+        // Пользователь нажал A, а затем сразу B
+        app.control_play(track_a);
+        let _ = app.take_effects();
+
+        app.control_play(track_b.clone());
+        let _ = app.take_effects();
+
+        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_b"));
+
+        // Успешный старт трека B очищает состояния fallback
+        app.handle(Action::Audio(crate::audio::AudioEvent::Playing));
+        assert_eq!(app.player.status, PlaybackStatus::Playing);
+        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_b"));
     }
 }

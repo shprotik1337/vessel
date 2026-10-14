@@ -453,3 +453,23 @@ pub async fn import_likes(
         _ => Err("неизвестная цель импорта".to_string()),
     }
 }
+
+#[tauri::command]
+pub async fn import_tracks_batch(
+    core: CoreState<'_>,
+    tracks: Vec<TrackRef>,
+) -> Result<usize, String> {
+    let mut added = 0;
+    let mut core = lock(&core);
+    let now = now_ms();
+    for track in tracks {
+        let key = track.provider_key();
+        if !core.app.library.iter().any(|t| t.provider_key() == key) {
+            if let Ok(()) = core.storage.like_track(&track, now) {
+                core.app.library.push(track);
+                added += 1;
+            }
+        }
+    }
+    Ok(added)
+}

@@ -94,7 +94,8 @@ export function BottomPlayer() {
   const fav = track ? isFavorite(state.library, track) : false;
 
   const durationMs = progress.duration_ms || player.duration_ms || track?.duration_ms || 0;
-  const currentPosMs = progress.position_ms || player.position_ms || 0;
+  const currentPosMs = progress.position_ms ?? player.position_ms ?? 0;
+
 
   const percent =
     durationMs > 0

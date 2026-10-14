@@ -431,6 +431,8 @@ mod tests {
                 drm: false,
                 isrc: None,
                 origin: crate::model::TrackOrigin::Original,
+                album_url: None,
+                album_title: None,
             },
             limit: 20,
             target_provider: Some(ProviderKind::Spotify),

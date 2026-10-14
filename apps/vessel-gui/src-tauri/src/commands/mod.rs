@@ -1,14 +1,20 @@
+pub mod auth;
 pub mod catalog;
 pub mod common;
+pub mod downloads;
 pub mod library;
 pub mod playback;
 pub mod providers;
 pub mod system;
 pub mod users;
+pub mod window;
 
+pub use auth::*;
 pub use catalog::*;
+pub use downloads::*;
 pub use library::*;
 pub use playback::*;
 pub use providers::*;
 pub use system::*;
 pub use users::*;
+pub use window::*;

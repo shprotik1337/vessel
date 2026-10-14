@@ -319,11 +319,13 @@ fn drive_runtime(core: &mut GuiCore) {
             break;
         }
         actions.extend(core.runtime.dispatch(effects));
+        core.app.playback_generation = core.runtime.playback_generation();
         for action in actions {
             core.app.handle(action);
         }
     }
 }
+
 
 fn persist(core: &mut GuiCore) {
     if core.app.queue_dirty {

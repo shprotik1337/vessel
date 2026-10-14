@@ -6,13 +6,19 @@ import {
   trackKey,
   filterValidArtists,
   parseActiveProviders,
+  normalizeProvider,
 } from "../../lib/utils";
 import type { TrackRef } from "../../api/types";
 import * as api from "../../api/commands";
 import { ScrollableCardRow } from "./HomeHelpers";
 
 let cachedHomeRecs: TrackRef[] | null = null;
-let cachedHomeRecsKey: string | null = null;
+let cachedHomeRecsProvidersKey: string | null = null;
+
+export function clearHomeRecsCache() {
+  cachedHomeRecs = null;
+  cachedHomeRecsProvidersKey = null;
+}
 
 export function RecommendationsBlockContent({
   nowKey,
@@ -25,11 +31,11 @@ export function RecommendationsBlockContent({
 }) {
   const { state, playTracks, navigateTo } = useApp();
   const [recTracks, setRecTracks] = useState<TrackRef[]>(() => cachedHomeRecs ?? []);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => !cachedHomeRecs || cachedHomeRecs.length === 0);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingRef = useRef(false);
   const reqIdRef = useRef(0);
-  const [providers, setProviders] = useState<string | null>(null);
+  const [providers, setProviders] = useState<string | null>(() => cachedHomeRecsProvidersKey);
   const [excludedPlaylists, setExcludedPlaylists] = useState<string[]>([]);
   const favorites = state?.library ?? [];
   const playlists = state?.playlists ?? [];
@@ -53,8 +59,9 @@ export function RecommendationsBlockContent({
 
     const onProvidersChanged = (e: any) => {
       cachedHomeRecs = null;
-      cachedHomeRecsKey = null;
+      cachedHomeRecsProvidersKey = null;
       setRecTracks([]);
+      setLoading(true);
       setProviders(e.detail || "all");
     };
     window.addEventListener("vessel:providers-changed", onProvidersChanged);
@@ -87,19 +94,27 @@ export function RecommendationsBlockContent({
 
   useEffect(() => {
     if (providers === null) return;
+    let cancelled = false;
+    const providersChanged =
+      cachedHomeRecsProvidersKey !== null && cachedHomeRecsProvidersKey !== providers;
+    if (providersChanged) {
+      cachedHomeRecs = null;
+      cachedHomeRecsProvidersKey = null;
+    }
+
     if (tasteTracks.length === 0) {
       setRecTracks([]);
       setLoading(false);
       loadingRef.current = false;
       return;
     }
+
     const activeProviders = parseActiveProviders(providers);
-    const currentKey = `${tasteTracks.length}_${providers}`;
     if (
       cachedHomeRecs &&
       cachedHomeRecs.length > 0 &&
-      cachedHomeRecsKey === currentKey &&
-      cachedHomeRecs.every((t) => activeProviders.includes(t.provider))
+      !providersChanged &&
+      cachedHomeRecs.every((t) => activeProviders.includes(normalizeProvider(t.provider)))
     ) {
       setRecTracks(cachedHomeRecs);
       setLoading(false);
@@ -114,29 +129,37 @@ export function RecommendationsBlockContent({
     void (async () => {
       try {
         const tracks = await api.getHomeRecommendations(24, false, providers);
-        if (curReqId === reqIdRef.current) {
+        if (curReqId === reqIdRef.current && !cancelled) {
           if (tracks.length > 0) {
             cachedHomeRecs = tracks;
-            cachedHomeRecsKey = currentKey;
+            cachedHomeRecsProvidersKey = providers;
             setRecTracks(tracks);
           } else {
-            const fallbackFavs = tasteTracks.filter((t) => activeProviders.includes(t.provider)).slice(0, 12);
+            const fallbackFavs = tasteTracks
+              .filter((t) => activeProviders.includes(normalizeProvider(t.provider)))
+              .slice(0, 12);
             setRecTracks(fallbackFavs);
           }
         }
       } catch {
-        if (curReqId === reqIdRef.current) {
-          const fallbackFavs = tasteTracks.filter((t) => activeProviders.includes(t.provider)).slice(0, 12);
+        if (curReqId === reqIdRef.current && !cancelled) {
+          const fallbackFavs = tasteTracks
+            .filter((t) => activeProviders.includes(normalizeProvider(t.provider)))
+            .slice(0, 12);
           setRecTracks(fallbackFavs);
         }
       } finally {
-        if (curReqId === reqIdRef.current) {
+        if (curReqId === reqIdRef.current && !cancelled) {
           loadingRef.current = false;
           setLoading(false);
         }
       }
     })();
-  }, [tasteTracks.length, providers, excludedPlaylists.length]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [providers]);
 
   const handlePlayTrack = (_track: TrackRef, index: number) => {
     if (trackKey(_track) === nowKey) {
@@ -162,6 +185,7 @@ export function RecommendationsBlockContent({
         setRecTracks((prev) => {
           const merged = [...prev, ...newTracks].slice(0, 100);
           cachedHomeRecs = merged;
+          cachedHomeRecsProvidersKey = providers;
           return merged;
         });
       }

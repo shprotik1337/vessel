@@ -11,6 +11,7 @@ pub enum AudioEvent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AudioStatus {
+    pub generation: u64,
     pub position_ms: u64,
     pub buffered_ms: u64,
     /// Длительность трека, определённая декодером (0 = неизвестна)

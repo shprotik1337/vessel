@@ -143,6 +143,11 @@ impl ProviderRegistry {
         self.providers.get(&kind).cloned()
     }
 
+    pub fn remove(&mut self, kind: ProviderKind) -> Option<Arc<dyn MusicProvider>> {
+        self.providers.remove(&kind)
+    }
+
+
     pub fn kinds(&self) -> impl Iterator<Item = ProviderKind> + '_ {
         self.providers.keys().copied()
     }
@@ -319,6 +324,8 @@ mod tests {
             drm: false,
             isrc: None,
             origin: crate::model::TrackOrigin::Original,
+            album_url: None,
+            album_title: None,
         }
     }
 

@@ -80,6 +80,7 @@ pub(super) async fn poluchit_istochnik(
                     supports_range: !hls,
                     expires_at_ms: None,
                     capability: track.capability.clone(),
+                    duration_ms: track.duration_ms,
                 });
             }
             Err(e) => {
@@ -227,6 +228,7 @@ pub(super) async fn zagruzit_progressivnyi(
         supports_range: true,
         expires_at_ms: None,
         capability: track.capability.clone(),
+        duration_ms: track.duration_ms,
     })
 }
 
@@ -335,6 +337,8 @@ mod tests {
             drm: false,
             isrc: None,
             origin: crate::model::TrackOrigin::Original,
+            album_url: None,
+            album_title: None,
         }
     }
 }

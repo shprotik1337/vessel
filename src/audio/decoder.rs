@@ -75,12 +75,20 @@ pub(super) fn decode_source(
     // импортированные плейлисты) иначе теряют ползунок.
     // Duration хранится в timebase-единицах — конвертируем через time_base.
     let track_duration_ms = match (&track.duration, &track.time_base) {
-        (Some(dur), Some(tb)) => {
-            dur.get() as u64 * u64::from(tb.numer.get()) / u64::from(tb.denom.get()) * 1000
+        (Some(dur), Some(tb)) if tb.denom.get() > 0 => {
+            (dur.get() as u64 * u64::from(tb.numer.get()) * 1000) / u64::from(tb.denom.get())
         }
         _ => 0,
     };
-    duration_ms.store(track_duration_ms, Ordering::Release);
+    let current_dur = duration_ms.load(Ordering::Acquire);
+    let is_file = source.url.scheme() == "file";
+    if current_dur == 0 {
+        if track_duration_ms > 0 {
+            duration_ms.store(track_duration_ms, Ordering::Release);
+        }
+    } else if is_file && track_duration_ms > current_dur / 2 {
+        duration_ms.store(track_duration_ms, Ordering::Release);
+    }
 
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(codec, &AudioDecoderOptions::default())

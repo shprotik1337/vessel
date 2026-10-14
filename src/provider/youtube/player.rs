@@ -109,6 +109,7 @@ pub fn stream_source(stream: AudioStream, title_hint: Option<&str>) -> Result<Pl
         supports_range: true,
         expires_at_ms: None,
         capability: PlaybackCapability::Full,
+        duration_ms: None,
     })
 }
 
@@ -689,6 +690,8 @@ mod tests {
             drm: false,
             isrc: None,
             origin: crate::model::TrackOrigin::Original,
+            album_url: None,
+            album_title: None,
         };
 
         println!("[Server Test] Resolving track anmYryzI_9w via server relay: {}", server_url);

@@ -285,8 +285,7 @@ pub async fn set_wave_providers(core: CoreState<'_>, providers: String) -> Resul
     } else {
         providers.trim().to_string()
     };
-    core.config.wave_providers = Some(normalized.clone());
-    core.config.recommendation_providers = Some(normalized);
+    core.config.wave_providers = Some(normalized);
     core.app.config_dirty = true;
     Ok(())
 }

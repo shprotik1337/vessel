@@ -116,6 +116,7 @@ mod tests {
             supports_range: false,
             expires_at_ms: None,
             capability: PlaybackCapability::Full,
+            duration_ms: None,
         }
     }
 }

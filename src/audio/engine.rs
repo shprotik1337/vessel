@@ -133,9 +133,13 @@ impl AudioEngine {
     }
 
     pub fn play(&self, source: PlaybackSource) {
+        let initial_duration_ms = source.duration_ms.unwrap_or(0);
         if let Ok(mut current) = self.source.lock() {
             *current = Some(source.clone());
         }
+        self.played_samples.store(0, Ordering::Release);
+        self.buffered_samples.store(0, Ordering::Release);
+        self.duration_ms.store(initial_duration_ms, Ordering::Release);
         self.start_decoder(source, 0);
     }
 
@@ -191,6 +195,7 @@ impl AudioEngine {
     pub fn status(&self) -> AudioStatus {
         let samples_per_second = u64::from(self.output_rate) * self.output_channels as u64;
         AudioStatus {
+            generation: self.generation.load(Ordering::Acquire),
             position_ms: samples_to_ms(
                 self.played_samples.load(Ordering::Acquire),
                 samples_per_second,
@@ -230,6 +235,7 @@ impl AudioEngine {
         let output_channels = self.output_channels;
         let _ = events.send(AudioEvent::Buffering);
 
+        let is_file_source = source.url.scheme() == "file";
         thread::spawn(move || {
             let result = decode_source(
                 source,
@@ -255,7 +261,12 @@ impl AudioEngine {
                     });
                 }
                 Err(error) => {
-                    let _ = events.send(AudioEvent::Failed(error.to_string()));
+                    let err_msg = if is_file_source {
+                        format!("сбой локального кэша: {error:#}")
+                    } else {
+                        error.to_string()
+                    };
+                    let _ = events.send(AudioEvent::Failed(err_msg));
                 }
             }
         });

@@ -25,7 +25,6 @@ pub struct ProviderSetup {
 pub fn collect_credentials(secrets: &SecretStore) -> UserCredentials {
     UserCredentials {
         soundcloud_client_id: load_secret(secrets, SecretKey::SoundCloudClientIdOverride, &mut Vec::new())
-            .or_else(|| load_secret(secrets, SecretKey::SoundCloudClientId, &mut Vec::new()))
             .filter(|value| !value.trim().is_empty()),
         soundcloud_oauth_token: load_secret(secrets, SecretKey::SoundCloudOAuthToken, &mut Vec::new())
             .filter(|value| !value.trim().is_empty()),
@@ -149,20 +148,22 @@ pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: b
     // - potoken-провайдер (bgutil HTTP): стабильный POT там, где BotGuard
     //   mint ненадёжен (датацентровые IP, слабые VPS).
     // Один и тот же код обслуживает и локальный клиент, и Vessel Server.
-    match YouTubeMusicProvider::new() {
-        Ok(mut provider) => {
-            if let Some(cookie) = youtube_cookie(secrets, &mut notices) {
-                provider.set_cookie(Some(cookie));
+    if config.youtube_music_enabled {
+        match YouTubeMusicProvider::new() {
+            Ok(mut provider) => {
+                if let Some(cookie) = youtube_cookie(secrets, &mut notices) {
+                    provider.set_cookie(Some(cookie));
+                }
+                if let Some(refresh) = youtube_refresh(secrets, &mut notices) {
+                    provider.set_oauth_refresh(Some(refresh));
+                }
+                if let Some(potoken_url) = youtube_potoken_url(config) {
+                    provider.set_potoken_provider(Some(potoken_url));
+                }
+                registry.register(provider);
             }
-            if let Some(refresh) = youtube_refresh(secrets, &mut notices) {
-                provider.set_oauth_refresh(Some(refresh));
-            }
-            if let Some(potoken_url) = youtube_potoken_url(config) {
-                provider.set_potoken_provider(Some(potoken_url));
-            }
-            registry.register(provider);
+            Err(error) => notices.push(format!("YouTube Music не настроен: {error}")),
         }
-        Err(error) => notices.push(format!("YouTube Music не настроен: {error}")),
     }
 
     if allow_remote {
@@ -185,6 +186,16 @@ fn apply_provider_routing(
             notices.push(format!("Маршрут «{segment}»: неизвестный провайдер — игнорируем"));
             continue;
         };
+        let is_enabled = match kind {
+            ProviderKind::SoundCloud => config.soundcloud_enabled,
+            ProviderKind::YandexMusic => config.yandex_enabled,
+            ProviderKind::Deezer => config.deezer_enabled,
+            ProviderKind::Spotify => config.spotify_enabled,
+            ProviderKind::YouTubeMusic => config.youtube_music_enabled,
+        };
+        if !is_enabled {
+            continue;
+        }
         let Some(server_id) = target.strip_prefix("server:") else {
             continue; // "local" и пустое — локальный режим уже собран выше
         };
@@ -358,7 +369,10 @@ mod tests {
         let storage = crate::storage::Storage::new(temp.path().join("storage.sqlite3"));
         storage.initialize().unwrap();
 
-        let initial_config = AppConfig::default();
+        let initial_config = AppConfig {
+            provider_routing: std::collections::BTreeMap::new(),
+            ..AppConfig::default()
+        };
         let mut runtime = crate::runtime::Runtime::new(&initial_config, &secrets, storage);
 
         // По умолчанию YouTube Music локальный
@@ -383,7 +397,8 @@ mod tests {
         assert!(remote_yt.is_remote(), "После sync_config провайдер обязан стать удалённым (ServerProvider)");
 
         // Переключаем обратно на local
-        let local_config = AppConfig::default();
+        let mut local_config = AppConfig::default();
+        local_config.provider_routing.insert("youtube_music".to_string(), "local".to_string());
         runtime.sync_config(&local_config);
 
         let back_yt = runtime

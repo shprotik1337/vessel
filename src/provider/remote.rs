@@ -416,7 +416,7 @@ fn provider_site(kind: ProviderKind) -> Url {
     Url::parse(raw).expect("статический URL правильный")
 }
 
-/// Провайдер, делегирующийMusicProvider на Vessel Server.
+/// Провайдер, делегирующий MusicProvider на Vessel Server.
 #[derive(Clone, Debug)]
 pub struct ServerProvider {
     kind: ProviderKind,
@@ -448,6 +448,10 @@ impl MusicProvider for ServerProvider {
             label: format!("{} · Vessel Server", self.kind.label()),
             url: provider_site(self.kind),
         }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     async fn search(&self, query: &str, cursor: Option<&str>) -> Result<SearchPage> {

@@ -143,7 +143,10 @@ where
                                 1.0f32
                             };
 
-                            let fade_out = if dur_ms > cf_ms && cur_pos_ms >= dur_ms.saturating_sub(cf_ms) {
+                            let fade_out = if dur_ms > cf_ms * 2
+                                && dur_ms >= 20_000
+                                && cur_pos_ms >= dur_ms.saturating_sub(cf_ms)
+                            {
                                 let rem = dur_ms.saturating_sub(cur_pos_ms);
                                 (rem as f32 / cf_ms as f32).clamp(0.0, 1.0)
                             } else {

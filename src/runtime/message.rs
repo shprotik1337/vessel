@@ -6,7 +6,7 @@ use crate::{
     },
 };
 
-pub(super) enum RuntimeMessage {
+pub(crate) enum RuntimeMessage {
     SearchFinished {
         generation: u64,
         query: String,
