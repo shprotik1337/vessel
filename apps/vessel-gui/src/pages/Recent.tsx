@@ -49,7 +49,7 @@ export function Recent() {
   return (
     <div className="view">
       <div style={{ marginBottom: 18 }}>
-        <button className="btn btn-outline btn-sm" onClick={goBack} title={t(lang, "common.back")}>
+        <button className="btn-back-pill" onClick={goBack} title={t(lang, "common.back")}>
           {t(lang, "common.back")}
         </button>
       </div>
@@ -58,10 +58,24 @@ export function Recent() {
         {glowArt ? (
           <div
             className="page-ambient-glow"
-            style={{ backgroundImage: `url("${glowArt}")` }}
+            style={{
+              backgroundImage: `url("${glowArt}")`,
+              top: "-84px",
+              left: "-30px",
+              width: "700px",
+              height: "560px",
+            }}
           />
         ) : (
-          <div className="page-ambient-glow-fallback" />
+          <div
+            className="page-ambient-glow-fallback"
+            style={{
+              top: "-84px",
+              left: "-30px",
+              width: "700px",
+              height: "560px",
+            }}
+          />
         )}
 
         <div className="page-panel-header">
@@ -115,7 +129,6 @@ export function Recent() {
         <div className="page-panel-body">
           {uniqueHistory.length === 0 ? (
             <div className="empty">
-              <div className="ico">⏱</div>
               <div className="t1">{t(lang, "recent.empty1")}</div>
               <div className="t2">{t(lang, "recent.empty2")}</div>
             </div>

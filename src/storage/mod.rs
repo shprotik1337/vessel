@@ -1,3 +1,4 @@
+pub mod artist;
 pub mod cache;
 pub mod codec;
 pub mod history;
@@ -13,8 +14,9 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::model::{Playlist, TrackRef};
+use crate::model::{FollowedArtist, Playlist, TrackRef};
 
+pub use artist::FollowedArtistsRepository;
 pub use history::HistoryEntry;
 pub use queue::QueueSnapshot;
 
@@ -120,6 +122,28 @@ impl Storage {
     pub fn list_playlists(&self) -> Result<Vec<Playlist>> {
         let conn = self.connection()?;
         PlaylistRepository::list(&conn)
+    }
+
+    // --- Followed Artists Operations ---
+
+    pub fn follow_artist(&self, artist: &FollowedArtist) -> Result<()> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::save(&conn, artist)
+    }
+
+    pub fn unfollow_artist(&self, id: &str) -> Result<bool> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::delete(&conn, id)
+    }
+
+    pub fn is_artist_followed(&self, id: &str) -> Result<bool> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::is_followed(&conn, id)
+    }
+
+    pub fn list_followed_artists(&self) -> Result<Vec<FollowedArtist>> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::list(&conn)
     }
 
     // --- Library Operations ---

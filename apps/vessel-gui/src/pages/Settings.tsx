@@ -112,7 +112,6 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
     setSelectedFont(font);
     localStorage.setItem("vessel_font", font);
     document.body.style.fontFamily = font === "Default" ? "Inter, -apple-system, sans-serif" : `${font}, sans-serif`;
-    showToast(`Шрифт: ${font}`);
   };
 
   const changeDownloadDir = async (value: string) => {

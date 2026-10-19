@@ -135,6 +135,21 @@ pub async fn save_imported_playlist(
     core: CoreState<'_>,
     playlist: Playlist,
 ) -> Result<(), String> {
+    let mut playlist = playlist;
+    let url_lower = playlist
+        .source_url
+        .as_ref()
+        .map(|u| u.as_str().to_lowercase())
+        .unwrap_or_default();
+    if url_lower.contains("/album/")
+        || url_lower.contains("spotify:album:")
+        || url_lower.contains("browse/mpre")
+        || url_lower.contains("album")
+    {
+        playlist.is_album = true;
+    }
+    let kind_label = if playlist.is_album { "альбом" } else { "плейлист" };
+
     let mut core = lock(&core);
     // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
     if playlist
@@ -142,7 +157,7 @@ pub async fn save_imported_playlist(
         .as_ref()
         .is_some_and(|url| core.app.playlists.iter().any(|p| p.source_url.as_ref() == Some(url)))
     {
-        return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+        return Err(format!("Этот {kind_label} уже добавлен в библиотеку"));
     }
     if core
         .app
@@ -150,7 +165,7 @@ pub async fn save_imported_playlist(
         .iter()
         .any(|p| p.source_url.is_none() && p.title == playlist.title && playlist.source_url.is_none())
     {
-        return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+        return Err(format!("Этот {kind_label} уже добавлен в библиотеку"));
     }
     core.storage
         .save_playlist(&playlist)
@@ -224,6 +239,14 @@ pub async fn import_playlist_url(
     url: String,
 ) -> Result<Playlist, String> {
     let parsed = url::Url::parse(&url).map_err(|e| format!("Неверный URL: {e}"))?;
+    let is_album = {
+        let url_lower = url.to_lowercase();
+        url_lower.contains("/album/")
+            || url_lower.contains("spotify:album:")
+            || url_lower.contains("browse/mpre")
+            || url_lower.contains("album")
+    };
+    let kind_label = if is_album { "альбом" } else { "плейлист" };
     // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
     {
         let core = lock(&core);
@@ -233,7 +256,7 @@ pub async fn import_playlist_url(
             .iter()
             .any(|p| p.source_url.as_ref() == Some(&parsed))
         {
-            return Err("Этот плейлист уже добавлен в библиотеку".to_string());
+            return Err(format!("Этот {kind_label} уже добавлен в библиотеку"));
         }
     }
     let registry = {
@@ -257,6 +280,15 @@ pub async fn import_playlist_url(
             }
         }
     };
+    let mut playlist = playlist;
+    let url_lower = url.to_lowercase();
+    if url_lower.contains("/album/")
+        || url_lower.contains("spotify:album:")
+        || url_lower.contains("browse/mpre")
+        || url_lower.contains("album")
+    {
+        playlist.is_album = true;
+    }
     let mut core = lock(&core);
     core.storage
         .save_playlist(&playlist)
@@ -472,4 +504,64 @@ pub async fn import_tracks_batch(
         }
     }
     Ok(added)
+}
+
+#[tauri::command]
+pub async fn get_followed_artists(
+    core: CoreState<'_>,
+) -> Result<Vec<vessel_core::model::FollowedArtist>, String> {
+    let core = lock(&core);
+    core.storage
+        .list_followed_artists()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn follow_artist(
+    core: CoreState<'_>,
+    artist: vessel_core::model::FollowedArtist,
+) -> Result<(), String> {
+    let core = lock(&core);
+    core.storage
+        .follow_artist(&artist)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn unfollow_artist(
+    core: CoreState<'_>,
+    id: String,
+) -> Result<bool, String> {
+    let core = lock(&core);
+    core.storage
+        .unfollow_artist(&id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn is_artist_followed(
+    core: CoreState<'_>,
+    id: String,
+) -> Result<bool, String> {
+    let core = lock(&core);
+    core.storage
+        .is_artist_followed(&id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_playlist_is_album(
+    core: CoreState<'_>,
+    id: String,
+    is_album: bool,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    let playlist_id = uuid::Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    if let Some(pl) = core.app.playlists.iter_mut().find(|p| p.id == playlist_id) {
+        pl.is_album = is_album;
+        let pl_clone = pl.clone();
+        core.storage.save_playlist(&pl_clone).map_err(|e| e.to_string())?;
+        core.app.playlists_dirty = true;
+    }
+    Ok(())
 }

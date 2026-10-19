@@ -363,7 +363,17 @@ export function PlayerNowPlayingCard({
                   aria-label="Favorite"
                 >
                   {fav ? (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="#ff4060" stroke="#ff4060" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="#ff4060"
+                      stroke="#ff4060"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ animation: "heartPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)" }}
+                    >
                       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                     </svg>
                   ) : (

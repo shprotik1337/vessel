@@ -85,9 +85,14 @@ pub(super) async fn artist_profile(
 
     Ok(ArtistProfile {
         name,
-        avatar_url,
+        avatar_url: avatar_url.clone(),
         popular_tracks,
         releases,
+        header_image_url: avatar_url,
+        monthly_listeners: None,
+        verified: false,
+        biography: None,
+        external_links: Vec::new(),
     })
 }
 

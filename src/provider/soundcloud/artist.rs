@@ -122,6 +122,11 @@ pub(super) async fn artist_profile(
         avatar_url,
         popular_tracks,
         releases,
+        header_image_url: None,
+        monthly_listeners: None,
+        verified: false,
+        biography: None,
+        external_links: Vec::new(),
     })
 }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "../../../store";
 import * as api from "../../../api/commands";
 
@@ -54,9 +54,17 @@ export function AudioSection({
     }
   };
 
+  useEffect(() => {
+    void api.getAutoCache().then((val) => {
+      setAutoCache(val);
+      localStorage.setItem("vessel_auto_cache", String(val));
+    }).catch(() => {});
+  }, []);
+
   const toggleAutoCache = (val: boolean) => {
     setAutoCache(val);
     localStorage.setItem("vessel_auto_cache", String(val));
+    void api.setAutoCache(val);
   };
 
   return (

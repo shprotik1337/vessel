@@ -399,6 +399,10 @@ impl Runtime {
         self.reload_providers();
     }
 
+    pub fn set_auto_cache(&mut self, enabled: bool) {
+        self.config.auto_cache = enabled;
+    }
+
     pub fn reload_providers(&mut self) {
         let setup = build_registry(&self.config, &self.secrets, true);
         self.providers = Arc::new(setup.registry);

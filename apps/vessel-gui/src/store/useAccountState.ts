@@ -34,7 +34,6 @@ export function useAccountState({
       await api.authLogout();
       await refresh();
       setView("auth");
-      showToast("Вы вышли из аккаунта");
     } catch (e: any) {
       showToast(String(e), true);
     }
@@ -47,7 +46,6 @@ export function useAccountState({
       const fresh = await api.getState();
       setState(fresh);
       triggerAutoplayLast(fresh);
-      showToast("Продолжен гостевой режим");
     } catch (e: any) {
       showToast(String(e), true);
     }

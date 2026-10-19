@@ -26,14 +26,16 @@ impl PlaylistRepository {
             .unwrap_or_default();
         transaction.execute(
             "
-            INSERT INTO playlists(id, title, description, source_url, cover_url, created_at_ms, updated_at_ms)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            INSERT INTO playlists(id, title, description, source_url, cover_url, created_at_ms, updated_at_ms, is_album, artist_name)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
                 source_url = excluded.source_url,
                 cover_url = excluded.cover_url,
-                updated_at_ms = excluded.updated_at_ms
+                updated_at_ms = excluded.updated_at_ms,
+                is_album = excluded.is_album,
+                artist_name = excluded.artist_name
             ",
             params![
                 playlist.id.to_string(),
@@ -43,6 +45,8 @@ impl PlaylistRepository {
                 playlist.cover_url.as_ref().map(ToString::to_string),
                 playlist.created_at_ms,
                 playlist.updated_at_ms,
+                if playlist.is_album { 1 } else { 0 },
+                playlist.artist_name.as_deref(),
             ],
         )?;
         transaction.execute(
@@ -106,7 +110,7 @@ impl PlaylistRepository {
     pub fn list(connection: &Connection) -> Result<Vec<Playlist>> {
         let mut statement = connection.prepare(
             "
-            SELECT id, title, description, source_url, cover_url, created_at_ms, updated_at_ms
+            SELECT id, title, description, source_url, cover_url, created_at_ms, updated_at_ms, is_album, artist_name
             FROM playlists
             ORDER BY (position IS NULL), position, updated_at_ms DESC, title COLLATE NOCASE
             ",
@@ -120,11 +124,13 @@ impl PlaylistRepository {
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, i64>(5)?,
                 row.get::<_, i64>(6)?,
+                row.get::<_, Option<i64>>(7)?.unwrap_or(0),
+                row.get::<_, Option<String>>(8)?,
             ))
         })?;
         let mut playlists = Vec::new();
         for row in rows {
-            let (id, title, description, source_url, cover_url, created_at_ms, updated_at_ms) =
+            let (id, title, description, source_url, cover_url, created_at_ms, updated_at_ms, is_album_int, artist_name) =
                 row?;
             let id = Uuid::parse_str(&id).context("В БД найден повреждённый плейлист")?;
             let source_url = source_url
@@ -145,6 +151,8 @@ impl PlaylistRepository {
                 tracks,
                 created_at_ms,
                 updated_at_ms,
+                is_album: is_album_int != 0,
+                artist_name,
             });
         }
         Ok(playlists)

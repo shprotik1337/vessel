@@ -45,8 +45,10 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   const playerPos = validPlayerPositions.includes(raw.player?.position)
     ? raw.player.position
     : "bottom";
-  const playerStyle: ComponentStyle =
-    raw.player?.style === "dock" ? "dock" : "floating";
+  const validPlayerStyles: ComponentStyle[] = ["dock", "floating", "progress_fill"];
+  const playerStyle: ComponentStyle = validPlayerStyles.includes(raw.player?.style)
+    ? raw.player.style
+    : "floating";
   const playerHeight =
     typeof raw.player?.height === "number" && !isNaN(raw.player.height)
       ? Math.max(68, Math.min(120, raw.player.height))

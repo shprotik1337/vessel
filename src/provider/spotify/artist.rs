@@ -11,7 +11,7 @@ use super::{
     SpotifyProvider,
     client::{ARTIST_DISCOGRAPHY_HASH, ARTIST_OVERVIEW_HASH, GET_ALBUM_HASH},
     mapping::{
-        collect_discography_releases, extract_album_tracks, jstr, map_pf_track,
+        best_image_source, collect_discography_releases, extract_album_tracks, jstr, map_pf_track,
         parse_album_track_wrapper, sort_releases_by_date,
     },
 };
@@ -38,9 +38,7 @@ pub async fn artist_profile(
         .and_then(|v| v.get("avatarImage"))
         .and_then(|a| a.get("sources"))
         .and_then(Value::as_array)
-        .and_then(|sources| sources.iter().last())
-        .and_then(|s| s.get("url"))
-        .and_then(Value::as_str)
+        .and_then(|sources| best_image_source(sources))
         .and_then(|u| Url::parse(u).ok());
     let popular_tracks: Vec<TrackRef> = artist
         .get("discography")
@@ -90,11 +88,79 @@ pub async fn artist_profile(
     // вперемешку (как в Deezer/Yandex), а не группами по типу.
     sort_releases_by_date(&mut releases);
 
+    // Fallback для популярных треков: если у трека нет обложки, ищем её в релизах артиста
+    let mut popular_tracks = popular_tracks;
+    for track in &mut popular_tracks {
+        if track.artwork_url.is_none() {
+            if let Some(ref title) = track.album_title {
+                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(title)) {
+                    track.artwork_url = r.artwork_url.clone();
+                }
+            }
+            if track.artwork_url.is_none() {
+                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(&track.title)) {
+                    track.artwork_url = r.artwork_url.clone();
+                }
+            }
+            if track.artwork_url.is_none() {
+                track.artwork_url = avatar_url.clone();
+            }
+        }
+    }
+
+    let header_image_url = artist
+        .get("visuals")
+        .and_then(|v| v.get("headerImage"))
+        .and_then(|h| h.get("sources"))
+        .and_then(Value::as_array)
+        .and_then(|sources| best_image_source(sources))
+        .and_then(|u| Url::parse(u).ok())
+        .or_else(|| avatar_url.clone());
+
+    let monthly_listeners = artist
+        .get("stats")
+        .and_then(|s| s.get("monthlyListeners"))
+        .and_then(Value::as_u64);
+
+    let verified = artist
+        .get("profile")
+        .and_then(|p| p.get("verified"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let biography = artist
+        .pointer("/profile/biography/text")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
+
+    let mut external_links = Vec::new();
+    if let Some(items) = artist
+        .pointer("/profile/externalLinks/items")
+        .and_then(Value::as_array)
+    {
+        for item in items {
+            if let (Some(name), Some(url)) = (
+                item.get("name").and_then(Value::as_str),
+                item.get("url").and_then(Value::as_str),
+            ) {
+                external_links.push(crate::provider::ExternalLink {
+                    name: name.to_string(),
+                    url: url.to_string(),
+                });
+            }
+        }
+    }
+
     Ok(ArtistProfile {
         name,
         avatar_url,
         popular_tracks,
         releases,
+        header_image_url,
+        monthly_listeners,
+        verified,
+        biography,
+        external_links,
     })
 }
 
@@ -174,6 +240,25 @@ pub async fn artist_all_tracks(
 
     // Вся музыка идёт по свежим релизам: порядок как в карточке артиста
     sort_releases_by_date(&mut releases);
+
+    // Fallback для топовых треков: если у них нет обложки, берём из релизов
+    for track in &mut tracks {
+        if track.artwork_url.is_none() {
+            if let Some(ref title) = track.album_title {
+                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(title)) {
+                    track.artwork_url = r.artwork_url.clone();
+                }
+            }
+            if track.artwork_url.is_none() {
+                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(&track.title)) {
+                    track.artwork_url = r.artwork_url.clone();
+                }
+            }
+            if track.artwork_url.is_none() {
+                track.artwork_url = releases.iter().find_map(|r| r.artwork_url.clone());
+            }
+        }
+    }
 
     for release in &releases {
         let album_vars = serde_json::json!({

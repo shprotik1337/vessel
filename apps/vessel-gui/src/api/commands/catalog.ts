@@ -3,6 +3,7 @@ import type {
   ArtistProfile,
   CollectionItem,
   ExploreContent,
+  GeniusArtistInfo,
   MixItem,
   QueueContext,
   SearchOutcome,
@@ -34,6 +35,10 @@ export async function artistAllTracks(
   artistId: string,
 ): Promise<TrackRef[]> {
   return invoke<TrackRef[]>("artist_all_tracks", { provider, artistId });
+}
+
+export async function getArtistExtras(name: string): Promise<GeniusArtistInfo | null> {
+  return invoke<GeniusArtistInfo | null>("get_artist_extras", { name });
 }
 
 export async function getRelated(

@@ -6,7 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { BottomPlayer } from "./components/BottomPlayer";
 import { Home } from "./pages/Home";
 import { Search } from "./pages/Search";
-import { Playlists } from "./pages/Playlists";
+import { Library } from "./pages/Library";
 import { PlaylistDetail } from "./pages/Playlist";
 import { Queue } from "./pages/Queue";
 import { Favorites } from "./pages/Favorites";
@@ -141,8 +141,26 @@ function AppContent() {
     setIsMigrationModalOpen,
     refresh,
     continueGuest,
+    goBack,
+    goForward,
   } = useApp();
   const progress = usePlaybackProgress();
+
+  useEffect(() => {
+    const handleMouseUp = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault();
+        e.stopPropagation();
+        goBack();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        e.stopPropagation();
+        goForward();
+      }
+    };
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [goBack, goForward]);
 
   useEffect(() => {
     if (hasEverPlayed) return;
@@ -188,13 +206,16 @@ function AppContent() {
         return <Home />;
       case "search":
         return <Search />;
+      case "library":
+        return <Library />;
       case "playlists":
-        return <Playlists />;
+        return <Library />;
       case "playlist":
-        return playlistId ? <PlaylistDetail playlistId={playlistId} /> : <Playlists />;
+        return playlistId ? <PlaylistDetail playlistId={playlistId} /> : <Library />;
       case "artist":
         return artist ? (
           <Artist
+            key={`${artist}:${artistId || ""}`}
             artist={artist}
             provider={artistProvider}
             artistId={artistId}
@@ -206,6 +227,7 @@ function AppContent() {
       case "artist-releases":
         return artist ? (
           <Artist
+            key={`${artist}:${artistId || ""}`}
             artist={artist}
             provider={artistProvider}
             artistId={artistId}
@@ -214,9 +236,22 @@ function AppContent() {
         ) : (
           <Home />
         );
+      case "artist-singles":
+        return artist ? (
+          <Artist
+            key={`${artist}:${artistId || ""}`}
+            artist={artist}
+            provider={artistProvider}
+            artistId={artistId}
+            mode="singles"
+          />
+        ) : (
+          <Home />
+        );
       case "artist-tracks":
         return artist ? (
           <Artist
+            key={`${artist}:${artistId || ""}`}
             artist={artist}
             provider={artistProvider}
             artistId={artistId}
@@ -249,7 +284,22 @@ function AppContent() {
   const isSidebarBottom = config.sidebar?.position === "bottom";
   const isSidebarLeft = !isSidebarRight && !isSidebarTop && !isSidebarBottom;
   const isPlayerTop = config.player?.position === "top";
-  const showBottomPlayer = config.player?.showMiniPlayer !== false && view !== "player" && hasEverPlayed;
+  const isPlaybackActive = Boolean(state?.now_playing);
+  const showBottomPlayer = config.player?.showMiniPlayer !== false && view !== "player" && isPlaybackActive;
+  const isProgressFill = config.player?.style === "progress_fill";
+  const effectivePlayerHeight = showBottomPlayer ? (isProgressFill ? 76 : (config.player?.height || 96)) : 0;
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.style.setProperty("--player-height", `${effectivePlayerHeight}px`);
+    if (!showBottomPlayer) {
+      root.style.setProperty("--safe-area-bottom", "24px");
+    } else {
+      const bottomGap = isProgressFill ? 28 : 76;
+      root.style.setProperty("--safe-area-bottom", `${effectivePlayerHeight + 8 + bottomGap}px`);
+    }
+  }, [showBottomPlayer, effectivePlayerHeight, isProgressFill]);
 
   const isIsland = config.sidebar?.style === "island" || config.sidebar?.style === "floating";
   const autoHide = Boolean(config.sidebar?.autoHide);
@@ -271,7 +321,7 @@ function AppContent() {
     <div
       className={`app-shell view-${view} ${hasWallpaper ? "has-wallpaper" : ""} ${
         isGlass ? "glass-active" : ""
-      }`}
+      } ${!showBottomPlayer ? "no-player" : ""}`}
     >
       {hasWallpaper && (
         <div

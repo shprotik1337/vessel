@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
 import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
@@ -86,6 +86,8 @@ export function BottomPlayer() {
   const lastVolumeRef = useRef<number | null>(null);
 
   const isVertical = config.player?.position === "left" || config.player?.position === "right";
+  const isProgressFill = config.player?.style === "progress_fill";
+  const effectiveHeight = isProgressFill ? 76 : (config.player?.height || 96);
 
   if (!state) return null;
 
@@ -96,15 +98,73 @@ export function BottomPlayer() {
   const durationMs = progress.duration_ms || player.duration_ms || track?.duration_ms || 0;
   const currentPosMs = progress.position_ms ?? player.position_ms ?? 0;
 
+  const [interpolatedPos, setInterpolatedPos] = useState(currentPosMs);
+  const syncRef = useRef({ pos: currentPosMs, time: Date.now() });
 
+  useEffect(() => {
+    syncRef.current = { pos: currentPosMs, time: Date.now() };
+    setInterpolatedPos(currentPosMs);
+  }, [currentPosMs, player.status]);
+
+  useEffect(() => {
+    if (player.status !== "playing") return;
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - syncRef.current.time;
+      const cur = syncRef.current.pos + elapsed;
+      const max = durationMs || Infinity;
+      setInterpolatedPos(Math.min(max, cur));
+    }, 60);
+    return () => window.clearInterval(interval);
+  }, [player.status, durationMs]);
+
+  const activePosMs = player.status === "playing" ? interpolatedPos : currentPosMs;
   const percent =
     durationMs > 0
-      ? Math.min(100, Math.max(0, (currentPosMs / durationMs) * 100))
+      ? Math.min(100, Math.max(0, (activePosMs / durationMs) * 100))
       : 0;
   const shownPercent = dragPercent ?? percent;
   const shownMs = dragPercent != null && durationMs > 0
     ? (dragPercent / 100) * durationMs
-    : currentPosMs;
+    : activePosMs;
+
+  const onPlayerBarPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (!isProgressFill) return;
+    const target = e.target as HTMLElement;
+    if (
+      target.closest(
+        "button, a, input, .vol, .vol-bar, .pl-title-link, .pl-artist-link, .pl-art, .heart, .ctrl-btn, .p-play"
+      )
+    ) {
+      return;
+    }
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const calcRatio = (clientX: number) => Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const initRatio = calcRatio(e.clientX);
+    setDragPercent(initRatio * 100);
+
+    const move = (ev: PointerEvent) => {
+      ev.preventDefault();
+      setDragPercent(calcRatio(ev.clientX) * 100);
+    };
+    const up = async (ev: PointerEvent) => {
+      const finalRatio = calcRatio(ev.clientX);
+      if (durationMs > 0) {
+        const ms = Math.round(finalRatio * durationMs);
+        try {
+          await api.seek(ms);
+          await refresh();
+        } catch (err) {
+          showToast(String(err), true);
+        }
+      }
+      setDragPercent(null);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const seekFromEvent = async (clientX: number, commit: boolean) => {
     if (!seekBarRef.current) return;
@@ -232,8 +292,6 @@ export function BottomPlayer() {
     e.stopPropagation();
     if (!track) return;
 
-    showToast(lang === "ru" ? "Загрузка релиза…" : "Loading release…", false, 2000);
-
     // 1. Прямой переход к альбому/релизу, если ссылка уже известна у трека
     if (track.album_url) {
       try {
@@ -301,6 +359,7 @@ export function BottomPlayer() {
     : null;
   return (
     <footer
+      onPointerDown={onPlayerBarPointerDown}
       className={`player ${failed ? "playback-error" : ""} ${
         config.player?.position === "top"
           ? "dock-top"
@@ -310,7 +369,11 @@ export function BottomPlayer() {
           ? "dock-right player-vertical"
           : "dock-bottom"
       } ${
-        config.player?.style === "floating" ? "floating-island" : "full-dock"
+        config.player?.style === "floating"
+          ? "floating-island"
+          : isProgressFill
+          ? "style-progress-fill floating-island"
+          : "full-dock"
       } ${
         config.player?.largeIcons ? "large-icons" : ""
       } ${config.player?.hideDetails ? "hide-details" : ""} ${
@@ -329,15 +392,24 @@ export function BottomPlayer() {
               minWidth: `${config.player?.height ? config.player.height * 2.8 : 240}px`,
             }
           : {
-              height: `${config.player?.height || 96}px`,
-              minHeight: `${config.player?.height || 96}px`,
-              maxHeight: `${config.player?.height || 96}px`,
+              height: `${effectiveHeight}px`,
+              minHeight: `${effectiveHeight}px`,
+              maxHeight: `${effectiveHeight}px`,
               width: config.player?.widthPercent && config.player.widthPercent < 100
                 ? `${config.player.widthPercent}%`
                 : undefined,
             }
       }
     >
+      {config.player?.style === "progress_fill" && (
+        <div
+          className="pl-progress-fill-bg"
+          style={{
+            width: `${shownPercent}%`,
+            transition: dragPercent != null ? "none" : undefined,
+          }}
+        />
+      )}
       {config.player?.miniPlayerBg === "artwork" && track?.artwork_url && (
         <div
           className="player-artwork-backdrop"
@@ -408,7 +480,13 @@ export function BottomPlayer() {
             aria-label="Like"
             disabled={!track}
           >
-            {HEART_SVG}
+            {fav ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#ff4060" stroke="#ff4060" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            ) : (
+              HEART_SVG
+            )}
           </button>
           {track && (
             <span className="pl-src-badge" title={track.provider}>
@@ -419,22 +497,24 @@ export function BottomPlayer() {
       </div>
       <div className="pl-center">
         <div className="pl-controls">
-          <button
-            className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player.shuffle ? "active" : "muted"}`}
-            style={smartShuffle ? { color: "#1db954" } : undefined}
-            onClick={() => void cycleShuffleMode()}
-            title={
-              smartShuffle
-                ? (lang === "ru" ? "Умное перемешивание (включено)" : "Smart Shuffle (On)")
-                : player.shuffle
-                ? (lang === "ru" ? "Перемешивание (нажмите для Умного)" : "Shuffle (Click for Smart)")
-                : t(lang, "bottom.shuffle")
-            }
-            aria-label="Shuffle"
-          >
-            {SHUFFLE_SVG}
-            {smartShuffle && <span className="smart-sparkle-badge"><IconSparkle size={10} /></span>}
-          </button>
+          {!isProgressFill && (
+            <button
+              className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player.shuffle ? "active" : "muted"}`}
+              style={smartShuffle ? { color: "#1db954" } : undefined}
+              onClick={() => void cycleShuffleMode()}
+              title={
+                smartShuffle
+                  ? (lang === "ru" ? "Умное перемешивание (включено)" : "Smart Shuffle (On)")
+                  : player.shuffle
+                  ? (lang === "ru" ? "Перемешивание (нажмите для Умного)" : "Shuffle (Click for Smart)")
+                  : t(lang, "bottom.shuffle")
+              }
+              aria-label="Shuffle"
+            >
+              {SHUFFLE_SVG}
+              {smartShuffle && <span className="smart-sparkle-badge"><IconSparkle size={10} /></span>}
+            </button>
+          )}
           <button className="ctrl-btn" onClick={handlePrev} title={t(lang, "bottom.previous")} aria-label="Previous">
             {PREV_SVG}
           </button>
@@ -444,26 +524,82 @@ export function BottomPlayer() {
           <button className="ctrl-btn" onClick={handleNext} title={t(lang, "bottom.next")} aria-label="Next">
             {NEXT_SVG}
           </button>
-          <button
-            className={`ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
-            onClick={handleRepeat}
-            title={t(lang, "bottom.repeat")}
-            aria-label="Repeat"
-          >
-            {REPEAT_SVG}
-            {player.repeat === "one" && <span className="rep-one">1</span>}
-          </button>
+          {!isProgressFill && (
+            <button
+              className={`ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
+              onClick={handleRepeat}
+              title={t(lang, "bottom.repeat")}
+              aria-label="Repeat"
+            >
+              {REPEAT_SVG}
+              {player.repeat === "one" && <span className="rep-one">1</span>}
+            </button>
+          )}
         </div>
-        <div className="pl-progress">
-          <span className="pl-time">{formatTime(shownMs)}</span>
-          <div ref={seekBarRef} className="pl-bar" onPointerDown={onSeekPointerDown}>
-            <div className="fill" style={{ width: `${shownPercent}%` }} />
-            <div className="knob" style={{ left: `${shownPercent}%` }} />
+        {!isProgressFill && (
+          <div className="pl-progress">
+            <span className="pl-time">{formatTime(shownMs)}</span>
+            <div ref={seekBarRef} className="pl-bar" onPointerDown={onSeekPointerDown}>
+              <div className="fill" style={{ width: `${shownPercent}%` }} />
+              <div className="knob" style={{ left: `${shownPercent}%` }} />
+            </div>
+            <span className="pl-time">{formatTime(durationMs)}</span>
           </div>
-          <span className="pl-time">{formatTime(durationMs)}</span>
-        </div>
+        )}
       </div>
       <div className="pl-right">
+        {isProgressFill && (
+          <>
+            <button
+              className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player.shuffle ? "active" : "muted"}`}
+              style={smartShuffle ? { color: "#1db954" } : undefined}
+              onClick={() => void cycleShuffleMode()}
+              title={
+                smartShuffle
+                  ? (lang === "ru" ? "Умное перемешивание (включено)" : "Smart Shuffle (On)")
+                  : player.shuffle
+                  ? (lang === "ru" ? "Перемешивание (нажмите для Умного)" : "Shuffle (Click for Smart)")
+                  : t(lang, "bottom.shuffle")
+              }
+              aria-label="Shuffle"
+            >
+              {SHUFFLE_SVG}
+              {smartShuffle && <span className="smart-sparkle-badge"><IconSparkle size={10} /></span>}
+            </button>
+            <button
+              className={`ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
+              onClick={handleRepeat}
+              title={t(lang, "bottom.repeat")}
+              aria-label="Repeat"
+            >
+              {REPEAT_SVG}
+              {player.repeat === "one" && <span className="rep-one">1</span>}
+            </button>
+          </>
+        )}
+        <div className="vol">
+          <button
+            className="vol-btn"
+            onClick={handleMute}
+            title={muted ? "Включить звук" : "Выключить звук"}
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? MUTE_SVG : VOLUME_SVG}
+          </button>
+          <div ref={volBarRef} className="vol-bar" onPointerDown={onVolPointerDown}>
+            <div className="fill" style={{ width: `${player.volume_percent}%` }} />
+            <div className="knob" style={{ left: `${player.volume_percent}%` }} />
+          </div>
+        </div>
+        <button
+          className={`pl-fullscreen-btn ${fullscreenOpen ? "active" : ""}`}
+          onClick={() => setFullscreenOpen(!fullscreenOpen)}
+          title={t(lang, "bottom.fullscreen")}
+          aria-label="Fullscreen player"
+          disabled={!track}
+        >
+          {FULLSCREEN_SVG}
+        </button>
         <button
           className={`ctrl-btn pl-queue-btn ${isQueueOpen ? "active" : ""}`}
           onClick={toggleQueue}
@@ -490,30 +626,6 @@ export function BottomPlayer() {
             </svg>
           </div>
         </button>
-        <button
-          className={`pl-fullscreen-btn ${fullscreenOpen ? "active" : ""}`}
-          onClick={() => setFullscreenOpen(!fullscreenOpen)}
-          title={t(lang, "bottom.fullscreen")}
-          aria-label="Fullscreen player"
-          disabled={!track}
-        >
-          {FULLSCREEN_SVG}
-        </button>
-        <div className="divider" />
-        <div className="vol">
-          <button
-            className="vol-btn"
-            onClick={handleMute}
-            title={muted ? "Включить звук" : "Выключить звук"}
-            aria-label={muted ? "Unmute" : "Mute"}
-          >
-            {muted ? MUTE_SVG : VOLUME_SVG}
-          </button>
-          <div ref={volBarRef} className="vol-bar" onPointerDown={onVolPointerDown}>
-            <div className="fill" style={{ width: `${player.volume_percent}%` }} />
-            <div className="knob" style={{ left: `${player.volume_percent}%` }} />
-          </div>
-        </div>
       </div>
     </footer>
   );

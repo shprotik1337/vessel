@@ -38,15 +38,21 @@ interface SearchCollectionCardProps {
   item: CollectionItem;
   playTitle?: string;
   onOpenPreview: (item: CollectionItem) => void;
-  onPlayCollection: (item: CollectionItem) => void;
+  onPlayCollection?: (item: CollectionItem) => void;
 }
 
 export function SearchCollectionCard({
   item,
-  playTitle = "▶",
   onOpenPreview,
-  onPlayCollection,
 }: SearchCollectionCardProps) {
+  const isAlbum = item.kind === "album";
+  const yearMatch = item.subtitle?.match(/\b(19\d\d|20\d\d)\b/);
+  const year = yearMatch ? yearMatch[1] : "";
+  let formattedSub = item.subtitle || providerLabel(item.provider);
+  if (isAlbum) {
+    formattedSub = year ? `Альбом • ${year}` : (item.subtitle || "Альбом");
+  }
+
   return (
     <div
       className="search-collection-card"
@@ -66,19 +72,9 @@ export function SearchCollectionCard({
             <PlatformIcon kind={item.provider} size={13} />
           </span>
         )}
-        <button
-          className="search-card-play-btn"
-          title={playTitle}
-          onClick={(e) => {
-            e.stopPropagation();
-            void onPlayCollection(item);
-          }}
-        >
-          ▶
-        </button>
       </div>
       <div className="search-collection-title">{item.title}</div>
-      <div className="search-collection-sub">{item.subtitle || providerLabel(item.provider)}</div>
+      <div className="search-collection-sub">{formattedSub}</div>
     </div>
   );
 }

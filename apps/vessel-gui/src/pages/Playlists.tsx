@@ -148,7 +148,6 @@ export function Playlists() {
 
       {state.playlists.length === 0 ? (
         <div className="empty">
-          <div className="ico">♫</div>
           <div className="t1">{t(lang, "playlists.empty1")}</div>
           <div className="t2">{t(lang, "playlists.empty2")}</div>
         </div>
@@ -170,11 +169,6 @@ export function Playlists() {
                   coverUrl={p.cover_url}
                   border={false}
                 />
-                <div className="card-badge-ico" title="Плейлист">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    <path d="M21 15V6M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM9 18H3M15 6H3M11 12H3" />
-                  </svg>
-                </div>
                 <button
                   className="card-play"
                   title={t(lang, "common.play")}

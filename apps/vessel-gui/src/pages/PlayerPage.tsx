@@ -3,7 +3,6 @@ import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
 import { isFavorite } from "../lib/utils";
 import type { TrackRef } from "../api/types";
-import { t } from "../i18n";
 import * as api from "../api/commands";
 import {
   usePlayerProgress,
@@ -118,7 +117,6 @@ export function PlayerPage() {
     try {
       await api.toggleFavorite(track);
       await refresh();
-      showToast(fav ? t(lang, "trackrow.unlike") : t(lang, "trackrow.like"));
     } catch (err) {
       showToast(String(err), true);
     }

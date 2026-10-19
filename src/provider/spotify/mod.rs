@@ -99,9 +99,7 @@ impl SpotifyProvider {
             .get("coverArt")
             .and_then(|c| c.get("sources"))
             .and_then(Value::as_array)
-            .and_then(|sources| sources.iter().last())
-            .and_then(|s| s.get("url"))
-            .and_then(Value::as_str)
+            .and_then(|sources| mapping::best_image_source(sources))
             .and_then(|u| Url::parse(u).ok());
         let mut tracks = mapping::extract_album_tracks(&value);
         // Обложка альбома — каждому треку (в tracksV2 трек приходит без coverArt)
@@ -318,12 +316,10 @@ impl MusicProvider for SpotifyProvider {
             .get("images")
             .and_then(|i| i.get("items"))
             .and_then(Value::as_array)
-            .and_then(|items| items.iter().last())
+            .and_then(|items| items.first().or_else(|| items.last()))
             .and_then(|img| img.get("sources"))
             .and_then(Value::as_array)
-            .and_then(|sources| sources.iter().last())
-            .and_then(|s| s.get("url"))
-            .and_then(Value::as_str)
+            .and_then(|sources| mapping::best_image_source(sources))
             .and_then(|u| Url::parse(u).ok());
         let mut tracks = mapping::extract_playlist_tracks(&value);
         // Догружаем остальные страницы плейлиста

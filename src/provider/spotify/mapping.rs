@@ -32,16 +32,41 @@ pub fn pf_bare_id(uri: &str) -> Option<String> {
     uri.rsplit(':').next().filter(|s| !s.is_empty()).map(str::to_string)
 }
 
-/// coverArt.sources[].url из объекта, если он есть (для getAlbum-ответа).
+/// Выбирает URL изображения с максимальным разрешением (по width/height) из sources[] Spotify.
+/// Если размеры не указаны, берёт первый элемент (в Spotify Pathfinder GraphQL sources[0] = оригинал).
+pub fn best_image_source(sources: &[Value]) -> Option<&str> {
+    let with_dim = sources.iter().filter(|s| {
+        s.get("width").and_then(Value::as_u64).unwrap_or(0) > 0
+            || s.get("height").and_then(Value::as_u64).unwrap_or(0) > 0
+    });
+    let best = with_dim
+        .max_by_key(|s| {
+            s.get("width")
+                .and_then(Value::as_u64)
+                .or_else(|| s.get("height").and_then(Value::as_u64))
+                .unwrap_or(0)
+        })
+        .or_else(|| sources.first());
+    best.and_then(|s| s.get("url")).and_then(Value::as_str)
+}
+
+/// coverArt.sources[].url из объекта, если он есть (для getAlbum-ответа и topTracks).
 pub fn value_cover_art(track: &Value) -> Option<Url> {
-    track
-        .pointer("/album/coverArt/sources")
-        .or_else(|| track.pointer("/coverArt/sources"))?
-        .as_array()?
-        .iter()
-        .filter_map(|s| s.get("url").and_then(Value::as_str))
-        .next_back()
-        .and_then(|u| Url::parse(u).ok())
+    let sources = track
+        .pointer("/albumOfTrack/coverArt/sources")
+        .or_else(|| track.pointer("/track/albumOfTrack/coverArt/sources"))
+        .or_else(|| track.pointer("/album/coverArt/sources"))
+        .or_else(|| track.pointer("/track/album/coverArt/sources"))
+        .or_else(|| track.pointer("/coverArt/sources"))
+        .or_else(|| track.pointer("/track/coverArt/sources"))
+        .or_else(|| track.pointer("/visuals/avatarImage/sources"))
+        .or_else(|| track.pointer("/albumOfTrack/images"))
+        .or_else(|| track.pointer("/track/albumOfTrack/images"))
+        .or_else(|| track.pointer("/album/images"))
+        .or_else(|| track.pointer("/track/album/images"))
+        .or_else(|| track.pointer("/images"))?
+        .as_array()?;
+    best_image_source(sources).and_then(|u| Url::parse(u).ok())
 }
 
 pub fn map_pf_track(item: &Value) -> Option<TrackRef> {
@@ -74,7 +99,7 @@ pub fn map_pf_track(item: &Value) -> Option<TrackRef> {
             item.pointer("/trackDuration/totalMilliseconds")
                 .and_then(Value::as_u64)
         });
-    let album_data = item.get("albumOfTrack");
+    let album_data = item.get("albumOfTrack").or_else(|| item.get("album"));
     let album_uri = album_data.and_then(|a| a.get("uri")).and_then(Value::as_str);
     let album_id = album_uri.and_then(pf_bare_id);
     let album_url =
@@ -85,12 +110,12 @@ pub fn map_pf_track(item: &Value) -> Option<TrackRef> {
         .map(str::to_string);
     let artwork_url = album_data
         .and_then(|a| a.get("coverArt"))
+        .or_else(|| item.get("coverArt"))
         .and_then(|c| c.get("sources"))
         .and_then(Value::as_array)
-        .and_then(|sources| sources.iter().last())
-        .and_then(|source| source.get("url"))
-        .and_then(Value::as_str)
-        .and_then(|u| Url::parse(u).ok());
+        .and_then(|sources| best_image_source(sources))
+        .and_then(|u| Url::parse(u).ok())
+        .or_else(|| value_cover_art(item));
     let explicit = item
         .get("contentRating")
         .and_then(|c| c.get("label"))
@@ -169,7 +194,18 @@ pub fn map_album_track(track: &Value) -> Option<TrackRef> {
         .or_else(|| track.pointer("/trackDuration/totalMilliseconds"))
         .or_else(|| track.get("duration_ms"))
         .and_then(Value::as_u64);
-    let artwork_url = value_cover_art(track);
+    let album_data = track.get("albumOfTrack").or_else(|| track.get("album"));
+    let album_uri = album_data.and_then(|a| a.get("uri")).and_then(Value::as_str);
+    let album_id = album_uri.and_then(pf_bare_id);
+    let album_url =
+        album_id.and_then(|alb_id| Url::parse(&format!("{WEB_URL}/album/{alb_id}")).ok());
+    let album_title = album_data
+        .and_then(|a| a.get("name"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
+    let artwork_url = value_cover_art(track)
+        .or_else(|| album_data.and_then(value_cover_art));
     let explicit = track
         .pointer("/contentRating/label")
         .and_then(Value::as_str)
@@ -197,8 +233,8 @@ pub fn map_album_track(track: &Value) -> Option<TrackRef> {
         drm: true,
         isrc,
         origin: crate::model::TrackOrigin::Original,
-        album_url: None,
-        album_title: None,
+        album_url,
+        album_title,
     })
 }
 
@@ -249,9 +285,7 @@ pub fn extract_pathfinder_artists(value: &Value) -> Vec<CollectionItem> {
                 .and_then(|v| v.get("avatarImage"))
                 .and_then(|a| a.get("sources"))
                 .and_then(Value::as_array)
-                .and_then(|sources| sources.iter().last())
-                .and_then(|s| s.get("url"))
-                .and_then(Value::as_str)
+                .and_then(|sources| best_image_source(sources))
                 .and_then(|u| Url::parse(u).ok());
             let web_url = Url::parse(&format!("{WEB_URL}/artist/{id}")).expect("artist url");
             Some(CollectionItem {
@@ -297,9 +331,7 @@ pub fn extract_pathfinder_albums(value: &Value) -> Vec<CollectionItem> {
                 .get("coverArt")
                 .and_then(|c| c.get("sources"))
                 .and_then(Value::as_array)
-                .and_then(|sources| sources.iter().last())
-                .and_then(|s| s.get("url"))
-                .and_then(Value::as_str)
+                .and_then(|sources| best_image_source(sources))
                 .and_then(|u| Url::parse(u).ok());
             let date = jstr(item, &["date", "isoString"]).unwrap_or_default();
             let subtitle = if artists.is_empty() {
@@ -368,12 +400,10 @@ pub fn extract_pathfinder_playlists(value: &Value) -> Vec<CollectionItem> {
                 .get("images")
                 .and_then(|i| i.get("items"))
                 .and_then(Value::as_array)
-                .and_then(|items| items.iter().last())
+                .and_then(|items| items.first().or_else(|| items.last()))
                 .and_then(|img| img.get("sources"))
                 .and_then(Value::as_array)
-                .and_then(|sources| sources.iter().last())
-                .and_then(|s| s.get("url"))
-                .and_then(Value::as_str)
+                .and_then(|sources| best_image_source(sources))
                 .and_then(|u| Url::parse(u).ok());
             let subtitle = if owner.is_empty() {
                 if track_count > 1 {
@@ -458,6 +488,28 @@ pub fn parse_album_track_wrapper(wrapper: &Value) -> Option<TrackRef> {
             t.id = id;
             t.web_url = Url::parse(&format!("{WEB_URL}/track/{}", t.id)).ok()?;
         }
+        if t.artwork_url.is_none() {
+            t.artwork_url = value_cover_art(wrapper)
+                .or_else(|| wrapper.get("track").and_then(value_cover_art));
+        }
+        if t.album_title.is_none() {
+            t.album_title = wrapper.pointer("/track/albumOfTrack/name")
+                .or_else(|| wrapper.pointer("/albumOfTrack/name"))
+                .or_else(|| payload.pointer("/albumOfTrack/name"))
+                .or_else(|| payload.pointer("/album/name"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
+        if t.album_url.is_none() {
+            let a_uri = wrapper.pointer("/track/albumOfTrack/uri")
+                .or_else(|| wrapper.pointer("/albumOfTrack/uri"))
+                .or_else(|| payload.pointer("/albumOfTrack/uri"))
+                .or_else(|| payload.pointer("/album/uri"))
+                .and_then(Value::as_str);
+            t.album_url = a_uri
+                .and_then(pf_bare_id)
+                .and_then(|alb_id| Url::parse(&format!("{WEB_URL}/album/{alb_id}")).ok());
+        }
         return Some(t);
     }
 
@@ -485,7 +537,22 @@ pub fn parse_album_track_wrapper(wrapper: &Value) -> Option<TrackRef> {
         .or_else(|| wrapper.get("duration_ms"))
         .and_then(Value::as_u64);
 
-    let artwork_url = value_cover_art(payload).or_else(|| value_cover_art(wrapper));
+    let album_data = payload.get("albumOfTrack")
+        .or_else(|| payload.get("album"))
+        .or_else(|| wrapper.get("albumOfTrack"))
+        .or_else(|| wrapper.get("album"));
+    let album_uri = album_data.and_then(|a| a.get("uri")).and_then(Value::as_str);
+    let album_id = album_uri.and_then(pf_bare_id);
+    let album_url =
+        album_id.and_then(|alb_id| Url::parse(&format!("{WEB_URL}/album/{alb_id}")).ok());
+    let album_title = album_data
+        .and_then(|a| a.get("name"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
+    let artwork_url = value_cover_art(payload)
+        .or_else(|| value_cover_art(wrapper))
+        .or_else(|| album_data.and_then(value_cover_art));
     let explicit = payload
         .pointer("/contentRating/label")
         .and_then(Value::as_str)
@@ -526,8 +593,8 @@ pub fn parse_album_track_wrapper(wrapper: &Value) -> Option<TrackRef> {
         drm: true,
         isrc,
         origin: crate::model::TrackOrigin::Original,
-        album_url: None,
-        album_title: None,
+        album_url,
+        album_title,
     })
 }
 
@@ -656,9 +723,7 @@ pub fn pf_release_to_item(
         .get("coverArt")
         .and_then(|c| c.get("sources"))
         .and_then(Value::as_array)
-        .and_then(|sources| sources.iter().last())
-        .and_then(|s| s.get("url"))
-        .and_then(Value::as_str)
+        .and_then(|sources| best_image_source(sources))
         .and_then(|u| Url::parse(u).ok());
     let year = item.pointer("/date/year").and_then(Value::as_u64);
     let month = item.pointer("/date/month").and_then(Value::as_u64);

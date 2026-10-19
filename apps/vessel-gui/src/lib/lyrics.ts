@@ -1,9 +1,27 @@
-import { isPlayCountString, getActiveImageProxy } from "./utils";
+import { isPlayCountString } from "./utils";
+import { fetchServerLyrics } from "../api/commands";
+
+export interface LyricWord {
+  time: number; // in seconds
+  duration?: number;
+  text: string;
+}
 
 export interface LyricLine {
   time: number; // in seconds
   text: string;
+  words?: LyricWord[];
 }
+
+export interface LyricsSource {
+  id: string;
+  name: string;
+}
+
+export const LYRICS_SOURCES: LyricsSource[] = [
+  { id: "cadence", name: "Cadence" },
+  { id: "lrclib", name: "LRCLIB" },
+];
 
 export interface LyricsData {
   synced: boolean;
@@ -15,52 +33,68 @@ export interface LyricsData {
 
 const lyricsCache = new Map<string, LyricsData | null>();
 
-function buildLyricsUrl(endpoint: "/api/get" | "/api/search", params: URLSearchParams): string {
-  const proxy = getActiveImageProxy();
-  if (proxy?.server_url) {
-    const base = proxy.server_url.replace(/\/+$/, "");
-    const proxyParams = new URLSearchParams(params);
-    if (endpoint === "/api/search") {
-      proxyParams.set("search", "true");
-    }
-    if (proxy.token) {
-      proxyParams.set("token", proxy.token);
-    }
-    return `${base}/api/v1/lyrics?${proxyParams.toString()}`;
-  }
-  return `https://lrclib.net${endpoint}?${params.toString()}`;
-}
-
 /**
- * Parse an LRC-formatted string into structured LyricLine array.
+ * Parse an LRC or Enhanced LRC string (with word/syllable timings <mm:ss.xx>word)
+ * into structured LyricLine array.
  */
 export function parseLrc(lrcText: string): LyricLine[] {
   const lines = lrcText.split("\n");
   const result: LyricLine[] = [];
-  const timeRegex = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+  const lineTimeRegex = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+  const wordTimeRegex = /<(\d+):(\d+(?:\.\d+)?)>([^<]*)/g;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    // Extract all timestamps in the line (some lines have multiple timestamps)
+    // Extract all line timestamps (some lines have multiple timestamps)
     const timestamps: number[] = [];
     let match: RegExpExecArray | null;
     let lastIndex = 0;
 
-    while ((match = timeRegex.exec(line)) !== null) {
+    while ((match = lineTimeRegex.exec(line)) !== null) {
       const minutes = parseInt(match[1], 10);
       const seconds = parseFloat(match[2]);
       if (!isNaN(minutes) && !isNaN(seconds)) {
         timestamps.push(minutes * 60 + seconds);
       }
-      lastIndex = timeRegex.lastIndex;
+      lastIndex = lineTimeRegex.lastIndex;
     }
 
-    const text = line.slice(lastIndex).trim();
+    const rawContent = line.slice(lastIndex).trim();
+    if (!rawContent && timestamps.length === 0) continue;
+
+    // Check if syllable/word timestamps are present in the line (<mm:ss.xx>word)
+    let words: LyricWord[] | undefined;
+    let cleanText = rawContent;
+
+    if (rawContent.includes("<") && rawContent.includes(">")) {
+      const parsedWords: LyricWord[] = [];
+      let wMatch: RegExpExecArray | null;
+      wordTimeRegex.lastIndex = 0;
+      while ((wMatch = wordTimeRegex.exec(rawContent)) !== null) {
+        const wMin = parseInt(wMatch[1], 10);
+        const wSec = parseFloat(wMatch[2]);
+        const wText = wMatch[3];
+        if (!isNaN(wMin) && !isNaN(wSec) && wText) {
+          parsedWords.push({
+            time: wMin * 60 + wSec,
+            text: wText,
+          });
+        }
+      }
+      if (parsedWords.length > 0) {
+        for (let i = 0; i < parsedWords.length; i++) {
+          const nextTime = parsedWords[i + 1]?.time ?? (parsedWords[i].time + 0.6);
+          parsedWords[i].duration = Math.max(0.08, nextTime - parsedWords[i].time);
+        }
+        words = parsedWords;
+        cleanText = rawContent.replace(/<[^>]+>/g, "").trim();
+      }
+    }
 
     for (const time of timestamps) {
-      result.push({ time, text });
+      result.push({ time, text: cleanText, words });
     }
   }
 
@@ -80,20 +114,22 @@ function cleanTitle(title: string): string {
 }
 
 /**
- * Fetch lyrics from LRCLIB API.
+ * Fetch lyrics from selected source (Cadence or LRCLIB).
  * Uses exact match endpoint first, falls back to search.
  */
 export async function fetchLyrics(
   title: string,
   artist: string,
   durationSecs?: number,
-  album?: string
+  album?: string,
+  sourceId: string = "cadence"
 ): Promise<LyricsData | null> {
   const effectiveArtist = isPlayCountString(artist) ? "" : artist.trim();
   const rawPrimary = effectiveArtist.split(/[,&/]|feat\.|ft\./i)[0].trim();
   const primaryArtist = isPlayCountString(rawPrimary) ? "" : rawPrimary;
 
-  const cacheKey = `${(primaryArtist || effectiveArtist).toLowerCase()} - ${title.toLowerCase()}`;
+  const displaySource = sourceId === "cadence" ? "Cadence" : "LRCLIB";
+  const cacheKey = `${sourceId}:${(primaryArtist || effectiveArtist).toLowerCase()} - ${title.toLowerCase()}`;
   if (lyricsCache.has(cacheKey)) {
     return lyricsCache.get(cacheKey) ?? null;
   }
@@ -102,24 +138,16 @@ export async function fetchLyrics(
 
   try {
     // 1. Try exact match with duration
-    const params = new URLSearchParams({
-      track_name: cleanedTitle || title,
-    });
-    if (primaryArtist || effectiveArtist) {
-      params.append("artist_name", primaryArtist || effectiveArtist);
-    }
-    if (album) params.append("album_name", album);
-    if (durationSecs && durationSecs > 0) {
-      params.append("duration", Math.round(durationSecs).toString());
-    }
+    const exactData = await fetchServerLyrics({
+      trackName: cleanedTitle || title,
+      artistName: primaryArtist || effectiveArtist || undefined,
+      albumName: album || undefined,
+      duration: durationSecs && durationSecs > 0 ? Math.round(durationSecs) : undefined,
+      search: false,
+    }).catch(() => null);
 
-    let res = await fetch(buildLyricsUrl("/api/get", params), {
-      signal: AbortSignal.timeout(4000),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const parsed = processLrclibResponse(data);
+    if (exactData && !exactData.detail) {
+      const parsed = processLyricsResponse(exactData, displaySource);
       if (parsed) {
         lyricsCache.set(cacheKey, parsed);
         return parsed;
@@ -127,30 +155,18 @@ export async function fetchLyrics(
     }
 
     // 2. Fallback: search query
-    const searchParams = new URLSearchParams({
-      track_name: cleanedTitle || title,
-    });
-    if (primaryArtist || effectiveArtist) {
-      searchParams.append("artist_name", primaryArtist || effectiveArtist);
-    }
-    res = await fetch(buildLyricsUrl("/api/search", searchParams), {
-      signal: AbortSignal.timeout(4000),
-    });
+    const searchData = await fetchServerLyrics({
+      trackName: cleanedTitle || title,
+      artistName: primaryArtist || effectiveArtist || undefined,
+      search: true,
+    }).catch(() => null);
 
-    if (res.ok) {
-      const searchResults: any[] = await res.json();
-      if (Array.isArray(searchResults) && searchResults.length > 0) {
-        // Pick best matching result (prefer synced lyrics, then closest duration)
-        let best = searchResults.find((item) => item.syncedLyrics);
-        if (!best) {
-          best = searchResults[0];
-        }
-
-        const parsed = processLrclibResponse(best);
-        if (parsed) {
-          lyricsCache.set(cacheKey, parsed);
-          return parsed;
-        }
+    if (Array.isArray(searchData) && searchData.length > 0) {
+      let best = searchData.find((item: any) => item.syncedLyrics) || searchData[0];
+      const parsed = processLyricsResponse(best, displaySource);
+      if (parsed) {
+        lyricsCache.set(cacheKey, parsed);
+        return parsed;
       }
     }
 
@@ -158,34 +174,28 @@ export async function fetchLyrics(
     const query = primaryArtist || effectiveArtist
       ? `${primaryArtist || effectiveArtist} ${cleanedTitle}`.trim()
       : cleanedTitle.trim();
-    const qParams = new URLSearchParams({ q: query });
-    res = await fetch(buildLyricsUrl("/api/search", qParams), {
-      headers: {
-        "User-Agent": "Vessel Music Player v1.3.17 (https://github.com/smilingknight)",
-      },
-      signal: AbortSignal.timeout(4000),
-    });
+    const queryData = await fetchServerLyrics({
+      q: query,
+      search: true,
+    }).catch(() => null);
 
-    if (res.ok) {
-      const qResults: any[] = await res.json();
-      if (Array.isArray(qResults) && qResults.length > 0) {
-        let best = qResults.find((item) => item.syncedLyrics) || qResults[0];
-        const parsed = processLrclibResponse(best);
-        if (parsed) {
-          lyricsCache.set(cacheKey, parsed);
-          return parsed;
-        }
+    if (Array.isArray(queryData) && queryData.length > 0) {
+      let best = queryData.find((item: any) => item.syncedLyrics) || queryData[0];
+      const parsed = processLyricsResponse(best, displaySource);
+      if (parsed) {
+        lyricsCache.set(cacheKey, parsed);
+        return parsed;
       }
     }
   } catch (err) {
-    console.warn("Failed to fetch lyrics:", err);
+    console.warn(`Failed to fetch lyrics from ${displaySource}:`, err);
   }
 
   lyricsCache.set(cacheKey, null);
   return null;
 }
 
-function processLrclibResponse(data: any): LyricsData | null {
+function processLyricsResponse(data: any, sourceName: string): LyricsData | null {
   if (!data) return null;
 
   if (data.instrumental) {
@@ -193,7 +203,7 @@ function processLrclibResponse(data: any): LyricsData | null {
       synced: false,
       lines: [],
       plain: "Инструментальный трек (без слов)",
-      source: "LRCLIB",
+      source: sourceName,
       instrumental: true,
     };
   }
@@ -205,7 +215,7 @@ function processLrclibResponse(data: any): LyricsData | null {
         synced: true,
         lines,
         plain: data.plainLyrics || undefined,
-        source: "LRCLIB",
+        source: sourceName,
       };
     }
   }
@@ -220,7 +230,7 @@ function processLrclibResponse(data: any): LyricsData | null {
       synced: false,
       lines: plainLines,
       plain: data.plainLyrics,
-      source: "LRCLIB",
+      source: sourceName,
     };
   }
 

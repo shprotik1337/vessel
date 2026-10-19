@@ -54,6 +54,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     artistProvider,
     artistId,
     canGoBack,
+    canGoForward,
     sidebarCollapsed,
     setSidebarCollapsed,
     toggleSidebarCollapsed,
@@ -63,6 +64,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     closeSettings,
     navigateTo,
     goBack,
+    goForward,
   } = useNavigationState();
 
   const favoriteKeysSet = useMemo(() => {
@@ -172,6 +174,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const cfSec = Number(localStorage.getItem("vessel_crossfade_sec") || 5);
     void api.setCrossfade(cfEnabled ? cfSec * 1000 : 0);
     void api.setAudioAgc(localStorage.getItem("vessel_audio_agc") === "true");
+    const autoCacheEnabled = localStorage.getItem("vessel_auto_cache") !== "false";
+    void api.setAutoCache(autoCacheEnabled);
   }, []);
 
   // Кэширование воспроизводимого трека
@@ -306,6 +310,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         navigateTo,
         canGoBack,
         goBack,
+        canGoForward,
+        goForward,
         sidebarCollapsed,
         setSidebarCollapsed,
         toggleSidebarCollapsed,

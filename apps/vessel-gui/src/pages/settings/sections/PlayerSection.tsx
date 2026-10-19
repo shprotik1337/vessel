@@ -12,6 +12,7 @@ import {
   IconLayoutRight,
   IconShapeCapsule,
   IconShapeRect,
+  IconWaveStream,
 } from "../../../components/Icons";
 
 export function PlayerSection() {
@@ -121,6 +122,16 @@ export function PlayerSection() {
             <span className="sett-segmented-btn-icon"><IconPlayer size={15} /></span>
             <span className="sett-segmented-btn-label">
               {lang === "ru" ? "Прикрепленный (Док)" : "Docked"}
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`sett-segmented-btn ${config.player?.style === "progress_fill" ? "active" : ""}`}
+            onClick={() => setPlayerStyle("progress_fill")}
+          >
+            <span className="sett-segmented-btn-icon"><IconWaveStream size={15} /></span>
+            <span className="sett-segmented-btn-label">
+              {lang === "ru" ? "Заполнение прогрессом" : "Progress Fill"}
             </span>
           </button>
         </div>

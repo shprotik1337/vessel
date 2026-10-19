@@ -190,6 +190,27 @@ pub async fn artist_all_tracks(
 }
 
 #[tauri::command]
+pub async fn get_artist_extras(
+    name: String,
+) -> Result<Option<vessel_core::protocol::GeniusArtistResponse>, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(None);
+    }
+    let client = match super::auth::official_client() {
+        Ok(c) => c,
+        Err(_) => return Ok(None),
+    };
+    match client.genius_artist(name).await {
+        Ok(res) => Ok(Some(res)),
+        Err(err) => {
+            vessel_core::dlog!("[get_artist_extras] error for {}: {err}", name);
+            Ok(None)
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn get_related(
     core: CoreState<'_>,
     track: TrackRef,

@@ -8,6 +8,7 @@ import type {
   FullState,
   LoginRequest,
   RegisterRequest,
+  StorageStats,
   TrackRef,
   UpdateProfileRequest,
   UserInfo,
@@ -177,4 +178,20 @@ export async function authGetProfile(): Promise<UserInfo> {
 
 export async function authUpdateProfile(req: UpdateProfileRequest): Promise<UserInfo> {
   return invoke<UserInfo>("auth_update_profile", { req });
+}
+
+export async function getAutoCache(): Promise<boolean> {
+  return invoke<boolean>("get_auto_cache");
+}
+
+export async function setAutoCache(enabled: boolean): Promise<void> {
+  return invoke("set_auto_cache", { enabled });
+}
+
+export async function getStorageStats(): Promise<StorageStats> {
+  return invoke<StorageStats>("get_storage_stats");
+}
+
+export async function clearStorageCache(target?: "all" | "tracks" | "covers"): Promise<StorageStats> {
+  return invoke<StorageStats>("clear_storage_cache", { target: target ?? null });
 }

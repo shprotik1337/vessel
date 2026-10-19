@@ -89,6 +89,8 @@ export interface AppStore {
   ) => void;
   canGoBack: boolean;
   goBack: () => void;
+  canGoForward: boolean;
+  goForward: () => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebarCollapsed: () => void;

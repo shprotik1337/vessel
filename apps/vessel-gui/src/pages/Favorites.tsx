@@ -171,7 +171,7 @@ export function Favorites() {
   return (
     <div className="view">
       <div style={{ marginBottom: 18 }}>
-        <button className="btn btn-outline btn-sm" onClick={goBack} title={t(lang, "common.back")}>
+        <button className="btn-back-pill" onClick={goBack} title={t(lang, "common.back")}>
           {t(lang, "common.back")}
         </button>
       </div>
@@ -269,7 +269,6 @@ export function Favorites() {
         <div className="page-panel-body">
           {favTracks.length === 0 ? (
             <div className="empty">
-              <div className="ico">♡</div>
               <div className="t1">{t(lang, "favorites.empty1")}</div>
               <div className="t2">{t(lang, "favorites.empty2")}</div>
             </div>

@@ -12,6 +12,7 @@ export interface UseFullscreenLyricsOptions {
   progressPositionMs: number | undefined;
   progressDurationMs: number | undefined;
   followTrack: boolean;
+  lyricsSource?: string;
   refresh: () => Promise<void>;
   showToast: (msg: string, isError?: boolean) => void;
 }
@@ -24,6 +25,7 @@ export function useFullscreenLyrics({
   progressPositionMs,
   progressDurationMs,
   followTrack,
+  lyricsSource = "cadence",
   refresh,
   showToast,
 }: UseFullscreenLyricsOptions) {
@@ -52,30 +54,40 @@ export function useFullscreenLyrics({
 
   useEffect(() => {
     if (playerStatus !== "playing") return;
-    const timer = window.setInterval(() => {
+    let animId: number;
+    const update = () => {
       const elapsed = Date.now() - syncRef.current.time;
       const cur = syncRef.current.pos + elapsed;
       const max = effectiveDuration || Infinity;
       setPosMs(Math.min(max, cur));
-    }, 80);
-    return () => window.clearInterval(timer);
+      animId = requestAnimationFrame(update);
+    };
+    animId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(animId);
   }, [playerStatus, effectiveDuration]);
 
-  // Fetch lyrics when track changes
+  // Track the actively requested fetch key to prevent race conditions and cancellation stalls
+  const activeReqRef = useRef<string>("");
+
+  // Fetch lyrics when track or source changes
   useEffect(() => {
     if (!track) {
       setLyricsData(null);
       setLoadingLyrics(false);
       loadedTrackKeyRef.current = "";
+      activeReqRef.current = "";
       return;
     }
 
-    if (loadedTrackKeyRef.current === currentTrackKey) {
+    const currentSource = lyricsSource || "cadence";
+    const cacheFetchKey = `${currentTrackKey}:${currentSource}`;
+
+    if (loadedTrackKeyRef.current === cacheFetchKey) {
       return;
     }
 
-    loadedTrackKeyRef.current = currentTrackKey;
-    let cancelled = false;
+    loadedTrackKeyRef.current = cacheFetchKey;
+    activeReqRef.current = cacheFetchKey;
     setLoadingLyrics(true);
     setUserScrolled(false);
     setScrolledTop(false);
@@ -88,26 +100,22 @@ export function useFullscreenLyrics({
       ? playerDurationMs / 1000
       : undefined;
 
-    fetchLyrics(track.title, primaryArtist, durSecs)
+    fetchLyrics(track.title, primaryArtist, durSecs, undefined, currentSource)
       .then((data) => {
-        if (!cancelled) {
+        if (activeReqRef.current === cacheFetchKey) {
           setLyricsData(data);
           setLoadingLyrics(false);
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (activeReqRef.current === cacheFetchKey) {
           setLyricsData(null);
           setLoadingLyrics(false);
         }
       });
+  }, [currentTrackKey, track?.id, track?.title, lyricsSource]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [currentTrackKey, track, playerDurationMs]);
-
-  // Determine current active lyric line index
+  // Determine current effective time and active lyric line index
   const curSeconds = posMs / 1000;
   let activeIndex = -1;
   if (lyricsData?.synced && lyricsData.lines.length > 0) {
@@ -119,6 +127,13 @@ export function useFullscreenLyrics({
     }
   }
 
+  // Active line duration and progress for letter fill
+  const activeLine = activeIndex >= 0 && lyricsData?.lines ? lyricsData.lines[activeIndex] : null;
+  const nextLine = activeIndex >= 0 && lyricsData?.lines ? lyricsData.lines[activeIndex + 1] : null;
+  const lineDuration = activeLine ? Math.max(0.5, (nextLine?.time ?? (activeLine.time + 3.8)) - activeLine.time) : 1;
+  const lineElapsed = activeLine ? Math.max(0, curSeconds - activeLine.time) : 0;
+  const lineProgress = activeLine ? Math.min(1, Math.max(0, lineElapsed / lineDuration)) : 0;
+
   // Smooth auto-scroll within lyrics container
   const scrollToActive = useCallback(() => {
     const container = lyricsContainerRef.current;
@@ -127,7 +142,7 @@ export function useFullscreenLyrics({
       const lineRect = line.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
       const relativeTop = lineRect.top - containerRect.top + container.scrollTop;
-      const targetScroll = relativeTop - container.clientHeight * 0.4 + lineRect.height / 2;
+      const targetScroll = relativeTop - container.clientHeight * 0.42 + lineRect.height / 2;
       container.scrollTo({
         top: Math.max(0, targetScroll),
         behavior: "smooth",
@@ -136,11 +151,17 @@ export function useFullscreenLyrics({
   }, []);
 
   useEffect(() => {
-    if (!followTrack || userScrolled) return;
-    scrollToActive();
-  }, [activeIndex, userScrolled, followTrack, scrollToActive]);
+    if (!followTrack || userScrolled || activeIndex < 0) return;
+    const raf = requestAnimationFrame(() => {
+      scrollToActive();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeIndex, userScrolled, followTrack, scrollToActive, lyricsData]);
 
-  const handleUserScrollInteraction = () => {
+  const handleUserScrollInteraction = (e?: React.SyntheticEvent) => {
+    if (e && "deltaY" in e && Math.abs((e as React.WheelEvent).deltaY) < 2) {
+      return;
+    }
     setUserScrolled(true);
     if (userScrollTimeoutRef.current) {
       window.clearTimeout(userScrollTimeoutRef.current);
@@ -156,7 +177,7 @@ export function useFullscreenLyrics({
 
   const handleSeekToLyric = async (timeSecs: number) => {
     try {
-      const ms = Math.floor(timeSecs * 1000);
+      const ms = Math.floor(Math.max(0, timeSecs) * 1000);
       await api.seek(ms);
       setPosMs(ms);
       syncRef.current = { pos: ms, time: Date.now() };
@@ -188,5 +209,7 @@ export function useFullscreenLyrics({
     handleUserScrollInteraction,
     handleContainerScroll,
     handleSeekToLyric,
+    lineProgress,
+    curSeconds,
   };
 }

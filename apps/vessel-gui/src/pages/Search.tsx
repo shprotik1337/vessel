@@ -254,7 +254,6 @@ export function Search() {
             <>
               {results.length === 0 && !error && (
                 <div className="empty">
-                  <div className="ico">?</div>
                   <div className="t1">{t(lang, "search.noResults")}</div>
                   <div className="t2">{t(lang, "search.tryDifferent")}</div>
                 </div>
@@ -289,7 +288,6 @@ export function Search() {
             <>
               {collections.length === 0 && !error && (
                 <div className="empty">
-                  <div className="ico">?</div>
                   <div className="t1">{t(lang, "search.noResults")}</div>
                   <div className="t2">{t(lang, "search.tryDifferent")}</div>
                 </div>
@@ -324,7 +322,6 @@ export function Search() {
             <>
               {collections.length === 0 && !error && (
                 <div className="empty">
-                  <div className="ico">?</div>
                   <div className="t1">{t(lang, "search.noResults")}</div>
                   <div className="t2">{t(lang, "search.tryDifferent")}</div>
                 </div>

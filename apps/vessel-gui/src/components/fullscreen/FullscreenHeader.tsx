@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { t, type Lang } from "../../i18n";
+import { LYRICS_SOURCES } from "../../lib/lyrics";
 
 export const CLOSE_SVG = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -11,8 +12,10 @@ export const CLOSE_SVG = (
 export interface FullscreenHeaderProps {
   fullscreenMode: "both" | "lyrics" | "cover";
   followTrack: boolean;
+  lyricsSource?: string;
   onSetFullscreenMode: (mode: "both" | "lyrics" | "cover") => void;
   onSetFullscreenFollowTrack: (follow: boolean) => void;
+  onSetLyricsSource?: (source: string) => void;
   onClose: () => void;
   lang: Lang;
 }
@@ -20,8 +23,10 @@ export interface FullscreenHeaderProps {
 export function FullscreenHeader({
   fullscreenMode,
   followTrack,
+  lyricsSource = "cadence",
   onSetFullscreenMode,
   onSetFullscreenFollowTrack,
+  onSetLyricsSource,
   onClose,
   lang,
 }: FullscreenHeaderProps) {
@@ -50,7 +55,7 @@ export function FullscreenHeader({
               e.stopPropagation();
               setMenuOpen((prev) => !prev);
             }}
-            title="Настройки показа"
+            title={lang === "ru" ? "Настройки показа" : "Display settings"}
             aria-label="Options"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -67,16 +72,17 @@ export function FullscreenHeader({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="fs-popover-row">
-                <span>Следовать за треком</span>
+                <span>{lang === "ru" ? "Следовать за треком" : "Follow track"}</span>
                 <span
                   className={`fs-follow-tag ${followTrack ? "on" : "off"}`}
                   onClick={() => onSetFullscreenFollowTrack(!followTrack)}
                 >
-                  {followTrack ? "Вкл" : "Выкл"}
+                  {followTrack ? (lang === "ru" ? "Вкл" : "On") : (lang === "ru" ? "Выкл" : "Off")}
                 </span>
               </div>
+
               <div className="fs-popover-divider" />
-              <div className="fs-popover-title">Режим показа</div>
+              <div className="fs-popover-title">{lang === "ru" ? "Режим показа" : "Display Mode"}</div>
               <div className="fs-popover-modes">
                 <button
                   className={`fs-mode-pill ${fullscreenMode === "both" ? "active" : ""}`}
@@ -86,7 +92,7 @@ export function FullscreenHeader({
                     setMenuOpen(false);
                   }}
                 >
-                  Текст и обложка
+                  {lang === "ru" ? "Текст и обложка" : "Lyrics & Cover"}
                 </button>
                 <button
                   className={`fs-mode-pill ${fullscreenMode === "lyrics" ? "active" : ""}`}
@@ -96,7 +102,7 @@ export function FullscreenHeader({
                     setMenuOpen(false);
                   }}
                 >
-                  Только текст
+                  {lang === "ru" ? "Только текст" : "Lyrics Only"}
                 </button>
                 <button
                   className={`fs-mode-pill ${fullscreenMode === "cover" ? "active" : ""}`}
@@ -106,9 +112,32 @@ export function FullscreenHeader({
                     setMenuOpen(false);
                   }}
                 >
-                  Только обложка
+                  {lang === "ru" ? "Только обложка" : "Cover Only"}
                 </button>
               </div>
+
+              {onSetLyricsSource && (
+                <>
+                  <div className="fs-popover-divider" />
+                  <div className="fs-popover-title">
+                    {lang === "ru" ? "Выбор источника текста" : "Lyrics Source"}
+                  </div>
+                  <div className="fs-popover-modes">
+                    {LYRICS_SOURCES.map((src) => (
+                      <button
+                        key={src.id}
+                        className={`fs-mode-pill ${lyricsSource === src.id ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSetLyricsSource(src.id);
+                        }}
+                      >
+                        {src.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

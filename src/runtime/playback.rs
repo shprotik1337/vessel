@@ -23,6 +23,7 @@ pub(super) fn spawn_playback(
     sender: UnboundedSender<RuntimeMessage>,
     generation: u64,
     track: TrackRef,
+    auto_cache: bool,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         // 1. Если трек уже в локальном кэше — играем локально сразу
@@ -54,12 +55,14 @@ pub(super) fn spawn_playback(
             source.duration_ms = track.duration_ms;
         }
 
-        // 3. Фоновое сохранение потока в кэш для экономии трафика и мгновенного повтора
-        let cache_track = track.clone();
-        let cache_source = source.clone();
-        tokio::spawn(async move {
-            let _ = crate::provider::cache::download_track_to_cache(&cache_track, &cache_source).await;
-        });
+        // 3. Фоновое сохранение потока в кэш (если включено в настройках)
+        if auto_cache {
+            let cache_track = track.clone();
+            let cache_source = source.clone();
+            tokio::spawn(async move {
+                let _ = crate::provider::cache::download_track_to_cache(&cache_track, &cache_source).await;
+            });
+        }
 
         // 4. Отдаём источник воспроизведения для потокового стриминга через HttpRangeSource / HlsSource
         let _ = sender.send(RuntimeMessage::PlaybackReady {
@@ -212,6 +215,7 @@ impl Runtime {
             // Пока резолвим матч и качаем трек — статус Buffering,
             // чтобы UI не давал мотать старый источник
             actions.push(Action::Audio(crate::audio::AudioEvent::Buffering));
+            let auto_cache = self.config.auto_cache;
             self.playback_task = Some(tokio::spawn(async move {
                 let mut failures: Vec<String> = Vec::new();
                 let mut any_candidates_found = false;
@@ -333,17 +337,19 @@ impl Runtime {
                                     candidates.len()
                                 );
 
-                                let cache_track = foreign_track.clone();
-                                let cache_orig = track.clone();
-                                let cache_source = source_stream.clone();
-                                tokio::spawn(async move {
-                                    let _ = crate::provider::cache::download_track_to_cache_with_alias(
-                                        &cache_track,
-                                        Some(&cache_orig),
-                                        &cache_source,
-                                    )
-                                    .await;
-                                });
+                                if auto_cache {
+                                    let cache_track = foreign_track.clone();
+                                    let cache_orig = track.clone();
+                                    let cache_source = source_stream.clone();
+                                    tokio::spawn(async move {
+                                        let _ = crate::provider::cache::download_track_to_cache_with_alias(
+                                            &cache_track,
+                                            Some(&cache_orig),
+                                            &cache_source,
+                                        )
+                                        .await;
+                                    });
+                                }
 
                                 let _ = sender.send(RuntimeMessage::PlaybackReady {
                                     generation,
@@ -419,6 +425,7 @@ impl Runtime {
             self.sender.clone(),
             self.playback_generation,
             track,
+            self.config.auto_cache,
         ));
     }
 

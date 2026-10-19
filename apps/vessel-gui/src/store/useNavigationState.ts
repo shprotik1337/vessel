@@ -8,6 +8,10 @@ export function useNavigationState() {
   const [artistProvider, setArtistProvider] = useState<string | null>(null);
   const [artistId, setArtistId] = useState<string | null>(null);
   const [history, setHistory] = useState<NavEntry[]>([]);
+  const [forwardHistory, setForwardHistory] = useState<NavEntry[]>([]);
+  const canGoBack = history.length > 0;
+  const canGoForward = forwardHistory.length > 0;
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem("vessel_sidebar_collapsed") === "true";
@@ -25,8 +29,6 @@ export function useNavigationState() {
       return next;
     });
   }, []);
-
-  const canGoBack = history.length > 0;
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const openSettings = useCallback(() => setIsSettingsOpen(true), []);
@@ -50,6 +52,7 @@ export function useNavigationState() {
         ...h,
         { view, playlistId, artist, artistProvider, artistId },
       ]);
+      setForwardHistory([]);
       if (target === "playlist" && params?.playlistId) {
         setPlaylistId(params.playlistId);
       }
@@ -70,6 +73,10 @@ export function useNavigationState() {
         setView("home");
         return h;
       }
+      setForwardHistory((f) => [
+        ...f,
+        { view, playlistId, artist, artistProvider, artistId },
+      ]);
       setView(prev.view);
       setPlaylistId(prev.playlistId);
       setArtist(prev.artist);
@@ -77,7 +84,24 @@ export function useNavigationState() {
       setArtistId(prev.artistId);
       return h.slice(0, -1);
     });
-  }, []);
+  }, [view, playlistId, artist, artistProvider, artistId]);
+
+  const goForward = useCallback(() => {
+    setForwardHistory((f) => {
+      const next = f[f.length - 1];
+      if (!next) return f;
+      setHistory((h) => [
+        ...h,
+        { view, playlistId, artist, artistProvider, artistId },
+      ]);
+      setView(next.view);
+      setPlaylistId(next.playlistId);
+      setArtist(next.artist);
+      setArtistProvider(next.artistProvider);
+      setArtistId(next.artistId);
+      return f.slice(0, -1);
+    });
+  }, [view, playlistId, artist, artistProvider, artistId]);
 
   return {
     view,
@@ -92,6 +116,7 @@ export function useNavigationState() {
     setArtistId,
     history,
     canGoBack,
+    canGoForward,
     sidebarCollapsed,
     setSidebarCollapsed,
     toggleSidebarCollapsed,
@@ -101,5 +126,6 @@ export function useNavigationState() {
     closeSettings,
     navigateTo,
     goBack,
+    goForward,
   };
 }

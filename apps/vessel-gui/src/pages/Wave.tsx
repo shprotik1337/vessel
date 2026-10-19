@@ -63,8 +63,6 @@ export function WavePage() {
         if (autoplay) {
           setIsWaveActive(true);
           await api.playTracks(tracks, 0);
-        } else {
-          showToast(lang === "ru" ? `Собрано ${tracks.length} треков` : `Loaded ${tracks.length} tracks`);
         }
       } else {
         showToast(t(lang, "wave.empty1"), true);
@@ -161,7 +159,7 @@ export function WavePage() {
   return (
     <div className="view">
       <div style={{ marginBottom: 18 }}>
-        <button className="btn btn-outline btn-sm" onClick={goBack} title={t(lang, "common.back")}>
+        <button className="btn-back-pill" onClick={goBack} title={t(lang, "common.back")}>
           {t(lang, "common.back")}
         </button>
       </div>
@@ -334,7 +332,6 @@ export function WavePage() {
         <div className="page-panel-body">
           {waveTracks.length === 0 ? (
             <div className="empty">
-              <div className="ico">≈</div>
               <div className="t1">{t(lang, "wave.emptyTrack")}</div>
             </div>
           ) : (

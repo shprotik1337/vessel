@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import type { TrackRef } from "../../api/types";
 import type { Lang } from "../../i18n";
@@ -40,6 +40,19 @@ export function PlayerContextMenu({
     return () => window.removeEventListener("click", handleClickOutside);
   }, [menu, onClose]);
 
+  useLayoutEffect(() => {
+    if (!menu || !menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 16) {
+      const overflow = rect.right - (window.innerWidth - 16);
+      menuRef.current.style.left = `${Math.max(12, rect.left - overflow)}px`;
+    }
+    if (rect.bottom > window.innerHeight - 16) {
+      const overflow = rect.bottom - (window.innerHeight - 16);
+      menuRef.current.style.top = `${Math.max(12, rect.top - overflow)}px`;
+    }
+  }, [menu]);
+
   if (!menu) return null;
 
   return createPortal(
@@ -50,6 +63,7 @@ export function PlayerContextMenu({
         position: "fixed",
         left: menu.x,
         top: menu.y,
+        maxWidth: "240px",
         zIndex: 99999,
       }}
       onClick={(e) => e.stopPropagation()}

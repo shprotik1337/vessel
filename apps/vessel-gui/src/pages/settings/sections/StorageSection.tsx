@@ -1,22 +1,74 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "../../../store";
 import { IconAudio, IconBackground, IconFileText } from "../../../components/Icons";
+import * as api from "../../../api/commands";
+import type { StorageStats } from "../../../api/types";
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 MB";
+  const k = 1024;
+  if (bytes < k * k) {
+    return `${(bytes / k).toFixed(1)} KB`;
+  }
+  if (bytes < k * k * k) {
+    return `${(bytes / (k * k)).toFixed(1)} MB`;
+  }
+  return `${(bytes / (k * k * k)).toFixed(2)} GB`;
+}
 
 export function StorageSection() {
   const { lang, showToast } = useApp();
 
-  const [storageTracksCount, setStorageTracksCount] = useState(48);
-  const [storageTracksSize, setStorageTracksSize] = useState("320 MB");
-  const [storageCoversSize, setStorageCoversSize] = useState("45 MB");
-  const [storageLyricsSize, setStorageLyricsSize] = useState("2.4 MB");
+  const [stats, setStats] = useState<StorageStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
 
-  const handleClearCache = () => {
-    setStorageTracksSize("0 MB");
-    setStorageCoversSize("0 MB");
-    setStorageLyricsSize("0 KB");
-    setStorageTracksCount(0);
-    showToast(lang === "ru" ? "Кэш приложения полностью очищен" : "App cache successfully cleared");
+  const fetchStats = async () => {
+    try {
+      const data = await api.getStorageStats();
+      setStats(data);
+    } catch (e) {
+      console.error("Failed to load storage stats:", e);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    void fetchStats();
+  }, []);
+
+  const handleClearCache = async () => {
+    try {
+      setClearing(true);
+      const updated = await api.clearStorageCache("all");
+      setStats(updated);
+      showToast(
+        lang === "ru"
+          ? "Кэш приложения полностью очищен"
+          : "App cache successfully cleared",
+      );
+    } catch (e) {
+      showToast(
+        lang === "ru" ? "Ошибка очистки кэша" : "Failed to clear cache",
+        true,
+      );
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const totalBytes = stats?.total_bytes ?? 0;
+  const tracksBytes = stats?.tracks_bytes ?? 0;
+  const tracksCount = stats?.tracks_count ?? 0;
+  const coversBytes = stats?.covers_bytes ?? 0;
+  const lyricsBytes = stats?.lyrics_bytes ?? 0;
+
+  // Рассчитываем дугу индикатора: максимум берем 4 GB для красивого визуала, но не менее totalBytes
+  const maxScaleBytes = Math.max(totalBytes, 4 * 1024 * 1024 * 1024);
+  const progressRatio = totalBytes > 0 ? Math.min(totalBytes / maxScaleBytes, 1) : 0;
+  const circumference = 314; // 2 * pi * 50
+  const dashoffset = circumference - (circumference * Math.max(progressRatio, totalBytes > 0 ? 0.08 : 0));
 
   return (
     <div>
@@ -50,14 +102,17 @@ export function StorageSection() {
                 fill="none"
                 stroke="var(--accent)"
                 strokeWidth="10"
-                strokeDasharray="314"
-                strokeDashoffset="240"
+                strokeDasharray={circumference}
+                strokeDashoffset={loading ? circumference : dashoffset}
                 strokeLinecap="round"
                 transform="rotate(-90 60 60)"
+                style={{ transition: "stroke-dashoffset 0.5s ease" }}
               />
             </svg>
             <div className="sett-gauge-inner">
-              <span className="sett-gauge-percent">367 MB</span>
+              <span className="sett-gauge-percent">
+                {loading ? "..." : formatBytes(totalBytes)}
+              </span>
               <span className="sett-gauge-sub">{lang === "ru" ? "Занято" : "Used"}</span>
             </div>
           </div>
@@ -70,10 +125,12 @@ export function StorageSection() {
                   <span>{lang === "ru" ? "Музыкальные треки" : "Music Tracks"}</span>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>
-                  {storageTracksCount} {lang === "ru" ? "аудиодорожек" : "audio tracks"}
+                  {loading ? "..." : `${tracksCount} ${lang === "ru" ? "аудиодорожек" : "audio tracks"}`}
                 </div>
               </div>
-              <div style={{ fontWeight: 700, color: "var(--text)" }}>{storageTracksSize}</div>
+              <div style={{ fontWeight: 700, color: "var(--text)" }}>
+                {loading ? "..." : formatBytes(tracksBytes)}
+              </div>
             </div>
 
             <div className="sett-storage-item">
@@ -86,7 +143,9 @@ export function StorageSection() {
                   {lang === "ru" ? "Изображения и миниатюры" : "Images and thumbnails"}
                 </div>
               </div>
-              <div style={{ fontWeight: 700, color: "var(--text)" }}>{storageCoversSize}</div>
+              <div style={{ fontWeight: 700, color: "var(--text)" }}>
+                {loading ? "..." : formatBytes(coversBytes)}
+              </div>
             </div>
 
             <div className="sett-storage-item">
@@ -99,7 +158,9 @@ export function StorageSection() {
                   {lang === "ru" ? "Кэш синхронизированных текстов" : "Synced lyrics cache"}
                 </div>
               </div>
-              <div style={{ fontWeight: 700, color: "var(--text)" }}>{storageLyricsSize}</div>
+              <div style={{ fontWeight: 700, color: "var(--text)" }}>
+                {loading ? "..." : formatBytes(lyricsBytes)}
+              </div>
             </div>
           </div>
         </div>
@@ -109,11 +170,16 @@ export function StorageSection() {
             type="button"
             className="sett-token-action-btn submit"
             onClick={handleClearCache}
+            disabled={clearing || totalBytes === 0}
+            style={{ opacity: clearing ? 0.6 : 1 }}
           >
-            {lang === "ru" ? "Очистить всё хранилище" : "Clear All Cache"}
+            {clearing
+              ? (lang === "ru" ? "Очистка…" : "Clearing…")
+              : (lang === "ru" ? "Очистить всё хранилище" : "Clear All Cache")}
           </button>
         </div>
       </div>
     </div>
   );
 }
+

@@ -60,14 +60,22 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
 
   if (!state) return null;
 
-  const foundPlaylist = state.playlists.find((p) => p.id === playlistId);
+  const isExternal = playlistId === "external";
+  const foundPlaylist = state.playlists.find(
+    (p) =>
+      p.id === playlistId ||
+      (isExternal && externalPlaylist && (
+        (p.source_url && externalPlaylist.source_url && p.source_url === externalPlaylist.source_url) ||
+        (externalPlaylist.id && p.id === externalPlaylist.id) ||
+        (p.is_album && externalPlaylist.is_album && p.title.trim().toLowerCase() === externalPlaylist.title.trim().toLowerCase())
+      ))
+  );
   const isSaved = Boolean(foundPlaylist);
   const playlist = foundPlaylist || externalPlaylist;
   if (!playlist) {
     return (
       <div className="view">
         <div className="empty">
-          <div className="ico">?</div>
           <div className="t1">{t(lang, "playlist.notFound1")}</div>
           <div className="t2">{t(lang, "playlist.notFound2")}</div>
         </div>
@@ -231,13 +239,29 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
     setDragOver(null);
   };
 
+  const isAlbum = Boolean(
+    playlist.is_album ||
+    playlist.source_url?.includes("/album/") ||
+    playlist.source_url?.includes("spotify:album:") ||
+    playlist.source_url?.includes("browse/MPRE") ||
+    playlist.source_url?.includes("album") ||
+    externalPlaylist?.is_album
+  );
+
   const handleSaveToLibrary = async () => {
     if (!playlist || savingPlaylist) return;
     setSavingPlaylist(true);
     try {
-      await api.saveImportedPlaylist(playlist);
+      await api.saveImportedPlaylist({
+        ...playlist,
+        is_album: isAlbum,
+      });
       await refresh();
-      showToast(lang === "ru" ? "Плейлист добавлен в библиотеку" : "Playlist saved to library");
+      showToast(
+        isAlbum
+          ? (lang === "ru" ? "Альбом добавлен в медиатеку" : "Album saved to library")
+          : (lang === "ru" ? "Плейлист добавлен в библиотеку" : "Playlist saved to library")
+      );
     } catch (err) {
       showToast(String(err), true);
     } finally {
@@ -283,7 +307,7 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
   return (
     <div className="view">
       <div style={{ marginBottom: 18 }}>
-        <button className="btn btn-outline btn-sm" onClick={goBack} title={t(lang, "common.back")}>
+        <button className="btn-back-pill" onClick={goBack} title={t(lang, "common.back")}>
           {t(lang, "common.back")}
         </button>
       </div>
@@ -308,7 +332,7 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
                 {playlist.title}
               </div>
               <div className="hero-ref-subtitle">
-                {playlist.source_url?.includes("album") ? (lang === "ru" ? "Альбом" : "Album") : t(lang, "playlist.title")}
+                {isAlbum ? (lang === "ru" ? "Альбом" : "Album") : t(lang, "playlist.title")}
               </div>
               <div className="hero-ref-meta">
                 <span>{playlist.tracks.length} {t(lang, "common.tracks")}</span>
@@ -349,16 +373,34 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                   <span>{t(lang, "playlist.play")}</span>
                 </button>
-                <button className="btn-pill" onClick={shufflePlay}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-                  <span>{t(lang, "favorites.shuffle")}</span>
-                </button>
-                {!isSaved && (
+                {!isAlbum && (
+                  <button className="btn-pill" onClick={shufflePlay}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+                    <span>{t(lang, "favorites.shuffle")}</span>
+                  </button>
+                )}
+                {!isSaved ? (
                   <button className="btn-pill" onClick={handleSaveToLibrary} disabled={savingPlaylist}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 5v14M5 12h14" />
                     </svg>
-                    <span>{savingPlaylist ? (lang === "ru" ? "Добавление…" : "Adding…") : (lang === "ru" ? "Добавить в плейлисты" : "Save to library")}</span>
+                    <span>{savingPlaylist ? (lang === "ru" ? "Добавление…" : "Adding…") : isAlbum ? (lang === "ru" ? "Добавить в медиатеку" : "Add to library") : (lang === "ru" ? "Добавить в плейлисты" : "Save to library")}</span>
+                  </button>
+                ) : (
+                  <button
+                    className="btn-pill"
+                    style={{
+                      cursor: "default",
+                      opacity: 0.9,
+                      borderColor: "var(--accent, rgba(255, 255, 255, 0.3))",
+                      color: "var(--accent, #ffffff)",
+                    }}
+                    title={isAlbum ? (lang === "ru" ? "Альбом уже в медиатеке" : "Album in library") : (lang === "ru" ? "Плейлист уже в медиатеке" : "Playlist in library")}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span>{lang === "ru" ? "В медиатеке" : "In library"}</span>
                   </button>
                 )}
                 <button
@@ -464,7 +506,6 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
         <div className="page-panel-body">
           {playlist.tracks.length === 0 ? (
             <div className="empty">
-              <div className="ico">♫</div>
               <div className="t1">{t(lang, "playlist.empty1")}</div>
               <div className="t2">{t(lang, "playlist.empty2")}</div>
             </div>

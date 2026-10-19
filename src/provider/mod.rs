@@ -59,11 +59,27 @@ pub struct CollectionItem {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ExternalLink {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArtistProfile {
     pub name: String,
     pub avatar_url: Option<Url>,
     pub popular_tracks: Vec<TrackRef>,
     pub releases: Vec<CollectionItem>,
+    #[serde(default)]
+    pub header_image_url: Option<Url>,
+    #[serde(default)]
+    pub monthly_listeners: Option<u64>,
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default)]
+    pub biography: Option<String>,
+    #[serde(default)]
+    pub external_links: Vec<ExternalLink>,
 }
 
 #[async_trait]
@@ -196,6 +212,14 @@ impl ProviderRegistry {
         playlist.description = imported.description;
         playlist.source_url = Some(imported.source_url);
         playlist.cover_url = imported.cover_url;
+        let url_lower = url.as_str().to_lowercase();
+        if url_lower.contains("/album/")
+            || url_lower.contains("spotify:album:")
+            || url_lower.contains("browse/mpre")
+            || url_lower.contains("album")
+        {
+            playlist.is_album = true;
+        }
 
         // Дубли хотели пролезть вдвоём по одному паспорту, но фейс-контроль сегодня не бухой АХАХАХА 🫩
         for track in imported.tracks {

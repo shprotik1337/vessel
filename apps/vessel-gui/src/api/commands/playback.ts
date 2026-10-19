@@ -72,3 +72,21 @@ export async function reorderQueue(tracks: TrackRef[]): Promise<void> {
 export async function clearQueue(): Promise<void> {
   return invoke("clear_queue");
 }
+
+export async function fetchServerLyrics(params: {
+  trackName?: string;
+  artistName?: string;
+  albumName?: string;
+  duration?: number;
+  q?: string;
+  search?: boolean;
+}): Promise<any> {
+  return invoke<any>("fetch_server_lyrics", {
+    trackName: params.trackName ?? null,
+    artistName: params.artistName ?? null,
+    albumName: params.albumName ?? null,
+    duration: params.duration ?? null,
+    q: params.q ?? null,
+    search: params.search ?? null,
+  });
+}

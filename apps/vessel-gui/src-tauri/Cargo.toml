@@ -1,6 +1,6 @@
 [package]
 name = "vessel"
-version = "1.4.3"
+version = "1.4.4"
 description = "Vessel — музыкальный клиент"
 edition = "2021"
 

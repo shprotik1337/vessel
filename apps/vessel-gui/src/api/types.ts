@@ -46,6 +46,8 @@ export interface Playlist {
   tracks: TrackRef[];
   created_at_ms: number;
   updated_at_ms: number;
+  is_album?: boolean;
+  artist_name?: string | null;
 }
 
 export interface HistoryEntry {
@@ -204,11 +206,45 @@ export interface CollectionItem {
   track_count: number;
 }
 
+export interface ExternalLink {
+  name: string;
+  url: string;
+}
+
+export interface FollowedArtist {
+  id: string;
+  provider: ProviderKind;
+  name: string;
+  avatar_url: string | null;
+  header_image_url?: string | null;
+  monthly_listeners?: number | null;
+  verified: boolean;
+  added_at_ms: number;
+}
+
 export interface ArtistProfile {
   name: string;
   avatar_url: string | null;
   popular_tracks: TrackRef[];
   releases: CollectionItem[];
+  header_image_url?: string | null;
+  monthly_listeners?: number | null;
+  verified?: boolean;
+  biography?: string | null;
+  external_links?: ExternalLink[];
+}
+
+export interface GeniusArtistInfo {
+  name: string;
+  header_image_url?: string | null;
+  headerImageUrl?: string | null;
+  avatar_url?: string | null;
+  avatarUrl?: string | null;
+  biography?: string | null;
+  biography_dom?: any | null;
+  biographyDom?: any | null;
+  social_links?: Array<{ name: string; url: string }>;
+  socialLinks?: Array<{ name: string; url: string }>;
 }
 
 export interface MixItem {
@@ -274,3 +310,10 @@ export interface CloudSyncResult {
   playlists_count: number;
 }
 
+export interface StorageStats {
+  tracks_bytes: number;
+  tracks_count: number;
+  covers_bytes: number;
+  lyrics_bytes: number;
+  total_bytes: number;
+}

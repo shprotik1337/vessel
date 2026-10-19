@@ -16,7 +16,7 @@ use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
     protocol::{
         API_PREFIX, CREDENTIALS_HEADER, AuthResponse, CaptchaChallenge, CollectionsResponse,
-        DeletePlaylistRequest, ImportPlaylistRequest, ImportedPlaylistResponse, LikedRequest,
+        DeletePlaylistRequest, GeniusArtistResponse, ImportPlaylistRequest, ImportedPlaylistResponse, LikedRequest,
         LoginRequest, MigrateDataRequest, PageResponse, ProfileResponse, RegisterRequest,
         RelatedRequest, ResolveSourceRequest, ResolveSourceResponse, SavePlaylistRequest,
         ServerInfo, SessionResponse, ToggleLikeRequest, ToggleLikeResponse, TracksResponse,
@@ -390,6 +390,42 @@ impl ServerClient {
         req: &MigrateDataRequest,
     ) -> Result<()> {
         self.post_user_empty("/user/migrate", Some(token), Some(req)).await
+    }
+
+    pub async fn genius_artist(&self, name: &str) -> Result<GeniusArtistResponse> {
+        let pairs = [("q", name.to_string())];
+        self.get_json("/genius/artist", &pairs).await
+    }
+
+    pub async fn lyrics(
+        &self,
+        track_name: Option<&str>,
+        artist_name: Option<&str>,
+        album_name: Option<&str>,
+        duration: Option<f64>,
+        q: Option<&str>,
+        search: Option<bool>,
+    ) -> Result<serde_json::Value> {
+        let mut pairs: Vec<(&str, String)> = Vec::new();
+        if let Some(t) = track_name {
+            pairs.push(("track_name", t.to_string()));
+        }
+        if let Some(a) = artist_name {
+            pairs.push(("artist_name", a.to_string()));
+        }
+        if let Some(al) = album_name {
+            pairs.push(("album_name", al.to_string()));
+        }
+        if let Some(d) = duration {
+            pairs.push(("duration", d.to_string()));
+        }
+        if let Some(query) = q {
+            pairs.push(("q", query.to_string()));
+        }
+        if let Some(s) = search {
+            pairs.push(("search", s.to_string()));
+        }
+        self.get_json("/lyrics", &pairs).await
     }
 }
 

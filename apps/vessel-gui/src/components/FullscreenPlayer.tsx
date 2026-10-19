@@ -45,6 +45,8 @@ export function FullscreenPlayer() {
     }
   };
 
+  const [lyricsSource, setLyricsSource] = useState<string>("cadence");
+
   const fullscreenMode = config.player?.fullscreenMode || "both";
   const followTrack = config.player?.fullscreenFollowTrack !== false;
   const lyricsPosition = config.player?.fullscreenLyricsPosition || "right";
@@ -155,6 +157,7 @@ export function FullscreenPlayer() {
       progressPositionMs={progress.position_ms}
       progressDurationMs={progress.duration_ms}
       followTrack={followTrack}
+      lyricsSource={lyricsSource}
       lang={lang}
       refresh={refresh}
       showToast={showToast}
@@ -180,8 +183,10 @@ export function FullscreenPlayer() {
       <FullscreenHeader
         fullscreenMode={fullscreenMode}
         followTrack={followTrack}
+        lyricsSource={lyricsSource}
         onSetFullscreenMode={setFullscreenMode}
         onSetFullscreenFollowTrack={setFullscreenFollowTrack}
+        onSetLyricsSource={setLyricsSource}
         onClose={() => setFullscreenOpen(false)}
         lang={lang}
       />

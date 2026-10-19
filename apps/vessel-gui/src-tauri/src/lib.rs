@@ -536,7 +536,12 @@ pub fn run() -> anyhow::Result<()> {
             commands::get_playlist_track_times,
             commands::reorder_playlist,
             commands::set_playlist_cover,
+            commands::set_playlist_is_album,
             commands::play_playlist,
+            commands::get_followed_artists,
+            commands::follow_artist,
+            commands::unfollow_artist,
+            commands::is_artist_followed,
             commands::get_history,
             commands::clear_history,
             commands::get_provider_status,
@@ -568,6 +573,10 @@ pub fn run() -> anyhow::Result<()> {
             commands::reorder_queue,
             commands::download_track_to_cache,
             commands::download_all_to_cache,
+            commands::get_auto_cache,
+            commands::set_auto_cache,
+            commands::get_storage_stats,
+            commands::clear_storage_cache,
             commands::get_spotify_proxy,
             commands::set_spotify_proxy,
             commands::get_spotify_playback_source,
@@ -630,6 +639,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::window_close,
             commands::window_start_dragging,
             commands::load_image_as_data_url,
+            commands::get_artist_extras,
+            commands::fetch_server_lyrics,
         ])
         .on_window_event(|window, event| {
             vessel_core::dlog!("[window_event] {:?} on {:?}", event, window.label());
@@ -682,7 +693,32 @@ pub fn run() -> anyhow::Result<()> {
                                     if let Some(lib) = lib {
                                         core.app.library = lib.tracks;
                                     }
-                                    if let Some(pl) = pl {
+                                    if let Some(mut pl) = pl {
+                                        let local_db = core.storage.list_playlists().unwrap_or_default();
+                                        for p in &mut pl.playlists {
+                                            let is_album_from_url = p.source_url.as_ref().map(|u| {
+                                                let s = u.as_str().to_lowercase();
+                                                s.contains("/album/")
+                                                    || s.contains("spotify:album:")
+                                                    || s.contains("browse/mpre")
+                                                    || s.contains("album")
+                                            }).unwrap_or(false);
+
+                                            let is_album_from_local = core.app.playlists.iter().find(|local| local.id == p.id).map(|local| local.is_album).unwrap_or(false);
+                                            let is_album_from_db = local_db.iter().find(|stored| stored.id == p.id).map(|stored| stored.is_album).unwrap_or(false);
+
+                                            if is_album_from_url || is_album_from_local || is_album_from_db {
+                                                p.is_album = true;
+                                            }
+                                            if p.artist_name.is_none() {
+                                                if let Some(local) = core.app.playlists.iter().find(|l| l.id == p.id) {
+                                                    p.artist_name = local.artist_name.clone();
+                                                } else if let Some(stored) = local_db.iter().find(|s| s.id == p.id) {
+                                                    p.artist_name = stored.artist_name.clone();
+                                                }
+                                            }
+                                            let _ = core.storage.save_playlist(p);
+                                        }
                                         core.app.playlists = pl.playlists;
                                     }
                                 }

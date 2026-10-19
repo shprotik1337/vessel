@@ -270,7 +270,6 @@ export function useAutoplayAndQueue({
         }
         setSmartTrackKeys(new Set());
         await refresh();
-        showToast(lang === "ru" ? "Умное перемешивание выключено" : "Smart Shuffle off");
       } catch (e) {
         showToast(String(e), true);
       }
@@ -291,7 +290,6 @@ export function useAutoplayAndQueue({
           setSmartTrackKeys(new Set(res.injected_track_keys));
           setSmartShuffle(true);
           await refresh();
-          showToast(lang === "ru" ? "Умное перемешивание включено" : "Smart Shuffle on");
         }
       } catch (e) {
         showToast(String(e), true);
@@ -310,7 +308,6 @@ export function useAutoplayAndQueue({
       try {
         await api.setShuffle(true);
         await refresh();
-        showToast(lang === "ru" ? "Случайный порядок" : "Shuffle");
       } catch (e) {
         showToast(String(e), true);
       }
@@ -332,7 +329,6 @@ export function useAutoplayAndQueue({
           setSmartTrackKeys(new Set(res.injected_track_keys));
           setSmartShuffle(true);
           await refresh();
-          showToast(lang === "ru" ? "Умное перемешивание" : "Smart Shuffle");
         }
       } catch (e) {
         showToast(String(e), true);
@@ -356,7 +352,6 @@ export function useAutoplayAndQueue({
         }
         setSmartTrackKeys(new Set());
         await refresh();
-        showToast(lang === "ru" ? "Перемешивание выключено" : "Shuffle off");
       } catch (e) {
         showToast(String(e), true);
       }

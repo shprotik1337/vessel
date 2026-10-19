@@ -252,7 +252,7 @@ export function Sidebar() {
                 <span className="island-nav-icon">{getNavMeta("home").icon}</span>
               </button>
               <div className="island-sep" />
-              {(["search", "player", "favorites", "playlists", "recent", "queue"] as const).map((v) => {
+              {(["search", "player", "library", "recent", "queue"] as const).map((v) => {
                 const meta = getNavMeta(v);
                 const isActive = v === "queue" ? isQueueOpen : view === v;
                 return (
@@ -323,7 +323,7 @@ export function Sidebar() {
               </button>
             </div>
             <div className="top-nav-center">
-              {(["search", "player", "favorites", "playlists", "recent", "queue"] as const).map((v) => {
+              {(["search", "player", "library", "recent", "queue"] as const).map((v) => {
                 const meta = getNavMeta(v);
                 const isActive = v === "queue" ? isQueueOpen : view === v;
                 return (
@@ -393,7 +393,7 @@ export function Sidebar() {
 
         {/* Main navigation list */}
         <div className="nav" style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "center", width: "100%" }}>
-          {["search", "player", "favorites", "playlists", "recent", "queue"].map((v) => {
+          {["search", "player", "library", "recent", "queue"].map((v) => {
             return nav(v);
           })}
         </div>

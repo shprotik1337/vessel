@@ -523,6 +523,13 @@ export function CustomizationTab() {
                   >
                     На всю ширину (Док)
                   </button>
+                  <button
+                    type="button"
+                    className={`style-choice-btn ${player.style === "progress_fill" ? "active" : ""}`}
+                    onClick={() => setPlayerStyle("progress_fill")}
+                  >
+                    Заполнение прогрессом
+                  </button>
                 </div>
               </div>
             </div>

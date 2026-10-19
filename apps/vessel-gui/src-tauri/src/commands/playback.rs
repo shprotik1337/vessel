@@ -199,3 +199,26 @@ pub async fn set_audio_agc(core: CoreState<'_>, enabled: bool) -> Result<(), Str
     core.runtime.set_audio_agc(enabled);
     Ok(())
 }
+
+#[tauri::command]
+pub async fn fetch_server_lyrics(
+    track_name: Option<String>,
+    artist_name: Option<String>,
+    album_name: Option<String>,
+    duration: Option<f64>,
+    q: Option<String>,
+    search: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let client = super::auth::official_client()?;
+    client
+        .lyrics(
+            track_name.as_deref(),
+            artist_name.as_deref(),
+            album_name.as_deref(),
+            duration,
+            q.as_deref(),
+            search,
+        )
+        .await
+        .map_err(|e| e.to_string())
+}

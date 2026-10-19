@@ -197,6 +197,18 @@ impl TrackRef {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FollowedArtist {
+    pub id: String,
+    pub provider: ProviderKind,
+    pub name: String,
+    pub avatar_url: Option<Url>,
+    pub header_image_url: Option<Url>,
+    pub monthly_listeners: Option<u64>,
+    pub verified: bool,
+    pub added_at_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Playlist {
     pub id: Uuid,
     pub title: String,
@@ -206,6 +218,10 @@ pub struct Playlist {
     pub tracks: Vec<TrackRef>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    #[serde(default)]
+    pub is_album: bool,
+    #[serde(default)]
+    pub artist_name: Option<String>,
 }
 
 impl Playlist {
@@ -219,6 +235,8 @@ impl Playlist {
             tracks: Vec::new(),
             created_at_ms: now_ms,
             updated_at_ms: now_ms,
+            is_album: false,
+            artist_name: None,
         }
     }
 

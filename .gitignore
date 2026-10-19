@@ -50,3 +50,7 @@ apps/vessel-gui/src-tauri/resources/vpn/amnezia-box.exe
 # Deploy scripts with secrets
 deploy.py
 deploy*.py
+
+# Server standalone repo
+apps/vessel-server/
+

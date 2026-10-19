@@ -347,6 +347,26 @@ pub struct DeletePlaylistRequest {
     pub id: uuid::Uuid,
 }
 
+// ---------------------------------------------------------------------------
+// Genius & Rich Artist Enrichment DTOs
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct GeniusArtistResponse {
+    pub name: String,
+    pub header_image_url: Option<String>,
+    pub avatar_url: Option<String>,
+    pub biography: Option<String>,
+    pub biography_dom: Option<serde_json::Value>,
+    pub social_links: Vec<GeniusSocialLink>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct GeniusSocialLink {
+    pub name: String,
+    pub url: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

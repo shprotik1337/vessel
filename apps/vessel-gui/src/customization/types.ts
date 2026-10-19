@@ -30,7 +30,7 @@ export interface ImageLibraryItem {
 export type BorderRadiusPreset = "sharp" | "small" | "medium" | "round";
 export type BlockWidth = "third" | "half" | "two-thirds" | "full";
 export type BlockAlign = "left" | "center" | "right";
-export type ComponentStyle = "dock" | "compact" | "round" | "floating" | "island";
+export type ComponentStyle = "dock" | "compact" | "round" | "floating" | "island" | "progress_fill";
 
 export interface BlockCanvasPos {
   x: number; // in pixels, snapped to 24px

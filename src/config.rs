@@ -153,6 +153,13 @@ pub struct AppConfig {
     /// Список ID плейлистов, исключённых из анализа музыкального вкуса
     #[serde(default)]
     pub excluded_recommendation_playlist_ids: Vec<String>,
+    /// Автоматическое фоновое сохранение воспроизводимых треков в локальный кэш
+    #[serde(default = "default_auto_cache")]
+    pub auto_cache: bool,
+}
+
+fn default_auto_cache() -> bool {
+    true
 }
 
 fn default_discord_rpc() -> bool {
@@ -211,6 +218,7 @@ impl Default for AppConfig {
             discord_rpc_client_id: None,
             include_playlists_in_recommendations: true,
             excluded_recommendation_playlist_ids: Vec::new(),
+            auto_cache: true,
         }
     }
 }

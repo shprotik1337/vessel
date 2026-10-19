@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { HistoryEntry, Playlist, TrackRef, TrackTime } from "../types";
+import type { FollowedArtist, HistoryEntry, Playlist, TrackRef, TrackTime } from "../types";
 
 export type { TrackTime };
 
@@ -98,3 +98,24 @@ export async function importLikes(
 export async function importTracksBatch(tracks: TrackRef[]): Promise<number> {
   return invoke<number>("import_tracks_batch", { tracks });
 }
+
+export async function getFollowedArtists(): Promise<FollowedArtist[]> {
+  return invoke<FollowedArtist[]>("get_followed_artists");
+}
+
+export async function followArtist(artist: FollowedArtist): Promise<void> {
+  return invoke("follow_artist", { artist });
+}
+
+export async function unfollowArtist(id: string): Promise<boolean> {
+  return invoke<boolean>("unfollow_artist", { id });
+}
+
+export async function isArtistFollowed(id: string): Promise<boolean> {
+  return invoke<boolean>("is_artist_followed", { id });
+}
+
+export async function setPlaylistIsAlbum(id: string, isAlbum: boolean): Promise<void> {
+  return invoke("set_playlist_is_album", { id, isAlbum });
+}
+

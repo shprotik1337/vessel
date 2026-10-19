@@ -67,6 +67,21 @@ pub fn initialize_schema(connection: &Connection) -> Result<()> {
             payload_json TEXT NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS followed_artists (
+            id TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            name TEXT NOT NULL,
+            avatar_url TEXT,
+            header_image_url TEXT,
+            monthly_listeners INTEGER,
+            verified INTEGER NOT NULL DEFAULT 0,
+            added_at_ms INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_followed_artists_provider
+            ON followed_artists(provider);
+        CREATE INDEX IF NOT EXISTS idx_followed_artists_added
+            ON followed_artists(added_at_ms DESC);
         ",
     )?;
 
@@ -89,6 +104,20 @@ pub fn initialize_schema(connection: &Connection) -> Result<()> {
     if !playlist_columns.iter().any(|name| name == "position") {
         connection.execute("ALTER TABLE playlists ADD COLUMN position INTEGER", [])?;
     }
+
+    // Миграция: колонки is_album и artist_name для разделения альбомов и плейлистов
+    if !playlist_columns.iter().any(|name| name == "is_album") {
+        connection.execute("ALTER TABLE playlists ADD COLUMN is_album INTEGER NOT NULL DEFAULT 0", [])?;
+    }
+    if !playlist_columns.iter().any(|name| name == "artist_name") {
+        connection.execute("ALTER TABLE playlists ADD COLUMN artist_name TEXT", [])?;
+    }
+
+    // Автоматически размечаем уже импортированные альбомы для всех провайдеров
+    let _ = connection.execute(
+        "UPDATE playlists SET is_album = 1 WHERE is_album = 0 AND (source_url LIKE '%/album/%' OR source_url LIKE '%spotify:album:%' OR source_url LIKE '%browse/MPRE%' OR source_url LIKE '%album%')",
+        [],
+    );
 
     // Миграция: колонка added_at_ms для даты добавления трека в плейлист
     let track_columns = connection

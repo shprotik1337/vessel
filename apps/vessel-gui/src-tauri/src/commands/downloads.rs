@@ -70,6 +70,143 @@ pub async fn set_cache_dir(core: CoreState<'_>, path: Option<String>) -> Result<
     Ok(())
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct StorageStats {
+    pub tracks_bytes: u64,
+    pub tracks_count: usize,
+    pub covers_bytes: u64,
+    pub lyrics_bytes: u64,
+    pub total_bytes: u64,
+}
+
+fn dir_recursive_size(path: &Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    total += meta.len();
+                } else if meta.is_dir() {
+                    total += dir_recursive_size(&p);
+                }
+            }
+        }
+    }
+    total
+}
+
+#[tauri::command]
+pub async fn get_auto_cache(core: CoreState<'_>) -> Result<bool, String> {
+    let core = lock(&core);
+    Ok(core.config.auto_cache)
+}
+
+#[tauri::command]
+pub async fn set_auto_cache(core: CoreState<'_>, enabled: bool) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.auto_cache = enabled;
+    core.runtime.set_auto_cache(enabled);
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_storage_stats(core: CoreState<'_>) -> Result<StorageStats, String> {
+    let core = lock(&core);
+    let track_cache = PathBuf::from(resolve_track_cache_dir(&core));
+
+    let mut tracks_bytes = 0u64;
+    let mut tracks_count = 0usize;
+    if let Ok(entries) = std::fs::read_dir(&track_cache) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    tracks_count += 1;
+                    tracks_bytes += meta.len();
+                }
+            }
+        }
+    }
+
+    let mut covers_bytes = 0u64;
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let webview_cache = PathBuf::from(local_app_data)
+            .join("space.vessel.app")
+            .join("EBWebView")
+            .join("Default")
+            .join("Cache");
+        if webview_cache.exists() {
+            covers_bytes = dir_recursive_size(&webview_cache);
+        }
+    }
+
+    let mut lyrics_bytes = 0u64;
+    if let Ok(app_data) = std::env::var("APPDATA") {
+        let db_dir = PathBuf::from(app_data)
+            .join("vessel")
+            .join("vessel")
+            .join("data")
+            .join("Users")
+            .join("default");
+        if db_dir.exists() {
+            lyrics_bytes = dir_recursive_size(&db_dir);
+        }
+    }
+
+    let total_bytes = tracks_bytes + covers_bytes + lyrics_bytes;
+
+    Ok(StorageStats {
+        tracks_bytes,
+        tracks_count,
+        covers_bytes,
+        lyrics_bytes,
+        total_bytes,
+    })
+}
+
+#[tauri::command]
+pub async fn clear_storage_cache(core: CoreState<'_>, target: Option<String>) -> Result<StorageStats, String> {
+    let target = target.as_deref().unwrap_or("all");
+    let track_cache = {
+        let core = lock(&core);
+        PathBuf::from(resolve_track_cache_dir(&core))
+    };
+
+    if target == "all" || target == "tracks" {
+        if let Ok(entries) = std::fs::read_dir(&track_cache) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
+        }
+    }
+
+    if target == "all" || target == "covers" {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let webview_cache = PathBuf::from(local_app_data)
+                .join("space.vessel.app")
+                .join("EBWebView")
+                .join("Default")
+                .join("Cache");
+            if webview_cache.exists() {
+                if let Ok(entries) = std::fs::read_dir(&webview_cache) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_file() {
+                            let _ = std::fs::remove_file(p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    get_storage_stats(core).await
+}
+
 #[tauri::command]
 pub async fn download_track(
     core: CoreState<'_>,

@@ -85,7 +85,32 @@ pub async fn auth_login(
         if let Some(lib) = lib {
             core.app.library = lib.tracks;
         }
-        if let Some(pl) = pl {
+        if let Some(mut pl) = pl {
+            let local_db = core.storage.list_playlists().unwrap_or_default();
+            for p in &mut pl.playlists {
+                let is_album_from_url = p.source_url.as_ref().map(|u| {
+                    let s = u.as_str().to_lowercase();
+                    s.contains("/album/")
+                        || s.contains("spotify:album:")
+                        || s.contains("browse/mpre")
+                        || s.contains("album")
+                }).unwrap_or(false);
+
+                let is_album_from_local = core.app.playlists.iter().find(|local| local.id == p.id).map(|local| local.is_album).unwrap_or(false);
+                let is_album_from_db = local_db.iter().find(|stored| stored.id == p.id).map(|stored| stored.is_album).unwrap_or(false);
+
+                if is_album_from_url || is_album_from_local || is_album_from_db {
+                    p.is_album = true;
+                }
+                if p.artist_name.is_none() {
+                    if let Some(local) = core.app.playlists.iter().find(|l| l.id == p.id) {
+                        p.artist_name = local.artist_name.clone();
+                    } else if let Some(stored) = local_db.iter().find(|s| s.id == p.id) {
+                        p.artist_name = stored.artist_name.clone();
+                    }
+                }
+                let _ = core.storage.save_playlist(p);
+            }
             core.app.playlists = pl.playlists;
         }
 
@@ -227,7 +252,32 @@ pub async fn auth_migrate_data(core: CoreState<'_>) -> Result<(), String> {
     {
         let mut core = lock(&core);
         core.app.library = lib.tracks;
-        core.app.playlists = pl.playlists;
+        let local_db = core.storage.list_playlists().unwrap_or_default();
+        let mut playlists = pl.playlists;
+        for p in &mut playlists {
+            let is_album_from_url = p.source_url.as_ref().map(|u| {
+                let s = u.as_str().to_lowercase();
+                s.contains("/album/")
+                    || s.contains("spotify:album:")
+                    || s.contains("browse/mpre")
+                    || s.contains("album")
+            }).unwrap_or(false);
+
+            let is_album_from_local = core.app.playlists.iter().find(|local| local.id == p.id).map(|local| local.is_album).unwrap_or(false);
+            let is_album_from_db = local_db.iter().find(|stored| stored.id == p.id).map(|stored| stored.is_album).unwrap_or(false);
+
+            if is_album_from_url || is_album_from_local || is_album_from_db {
+                p.is_album = true;
+            }
+            if p.artist_name.is_none() {
+                if let Some(local) = core.app.playlists.iter().find(|l| l.id == p.id) {
+                    p.artist_name = local.artist_name.clone();
+                } else if let Some(stored) = local_db.iter().find(|s| s.id == p.id) {
+                    p.artist_name = stored.artist_name.clone();
+                }
+            }
+        }
+        core.app.playlists = playlists;
     }
 
     Ok(())
@@ -264,11 +314,34 @@ pub async fn auth_download_cloud_data(core: CoreState<'_>) -> Result<CloudSyncRe
         for track in &lib.tracks {
             let _ = core.storage.like_track(track, now);
         }
-        for playlist in &pl.playlists {
-            let _ = core.storage.save_playlist(playlist);
+        let local_db = core.storage.list_playlists().unwrap_or_default();
+        let mut playlists = pl.playlists;
+        for p in &mut playlists {
+            let is_album_from_url = p.source_url.as_ref().map(|u| {
+                let s = u.as_str().to_lowercase();
+                s.contains("/album/")
+                    || s.contains("spotify:album:")
+                    || s.contains("browse/mpre")
+                    || s.contains("album")
+            }).unwrap_or(false);
+
+            let is_album_from_local = core.app.playlists.iter().find(|local| local.id == p.id).map(|local| local.is_album).unwrap_or(false);
+            let is_album_from_db = local_db.iter().find(|stored| stored.id == p.id).map(|stored| stored.is_album).unwrap_or(false);
+
+            if is_album_from_url || is_album_from_local || is_album_from_db {
+                p.is_album = true;
+            }
+            if p.artist_name.is_none() {
+                if let Some(local) = core.app.playlists.iter().find(|l| l.id == p.id) {
+                    p.artist_name = local.artist_name.clone();
+                } else if let Some(stored) = local_db.iter().find(|s| s.id == p.id) {
+                    p.artist_name = stored.artist_name.clone();
+                }
+            }
+            let _ = core.storage.save_playlist(p);
         }
         core.app.library = lib.tracks;
-        core.app.playlists = pl.playlists;
+        core.app.playlists = playlists;
     }
 
     Ok(CloudSyncResult {

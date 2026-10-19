@@ -268,7 +268,6 @@ export function Queue() {
 
       {queue.length === 0 ? (
         <div className="empty">
-          <div className="ico">☰</div>
           <div className="t1">{t(lang, "queue.empty1")}</div>
           <div className="t2">{t(lang, "queue.empty2")}</div>
         </div>
