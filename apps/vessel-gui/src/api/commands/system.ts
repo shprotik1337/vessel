@@ -106,6 +106,10 @@ export async function windowStartDragging(): Promise<void> {
   return invoke("window_start_dragging");
 }
 
+export async function windowSetZoom(scale: number): Promise<void> {
+  return invoke("window_set_zoom", { scale });
+}
+
 export async function loadImageAsDataUrl(path: string): Promise<string> {
   return invoke<string>("load_image_as_data_url", { path });
 }

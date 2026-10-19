@@ -638,6 +638,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::window_is_maximized,
             commands::window_close,
             commands::window_start_dragging,
+            commands::window_set_zoom,
             commands::load_image_as_data_url,
             commands::get_artist_extras,
             commands::fetch_server_lyrics,

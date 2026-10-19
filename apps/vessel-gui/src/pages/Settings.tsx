@@ -43,8 +43,10 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
   const [category, setCategory] = useState<SettingsCategory>("general");
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
-  const [fullscreenScale, setFullscreenScale] = useState(() => Number(localStorage.getItem("vessel_scale_fullscreen") || 100));
-  const [windowedScale, setWindowedScale] = useState(() => Number(localStorage.getItem("vessel_scale_windowed") || 100));
+  const [scale, setScale] = useState(() => {
+    const saved = localStorage.getItem("vessel_scale") || localStorage.getItem("vessel_scale_windowed");
+    return saved ? Number(saved) : 100;
+  });
   const [selectedFont, setSelectedFont] = useState(() => localStorage.getItem("vessel_font") || "Inter");
 
   const [downloadDir, setDownloadDir] = useState("");
@@ -87,25 +89,14 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
     })();
   }, []);
 
-  const applyUiScale = (val: number) => {
-    const zoomVal = val / 100;
-    document.documentElement.style.setProperty("--ui-scale", String(zoomVal));
-    document.documentElement.style.fontSize = `${14 * zoomVal}px`;
-    (document.documentElement.style as any).zoom = String(zoomVal);
-  };
-
-  const handleFullscreenScale = (val: number) => {
-    setFullscreenScale(val);
-    localStorage.setItem("vessel_scale_fullscreen", String(val));
-    const isFs = Boolean(document.fullscreenElement || window.innerHeight === screen.height);
-    if (isFs) applyUiScale(val);
-  };
-
-  const handleWindowedScale = (val: number) => {
-    setWindowedScale(val);
-    localStorage.setItem("vessel_scale_windowed", String(val));
-    const isFs = Boolean(document.fullscreenElement || window.innerHeight === screen.height);
-    if (!isFs) applyUiScale(val);
+  const handleScale = (val: number) => {
+    setScale(val);
+    localStorage.setItem("vessel_scale", String(val));
+    localStorage.removeItem("vessel_scale_fullscreen");
+    localStorage.removeItem("vessel_scale_windowed");
+    void api.windowSetZoom(val / 100).catch(() => {});
+    (document.documentElement.style as any).zoom = "";
+    document.documentElement.style.fontSize = "";
   };
 
   const handleFontSelect = (font: string) => {
@@ -142,10 +133,13 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
     if (confirm === "settings") {
       await api.resetSettings();
       resetToDefaults();
+      localStorage.removeItem("vessel_scale");
       localStorage.removeItem("vessel_scale_fullscreen");
       localStorage.removeItem("vessel_scale_windowed");
-      setFullscreenScale(100);
-      setWindowedScale(100);
+      setScale(100);
+      void api.windowSetZoom(1.0).catch(() => {});
+      (document.documentElement.style as any).zoom = "";
+      document.documentElement.style.fontSize = "";
       document.documentElement.style.setProperty("--ui-scale", "1");
       localStorage.removeItem("vessel_font");
       setSelectedFont("Inter");
@@ -154,10 +148,13 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
     } else {
       await api.resetData();
       resetToDefaults();
+      localStorage.removeItem("vessel_scale");
       localStorage.removeItem("vessel_scale_fullscreen");
       localStorage.removeItem("vessel_scale_windowed");
-      setFullscreenScale(100);
-      setWindowedScale(100);
+      setScale(100);
+      void api.windowSetZoom(1.0).catch(() => {});
+      (document.documentElement.style as any).zoom = "";
+      document.documentElement.style.fontSize = "";
       document.documentElement.style.setProperty("--ui-scale", "1");
       localStorage.removeItem("vessel_font");
       setSelectedFont("Inter");
@@ -219,10 +216,8 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
             {activeTab === "player" && <PlayerSection />}
             {activeTab === "interface" && (
               <InterfaceSection
-                fullscreenScale={fullscreenScale}
-                windowedScale={windowedScale}
-                onFullscreenScale={handleFullscreenScale}
-                onWindowedScale={handleWindowedScale}
+                scale={scale}
+                onScale={handleScale}
                 selectedFont={selectedFont}
                 onFontSelect={handleFontSelect}
               />

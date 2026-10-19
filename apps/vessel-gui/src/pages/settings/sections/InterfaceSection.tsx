@@ -15,19 +15,15 @@ import {
 } from "../../../components/Icons";
 
 interface InterfaceSectionProps {
-  fullscreenScale: number;
-  windowedScale: number;
-  onFullscreenScale: (val: number) => void;
-  onWindowedScale: (val: number) => void;
+  scale: number;
+  onScale: (val: number) => void;
   selectedFont: string;
   onFontSelect: (font: string) => void;
 }
 
 export function InterfaceSection({
-  fullscreenScale,
-  windowedScale,
-  onFullscreenScale,
-  onWindowedScale,
+  scale,
+  onScale,
   selectedFont,
   onFontSelect,
 }: InterfaceSectionProps) {
@@ -522,67 +518,19 @@ export function InterfaceSection({
         {lang === "ru" ? "МАСШТАБИРОВАНИЕ" : "UI SCALING"}
       </div>
 
-      {/* CARD 1: FULLSCREEN SCALE */}
-      <div className="sett-card" style={{ marginBottom: 14 }}>
-        <div className="sett-card-title" style={{ marginBottom: 12 }}>
-          {lang === "ru" ? "Полноэкранный" : "Fullscreen"}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 16 }}>
-          {["75", "90", "100", "110", "125"].map((sc) => {
-            const isSel = fullscreenScale === Number(sc);
-            return (
-              <button
-                key={sc}
-                type="button"
-                onClick={() => onFullscreenScale(Number(sc))}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                  padding: "12px 6px",
-                  borderRadius: 10,
-                  border: isSel ? "1.5px solid var(--accent)" : "1px solid var(--border)",
-                  background: isSel ? "var(--elev2, rgba(255, 255, 255, 0.08))" : "var(--elev, rgba(255, 255, 255, 0.03))",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ color: isSel ? "var(--accent)" : "var(--text3)" }}><IconDevice size={16} /></span>
-                <span style={{ fontSize: 13, fontWeight: isSel ? 700 : 500, color: "var(--text)" }}>{sc}%</span>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <input
-            type="range"
-            min="75"
-            max="150"
-            step="1"
-            value={fullscreenScale}
-            onChange={(e) => onFullscreenScale(Number(e.target.value))}
-            style={{ flex: 1, accentColor: "var(--accent)" }}
-          />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)", minWidth: 40, textAlign: "right" }}>
-            {fullscreenScale}%
-          </span>
-        </div>
-      </div>
-
-      {/* CARD 2: WINDOWED SCALE */}
+      {/* UI SCALING */}
       <div className="sett-card">
         <div className="sett-card-title" style={{ marginBottom: 12 }}>
-          {lang === "ru" ? "Оконный" : "Windowed"}
+          {lang === "ru" ? "Масштабирование" : "Scaling"}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 16 }}>
           {["75", "90", "100", "110", "125"].map((sc) => {
-            const isSel = windowedScale === Number(sc);
+            const isSel = scale === Number(sc);
             return (
               <button
                 key={sc}
                 type="button"
-                onClick={() => onWindowedScale(Number(sc))}
+                onClick={() => onScale(Number(sc))}
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -608,12 +556,12 @@ export function InterfaceSection({
             min="75"
             max="150"
             step="1"
-            value={windowedScale}
-            onChange={(e) => onWindowedScale(Number(e.target.value))}
+            value={scale}
+            onChange={(e) => onScale(Number(e.target.value))}
             style={{ flex: 1, accentColor: "var(--accent)" }}
           />
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)", minWidth: 40, textAlign: "right" }}>
-            {windowedScale}%
+            {scale}%
           </span>
         </div>
       </div>

@@ -32,3 +32,9 @@ pub fn window_close(window: tauri::Window) -> Result<(), String> {
 pub fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
     window.start_dragging().map_err(|e| e.to_string())
 }
+
+/// Установить масштаб отображения Webview
+#[tauri::command]
+pub fn window_set_zoom(window: tauri::WebviewWindow, scale: f64) -> Result<(), String> {
+    window.set_zoom(scale).map_err(|e| e.to_string())
+}
