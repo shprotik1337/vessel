@@ -218,7 +218,11 @@ fn apply_provider_routing(
             continue;
         }
         let server_url = if server_id == crate::config::OFFICIAL_SERVER_ID {
-            crate::config::OFFICIAL_SERVER_URL
+            if !server.url.trim().is_empty() {
+                server.url.as_str()
+            } else {
+                crate::config::OFFICIAL_SERVER_URL
+            }
         } else {
             &server.url
         };

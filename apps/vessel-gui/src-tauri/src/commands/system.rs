@@ -209,7 +209,11 @@ fn server_client(core: &GuiCore, server_id: &str) -> Result<vessel_core::provide
         token = vessel_core::config::OFFICIAL_SERVER_TOKEN.to_string();
     }
     let server_url = if server_id == vessel_core::config::OFFICIAL_SERVER_ID {
-        vessel_core::config::OFFICIAL_SERVER_URL
+        if !config_server.url.trim().is_empty() {
+            config_server.url.as_str()
+        } else {
+            vessel_core::config::OFFICIAL_SERVER_URL
+        }
     } else {
         &config_server.url
     };

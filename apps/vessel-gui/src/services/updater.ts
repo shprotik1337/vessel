@@ -1,6 +1,6 @@
 import { openUrl } from "../api/commands";
 
-export const APP_CURRENT_VERSION = "1.4.5";
+export const APP_CURRENT_VERSION = "1.4.6";
 export const GITHUB_REPO = "shprotik1337/vessel";
 export const GITHUB_LATEST_RELEASE_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
