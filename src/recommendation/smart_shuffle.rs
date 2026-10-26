@@ -6,13 +6,12 @@ use crate::{
     model::TrackRef,
     provider::ProviderRegistry,
     storage::Storage,
-    wave::{track_key, track_semantic_key, QueueContext, SmartShuffleInterleaver, SmartShuffleResult},
+    wave::{
+        QueueContext, SmartShuffleInterleaver, SmartShuffleResult, track_key, track_semantic_key,
+    },
 };
 
-use super::{
-    autoplay::generate_autoplay_chunk,
-    scoring::remember_smart_shuffle_keys,
-};
+use super::{autoplay::generate_autoplay_chunk, scoring::remember_smart_shuffle_keys};
 
 /// Применение Smart Shuffle к текущей очереди.
 pub async fn apply_smart_shuffle(
@@ -48,20 +47,22 @@ pub async fn apply_smart_shuffle(
         let rec_count = 8;
         let context = QueueContext {
             current_track: current_track.clone(),
-            recent_played: current_queue[..=current_index].iter().rev().take(6).cloned().collect(),
+            recent_played: current_queue[..=current_index]
+                .iter()
+                .rev()
+                .take(6)
+                .cloned()
+                .collect(),
             remaining_queue: Vec::new(),
             session_played_keys: HashSet::new(),
             feedback_skips: HashSet::new(),
             feedback_likes: HashSet::new(),
         };
 
-        let mut recommendations = generate_autoplay_chunk(
-            storage,
-            providers,
-            context,
-            rec_count,
-            provider_filter,
-        ).await.unwrap_or_default();
+        let mut recommendations =
+            generate_autoplay_chunk(storage, providers, context, rec_count, provider_filter)
+                .await
+                .unwrap_or_default();
 
         // Fallback к библиотеке, если онлайн-провайдеры ничего не вернули
         if recommendations.is_empty() {
@@ -111,20 +112,22 @@ pub async fn apply_smart_shuffle(
     let rec_count = ((unplayed_shuffled.len() + 2) / 3).max(4);
     let context = QueueContext {
         current_track: current_track.clone(),
-        recent_played: current_queue[..=current_index].iter().rev().take(6).cloned().collect(),
+        recent_played: current_queue[..=current_index]
+            .iter()
+            .rev()
+            .take(6)
+            .cloned()
+            .collect(),
         remaining_queue: unplayed_shuffled.clone(),
         session_played_keys: HashSet::new(),
         feedback_skips: HashSet::new(),
         feedback_likes: HashSet::new(),
     };
 
-    let mut recommendations = generate_autoplay_chunk(
-        storage,
-        providers,
-        context,
-        rec_count,
-        provider_filter,
-    ).await.unwrap_or_default();
+    let mut recommendations =
+        generate_autoplay_chunk(storage, providers, context, rec_count, provider_filter)
+            .await
+            .unwrap_or_default();
 
     // Fallback: если онлайн-рекомендации не вернулись, берем треки со схожим вайбом из фонотеки
     if recommendations.is_empty() {
@@ -134,7 +137,9 @@ pub async fn apply_smart_shuffle(
             for mut t in lib {
                 let sk = track_semantic_key(&t);
                 if seen_lib.insert(sk.clone())
-                    && !unplayed_shuffled.iter().any(|u| track_semantic_key(u) == sk)
+                    && !unplayed_shuffled
+                        .iter()
+                        .any(|u| track_semantic_key(u) == sk)
                     && Some(&t) != current_track.as_ref()
                 {
                     t.origin = crate::model::TrackOrigin::SmartShuffle;
@@ -155,7 +160,8 @@ pub async fn apply_smart_shuffle(
     let remembered_keys: Vec<String> = recommendations.iter().map(track_semantic_key).collect();
     remember_smart_shuffle_keys(&remembered_keys);
 
-    let mut full_queue = Vec::with_capacity(current_index + 1 + shuffle_res.interleaved_queue.len());
+    let mut full_queue =
+        Vec::with_capacity(current_index + 1 + shuffle_res.interleaved_queue.len());
     full_queue.extend(current_queue[..=current_index].iter().cloned());
     full_queue.extend(shuffle_res.interleaved_queue);
 

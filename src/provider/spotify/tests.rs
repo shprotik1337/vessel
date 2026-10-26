@@ -342,7 +342,10 @@ fn extract_album_tracks_from_nested_track_data() {
     assert_eq!(tracks.len(), 1);
     assert_eq!(tracks[0].id, "trackDataTrack1");
     assert_eq!(tracks[0].title, "Track Data Song");
-    assert_eq!(tracks[0].artists, vec!["Direct Artist A", "Direct Artist B"]);
+    assert_eq!(
+        tracks[0].artists,
+        vec!["Direct Artist A", "Direct Artist B"]
+    );
     assert_eq!(tracks[0].duration_ms, Some(195000));
     assert!(tracks[0].explicit);
 }
@@ -514,7 +517,10 @@ fn extract_track_artists_various_formats() {
     let n4 = json!({
         "artists": ["String Artist A", "String Artist B"]
     });
-    assert_eq!(extract_track_artists(&n4), vec!["String Artist A", "String Artist B"]);
+    assert_eq!(
+        extract_track_artists(&n4),
+        vec!["String Artist A", "String Artist B"]
+    );
 
     // 5. empty/missing
     let n5 = json!({});
@@ -638,13 +644,16 @@ fn artist_all_tracks_deduplication_and_ordering() {
     let album_tracks = vec![
         parse_album_track_wrapper(&json!({
             "track": { "uri": "spotify:track:albumTrack1", "name": "Album Track 1" }
-        })).unwrap(),
+        }))
+        .unwrap(),
         parse_album_track_wrapper(&json!({
             "track": { "uri": "spotify:track:popular1", "name": "Popular 1" }
-        })).unwrap(),
+        }))
+        .unwrap(),
         parse_album_track_wrapper(&json!({
             "track": { "uri": "spotify:track:albumTrack2", "name": "Album Track 2" }
-        })).unwrap(),
+        }))
+        .unwrap(),
     ];
     for t in album_tracks {
         if seen.insert(t.provider_key()) {
@@ -656,7 +665,8 @@ fn artist_all_tracks_deduplication_and_ordering() {
     let single_tracks = vec![
         parse_album_track_wrapper(&json!({
             "track": { "uri": "spotify:track:albumTrack2", "name": "Album Track 2" }
-        })).unwrap(),
+        }))
+        .unwrap(),
     ];
     for t in single_tracks {
         if seen.insert(t.provider_key()) {

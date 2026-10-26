@@ -29,11 +29,7 @@ pub struct HlsSource {
 }
 
 impl HlsSource {
-    pub fn open(
-        url: &Url,
-        headers: &BTreeMap<String, String>,
-        position_ms: u64,
-    ) -> Result<Self> {
+    pub fn open(url: &Url, headers: &BTreeMap<String, String>, position_ms: u64) -> Result<Self> {
         let client = HlsClient::new(headers)?;
         let playlist = load_media_playlist(&client, url)?;
         let (next_segment, start_ms) = segment_for_position(&playlist, position_ms);

@@ -8,13 +8,14 @@ use futures_util::future::join_all;
 use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
     provider::{
-        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider,
-        SearchPage,
+        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist,
+        MusicProvider, SearchPage,
     },
 };
 
 use super::{
-    attribution, client::YoutubeClient,
+    attribution,
+    client::YoutubeClient,
     mapping::{normalize_collection, normalize_track},
     search::{search_collections, search_tracks},
 };
@@ -25,12 +26,10 @@ pub struct YouTubeMusicProvider {
     pub(crate) client: YoutubeClient,
     /// Кэш «вся музыка» по artistId: первая загрузка делает десятки browse-
     /// запросов, повторные (открытие карточки, «показать всё») — мгновенны.
-    pub(crate) all_tracks_cache:
-        std::sync::Mutex<std::collections::HashMap<String, Vec<TrackRef>>>,
+    pub(crate) all_tracks_cache: std::sync::Mutex<std::collections::HashMap<String, Vec<TrackRef>>>,
     /// Кэш профилей артистов: artist_profile делает 2 тяжёлых browse
     /// (страница + плейлист топ-треков), повторное открытие карточки — мгновенно.
-    pub(crate) profile_cache:
-        std::sync::Mutex<std::collections::HashMap<String, ArtistProfile>>,
+    pub(crate) profile_cache: std::sync::Mutex<std::collections::HashMap<String, ArtistProfile>>,
 }
 
 impl YouTubeMusicProvider {
@@ -47,8 +46,7 @@ impl YouTubeMusicProvider {
         let name = value
             .pointer("/header/musicImmersiveHeaderRenderer/title/runs/0/text")
             .or_else(|| {
-                value
-                    .pointer("/header/musicEditablePlaylistDetailHeaderRenderer/title/runs/0/text")
+                value.pointer("/header/musicEditablePlaylistDetailHeaderRenderer/title/runs/0/text")
             })
             .and_then(Value::as_str)
             .unwrap_or("Артист")
@@ -104,7 +102,6 @@ impl YouTubeMusicProvider {
             external_links: Vec::new(),
         })
     }
-
 
     pub fn new() -> Result<Self> {
         Ok(Self {
@@ -334,18 +331,17 @@ impl MusicProvider for YouTubeMusicProvider {
         }
         // Fallback: всё, что есть на странице артиста.
         let tracks = collect_artist_songs(&value);
-            if !tracks.is_empty() {
-                if let Ok(mut cache) = self.all_tracks_cache.lock() {
-                    cache.insert(artist_id.to_string(), tracks.clone());
-                }
-                return Ok(tracks);
+        if !tracks.is_empty() {
+            if let Ok(mut cache) = self.all_tracks_cache.lock() {
+                cache.insert(artist_id.to_string(), tracks.clone());
             }
+            return Ok(tracks);
+        }
         // Последний fallback: поиск по имени.
         let name = value
             .pointer("/header/musicImmersiveHeaderRenderer/title/runs/0/text")
             .or_else(|| {
-                value
-                    .pointer("/header/musicEditablePlaylistDetailHeaderRenderer/title/runs/0/text")
+                value.pointer("/header/musicEditablePlaylistDetailHeaderRenderer/title/runs/0/text")
             })
             .and_then(Value::as_str)
             .unwrap_or("Артист")
@@ -375,23 +371,38 @@ impl MusicProvider for YouTubeMusicProvider {
 impl YouTubeMusicProvider {
     /// Проверяет доступность: делает реальный поисковый запрос.
     pub async fn probe(&self) -> Result<()> {
-        search_tracks(&self.client, "vessel probe").await.map(|_| ())
+        search_tracks(&self.client, "vessel probe")
+            .await
+            .map(|_| ())
     }
 
     /// Поиск в Innertube с сырыми параметрами (для отладки).
-    pub async fn client_search(&self, query: &str, params: Option<&str>) -> Result<serde_json::Value> {
+    pub async fn client_search(
+        &self,
+        query: &str,
+        params: Option<&str>,
+    ) -> Result<serde_json::Value> {
         self.client.search(query, params).await
     }
 }
 
 /// Достаёт browseId из URL плейлиста YouTube Music.
 fn extract_playlist_browse_id(url: &Url) -> Option<String> {
-    if url.host_str()?.to_ascii_lowercase().contains("music.youtube.com") {
+    if url
+        .host_str()?
+        .to_ascii_lowercase()
+        .contains("music.youtube.com")
+    {
         // https://music.youtube.com/playlist?list=...
-        if let Some(list) = url.query_pairs().find_map(|(key, value)| {
-            (key == "list").then(|| value.into_owned())
-        }) {
-            return Some(if list.starts_with("VL") { list } else { format!("VL{list}") });
+        if let Some(list) = url
+            .query_pairs()
+            .find_map(|(key, value)| (key == "list").then(|| value.into_owned()))
+        {
+            return Some(if list.starts_with("VL") {
+                list
+            } else {
+                format!("VL{list}")
+            });
         }
         // https://music.youtube.com/browse/MPREb_... / VL... (клик по карточке
         // альбома/плейлиста из поиска)
@@ -460,7 +471,9 @@ pub fn is_play_count(text: &str) -> bool {
 
 fn is_play_count_column(column: &Value) -> bool {
     if let Some(label) = column
-        .pointer("/musicResponsiveListItemFlexColumnRenderer/text/accessibility/accessibilityData/label")
+        .pointer(
+            "/musicResponsiveListItemFlexColumnRenderer/text/accessibility/accessibilityData/label",
+        )
         .and_then(Value::as_str)
     {
         if is_play_count(label) {
@@ -491,12 +504,17 @@ pub fn extract_album_artist(value: &Value) -> Option<String> {
 
     if let Some(h) = responsive_header {
         // straplineTextOne: стандартное поле для артиста альбома в YouTube Music
-        if let Some(runs) = h.pointer("/straplineTextOne/runs").and_then(Value::as_array) {
+        if let Some(runs) = h
+            .pointer("/straplineTextOne/runs")
+            .and_then(Value::as_array)
+        {
             let names: Vec<String> = runs
                 .iter()
                 .filter_map(|r| r.get("text").and_then(Value::as_str))
                 .map(str::trim)
-                .filter(|s| !s.is_empty() && *s != "," && *s != "•" && *s != "&" && *s != "+" && *s != "and")
+                .filter(|s| {
+                    !s.is_empty() && *s != "," && *s != "•" && *s != "&" && *s != "+" && *s != "and"
+                })
                 .filter(|s| !is_play_count(s))
                 .map(str::to_string)
                 .collect();
@@ -700,7 +718,9 @@ fn map_playlist_track(renderer: &Value) -> Option<TrackRef> {
 
                         if !text_before_dot.is_empty() && !is_play_count(text_before_dot) {
                             let is_duration = text_before_dot.contains(':')
-                                && text_before_dot.chars().all(|c| c.is_ascii_digit() || c == ':' || c == ' ');
+                                && text_before_dot
+                                    .chars()
+                                    .all(|c| c.is_ascii_digit() || c == ':' || c == ' ');
                             if !is_duration {
                                 let parsed: Vec<String> = text_before_dot
                                     .split(',')
@@ -840,7 +860,9 @@ fn collect_artist_releases(value: &Value) -> Vec<CollectionItem> {
                                         .and_then(Value::as_array)
                                         .map(|runs| {
                                             runs.iter()
-                                                .filter_map(|r| r.get("text").and_then(Value::as_str))
+                                                .filter_map(|r| {
+                                                    r.get("text").and_then(Value::as_str)
+                                                })
                                                 .collect::<String>()
                                         })
                                         .unwrap_or_else(|| "Альбом".to_string());
@@ -849,7 +871,9 @@ fn collect_artist_releases(value: &Value) -> Vec<CollectionItem> {
                                         title,
                                         &subtitle,
                                         CollectionKind::Album,
-                                        renderer.pointer("/thumbnailRenderer/musicThumbnailRenderer/thumbnail"),
+                                        renderer.pointer(
+                                            "/thumbnailRenderer/musicThumbnailRenderer/thumbnail",
+                                        ),
                                         0,
                                     ));
                                 }
@@ -919,8 +943,16 @@ fn collect_related_tracks(value: &Value, limit: usize) -> Vec<TrackRef> {
 fn parse_duration(value: &str) -> Option<u64> {
     let parts: Vec<&str> = value.split(':').collect();
     let seconds: u64 = parts.last()?.parse().ok()?;
-    let minutes: u64 = if parts.len() > 1 { parts[parts.len() - 2].parse().ok()? } else { 0 };
-    let hours: u64 = if parts.len() > 2 { parts[0].parse().ok()? } else { 0 };
+    let minutes: u64 = if parts.len() > 1 {
+        parts[parts.len() - 2].parse().ok()?
+    } else {
+        0
+    };
+    let hours: u64 = if parts.len() > 2 {
+        parts[0].parse().ok()?
+    } else {
+        0
+    };
     Some((hours * 3600 + minutes * 60 + seconds) * 1000)
 }
 

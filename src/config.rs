@@ -208,10 +208,19 @@ impl Default for AppConfig {
             }],
             provider_routing: {
                 let mut map = std::collections::BTreeMap::new();
-                map.insert("soundcloud".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
+                map.insert(
+                    "soundcloud".to_string(),
+                    format!("server:{OFFICIAL_SERVER_ID}"),
+                );
                 map.insert("deezer".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
-                map.insert("spotify".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
-                map.insert("youtube_music".to_string(), format!("server:{OFFICIAL_SERVER_ID}"));
+                map.insert(
+                    "spotify".to_string(),
+                    format!("server:{OFFICIAL_SERVER_ID}"),
+                );
+                map.insert(
+                    "youtube_music".to_string(),
+                    format!("server:{OFFICIAL_SERVER_ID}"),
+                );
                 map
             },
             discord_rpc: true,
@@ -253,8 +262,15 @@ impl AppConfig {
         self.history_limit = self.history_limit.clamp(500, 10_000);
 
         // Всегда гарантируем наличие и актуальный адрес официального сервера
-        if let Some(official) = self.vessel_servers.iter_mut().find(|s| s.id == OFFICIAL_SERVER_ID) {
-            if official.url.trim().is_empty() || official.url.contains("sslip.io") || official.url.contains("chickenkiller.com") {
+        if let Some(official) = self
+            .vessel_servers
+            .iter_mut()
+            .find(|s| s.id == OFFICIAL_SERVER_ID)
+        {
+            if official.url.trim().is_empty()
+                || official.url.contains("sslip.io")
+                || official.url.contains("chickenkiller.com")
+            {
                 official.url = OFFICIAL_SERVER_URL.to_string();
             }
             official.name = OFFICIAL_SERVER_NAME.to_string();

@@ -107,12 +107,16 @@ export async function followArtist(artist: FollowedArtist): Promise<void> {
   return invoke("follow_artist", { artist });
 }
 
-export async function unfollowArtist(id: string): Promise<boolean> {
-  return invoke<boolean>("unfollow_artist", { id });
+export async function unfollowArtist(id: string, provider?: string): Promise<boolean> {
+  return invoke<boolean>("unfollow_artist", { id, provider });
 }
 
 export async function isArtistFollowed(id: string): Promise<boolean> {
   return invoke<boolean>("is_artist_followed", { id });
+}
+
+export async function syncFollowedArtists(): Promise<FollowedArtist[]> {
+  return invoke<FollowedArtist[]>("auth_sync_followed_artists");
 }
 
 export async function setPlaylistIsAlbum(id: string, isAlbum: boolean): Promise<void> {

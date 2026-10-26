@@ -9,7 +9,9 @@ use reqwest::{
 use serde_json::Value;
 use url::Url;
 
-use super::auth::{gateway_has_error, gateway_has_invalid_token, normalize_auth_token, setup_cookie_jar};
+use super::auth::{
+    gateway_has_error, gateway_has_invalid_token, normalize_auth_token, setup_cookie_jar,
+};
 
 pub const API: &str = "https://api.deezer.com";
 pub const PAGE_SIZE: usize = 50;
@@ -71,7 +73,9 @@ pub async fn api_get<T: serde::de::DeserializeOwned>(http: &Client, url: Url) ->
             tokio::time::sleep(delay).await;
             continue;
         }
-        let response = response.error_for_status().context("Deezer отклонил запрос")?;
+        let response = response
+            .error_for_status()
+            .context("Deezer отклонил запрос")?;
         let text = response
             .text()
             .await
@@ -99,12 +103,7 @@ pub async fn api_get<T: serde::de::DeserializeOwned>(http: &Client, url: Url) ->
     }
 }
 
-pub async fn gateway(
-    http: &Client,
-    method: &str,
-    token: &str,
-    params: Value,
-) -> Result<Value> {
+pub async fn gateway(http: &Client, method: &str, token: &str, params: Value) -> Result<Value> {
     let mut url = Url::parse(GATEWAY)?;
     url.query_pairs_mut()
         .append_pair("api_version", "1.0")

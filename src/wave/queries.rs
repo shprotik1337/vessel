@@ -31,7 +31,9 @@ pub fn explore_queries(recent: &[TrackRef], settings: &WaveSettings) -> Vec<Stri
         || corpus.contains("drill")
         || corpus.contains("hiphop")
         || corpus.contains("hip-hop")
-        || recent.iter().any(|t| super::genre::track_tags(t).contains("rap"));
+        || recent
+            .iter()
+            .any(|t| super::genre::track_tags(t).contains("rap"));
 
     if wants_ru {
         queries.push(match settings.mode {
@@ -41,12 +43,8 @@ pub fn explore_queries(recent: &[TrackRef], settings: &WaveSettings) -> Vec<Stri
             WaveMode::Balanced => "музыка по вкусу",
         });
         if has_hiphop {
-            for query in [
-                "рэп хиты",
-                "новинки рэпа",
-                "трэп",
-                "популярные треки",
-            ] {
+            for query in ["рэп хиты", "новинки рэпа", "трэп", "популярные треки"]
+            {
                 queries.push(query);
             }
         } else {
@@ -69,12 +67,7 @@ pub fn explore_queries(recent: &[TrackRef], settings: &WaveSettings) -> Vec<Stri
             WaveMode::Balanced => "music by taste",
         });
         if has_hiphop {
-            for query in [
-                "hip hop hits",
-                "trap hits",
-                "trending rap",
-                "rage rap",
-            ] {
+            for query in ["hip hop hits", "trap hits", "trending rap", "rage rap"] {
                 queries.push(query);
             }
         } else {
@@ -156,7 +149,13 @@ impl UniqueQueries {
     }
 }
 
-fn add_mood_queries(queries: &mut UniqueQueries, mood: WaveMood, ru: bool, en: bool, has_hiphop: bool) {
+fn add_mood_queries(
+    queries: &mut UniqueQueries,
+    mood: WaveMood,
+    ru: bool,
+    en: bool,
+    has_hiphop: bool,
+) {
     let (russian, english): (&[&str], &[&str]) = match mood {
         WaveMood::Calm => (&["спокойная музыка", "чилл"], &["calm music", "chill mix"]),
         WaveMood::Drive => {
@@ -230,7 +229,11 @@ fn add_corpus_queries(queries: &mut UniqueQueries, corpus: &str, ru: bool, en: b
             "club mix",
         ),
         (&["рок", "rock", "metal"], "рок", "rock"),
-        (&["рэп", "rap", "hiphop", "hip-hop", "трэп", "trap"], "рэп", "rap"),
+        (
+            &["рэп", "rap", "hiphop", "hip-hop", "трэп", "trap"],
+            "рэп",
+            "rap",
+        ),
         (&["фонк", "phonk"], "фонк", "phonk"),
     ];
     for (markers, russian, english) in groups {

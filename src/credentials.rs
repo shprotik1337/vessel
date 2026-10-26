@@ -69,15 +69,11 @@ impl CredentialKind {
             Self::SpotifySpDc => {
                 "Вставь значение cookie sp_dc из браузера; токен останется только локально"
             }
-            Self::SpotifyOAuthRefreshToken => {
-                "Получается автоматически при входе через браузер"
-            }
+            Self::SpotifyOAuthRefreshToken => "Получается автоматически при входе через браузер",
             Self::YouTubeCookie => {
                 "Вставь cookie из браузера (SID, SSID, HSID, LOGIN_INFO и др.); даёт полные треки"
             }
-            Self::YouTubeOAuthRefresh => {
-                "Получается автоматически при входе через браузер"
-            }
+            Self::YouTubeOAuthRefresh => "Получается автоматически при входе через браузер",
         }
     }
 }

@@ -14,6 +14,7 @@ pub mod runtime;
 pub mod secrets;
 pub mod storage;
 pub mod user;
+pub mod vault_sync;
 pub mod wave;
 
 pub const APP_NAME: &str = "vessel";
@@ -31,7 +32,8 @@ pub fn log_message(msg: &str) {
         eprintln!("{msg}");
     }
     use std::io::Write;
-    static LOG_FILE: std::sync::OnceLock<std::sync::Mutex<Option<std::fs::File>>> = std::sync::OnceLock::new();
+    static LOG_FILE: std::sync::OnceLock<std::sync::Mutex<Option<std::fs::File>>> =
+        std::sync::OnceLock::new();
     let file_lock = LOG_FILE.get_or_init(|| {
         let path = crate::config::AppPaths::discover()
             .map(|p| p.data_dir.join("vessel.log"))

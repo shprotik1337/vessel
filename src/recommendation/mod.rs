@@ -4,7 +4,9 @@ use crate::{
     model::{ProviderKind, TrackRef},
     provider::ProviderRegistry,
     storage::Storage,
-    wave::{generate_wave, track_key, WaveGenerationRequest, WaveMode, WaveSettings, WaveSourceMode},
+    wave::{
+        WaveGenerationRequest, WaveMode, WaveSettings, WaveSourceMode, generate_wave, track_key,
+    },
 };
 
 pub mod autoplay;
@@ -19,8 +21,8 @@ mod tests;
 pub use autoplay::generate_autoplay_chunk;
 pub use home::generate_home_recommendations;
 pub use mixes::{
-    get_or_generate_explore_content, get_or_generate_personal_mixes, ExploreContent, MixItem,
-    MIX_THEMES,
+    ExploreContent, MIX_THEMES, MixItem, get_or_generate_explore_content,
+    get_or_generate_personal_mixes,
 };
 pub use scoring::{balance_collections, balance_providers_organic};
 pub use smart_shuffle::apply_smart_shuffle;
@@ -141,11 +143,7 @@ pub fn parse_provider_filter(filter: Option<&str>) -> Option<Vec<ProviderKind>> 
             kinds.push(kind);
         }
     }
-    if kinds.is_empty() {
-        None
-    } else {
-        Some(kinds)
-    }
+    if kinds.is_empty() { None } else { Some(kinds) }
 }
 
 async fn run(
@@ -189,7 +187,10 @@ async fn run(
     }
 
     let is_mixed = provider_priority.len() > 1;
-    let primary_provider = provider_priority.first().copied().unwrap_or(primary_provider);
+    let primary_provider = provider_priority
+        .first()
+        .copied()
+        .unwrap_or(primary_provider);
     let source_mode = if is_mixed {
         WaveSourceMode::FallbackSoft
     } else {
@@ -239,10 +240,7 @@ async fn run(
     }
 }
 
-pub fn load_playlist_tracks(
-    storage: &Storage,
-    excluded_playlist_ids: &[String],
-) -> Vec<TrackRef> {
+pub fn load_playlist_tracks(storage: &Storage, excluded_playlist_ids: &[String]) -> Vec<TrackRef> {
     let Ok(playlists) = storage.list_playlists() else {
         return Vec::new();
     };

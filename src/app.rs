@@ -180,7 +180,8 @@ impl App {
             }
             Action::Seek(delta) => {
                 self.player.position_ms = (self.player.position_ms as i64 + delta)
-                    .clamp(0, self.player.duration_ms as i64) as u64;
+                    .clamp(0, self.player.duration_ms as i64)
+                    as u64;
                 if self.now_playing.is_some() {
                     self.effects.push(AppEffect::Seek(self.player.position_ms));
                 }
@@ -216,8 +217,6 @@ impl App {
                     return;
                 }
 
-
-
                 // Честная длительность: декодерная — для локальных файлов,
                 // метаданные — для потоков
                 if duration_ms > 0 {
@@ -249,11 +248,16 @@ impl App {
                 self.status_message = message;
             }
             Action::OpenPlaylistImport => {
-                self.status_message = "Вставь ссылку на плейлист SoundCloud, Yandex или Deezer".to_string();
+                self.status_message =
+                    "Вставь ссылку на плейлист SoundCloud, Yandex или Deezer".to_string();
             }
-            Action::CloseModal | Action::ModalSubmit | Action::ModalPrevious
-                | Action::ModalNext | Action::ModalToggle
-                | Action::ModalInput(_) | Action::ModalBackspace => {}
+            Action::CloseModal
+            | Action::ModalSubmit
+            | Action::ModalPrevious
+            | Action::ModalNext
+            | Action::ModalToggle
+            | Action::ModalInput(_)
+            | Action::ModalBackspace => {}
             Action::CredentialSaved { kind, result } => {
                 if let Err(error) = result {
                     self.status_message = format!("Не удалось сохранить {:?}: {error}", kind);
@@ -269,7 +273,11 @@ impl App {
                     self.status_message = format!("Импорт не удался: {error}");
                 }
             }
-            Action::LikeSaved { track, liked, result } => {
+            Action::LikeSaved {
+                track,
+                liked,
+                result,
+            } => {
                 if result.is_err() {
                     let key = track.provider_key();
                     if liked {
@@ -314,7 +322,11 @@ impl App {
     pub fn control_play(&mut self, track: TrackRef) {
         self.playback_generation = self.playback_generation.wrapping_add(1);
         self.failed_cache_fallbacks.clear();
-        if let Some(index) = self.queue.iter().position(|current| current.provider_key() == track.provider_key()) {
+        if let Some(index) = self
+            .queue
+            .iter()
+            .position(|current| current.provider_key() == track.provider_key())
+        {
             self.queue_index = Some(index);
         } else {
             self.queue.push(track.clone());
@@ -344,7 +356,6 @@ impl App {
         self.queue_dirty = true;
         self.effects.push(AppEffect::Stop);
     }
-
 
     pub fn control_pause(&mut self) -> Result<(), String> {
         if self.now_playing.is_none() {
@@ -376,7 +387,10 @@ impl App {
     }
 
     pub fn control_toggle(&mut self) -> Result<(), String> {
-        if matches!(self.player.status, PlaybackStatus::Playing | PlaybackStatus::Buffering) {
+        if matches!(
+            self.player.status,
+            PlaybackStatus::Playing | PlaybackStatus::Buffering
+        ) {
             self.control_pause()
         } else {
             self.control_resume()
@@ -396,7 +410,6 @@ impl App {
         self.player.status = PlaybackStatus::Stopped;
         self.effects.push(AppEffect::Stop);
     }
-
 
     pub fn take_effects(&mut self) -> Vec<AppEffect> {
         std::mem::take(&mut self.effects)
@@ -459,7 +472,11 @@ impl App {
         self.now_playing = self.queue.get(index).cloned();
         self.player.position_ms = 0;
         self.player.buffered_ms = 0;
-        self.player.duration_ms = self.now_playing.as_ref().and_then(|t| t.duration_ms).unwrap_or_default();
+        self.player.duration_ms = self
+            .now_playing
+            .as_ref()
+            .and_then(|t| t.duration_ms)
+            .unwrap_or_default();
         self.player.status = PlaybackStatus::Buffering;
         self.queue_dirty = true;
         if let Some(track) = self.now_playing.clone() {
@@ -481,7 +498,8 @@ impl App {
             crate::audio::AudioEvent::Paused => self.player.status = PlaybackStatus::Paused,
             crate::audio::AudioEvent::Stopped => self.player.status = PlaybackStatus::Stopped,
             crate::audio::AudioEvent::Ended => self.next_track(),
-            crate::audio::AudioEvent::Failed(error) | crate::audio::AudioEvent::OutputFailed(error) => {
+            crate::audio::AudioEvent::Failed(error)
+            | crate::audio::AudioEvent::OutputFailed(error) => {
                 let is_cache_err = error.contains("сбой локального кэша")
                     || error.contains("os error 2")
                     || error.contains("Не удается найти указанный файл")
@@ -498,9 +516,9 @@ impl App {
                         crate::provider::cache::delete_cached_track(&track);
                         self.player.status = PlaybackStatus::Buffering;
                         self.playback_generation = self.playback_generation.wrapping_add(1);
-                        self.effects.push(AppEffect::PlayWithoutCache(Box::new(track)));
+                        self.effects
+                            .push(AppEffect::PlayWithoutCache(Box::new(track)));
                         return;
-
                     }
                 }
 
@@ -546,7 +564,10 @@ impl App {
 
     pub fn gui_toggle_like_track(&mut self, track: &TrackRef) -> bool {
         let key = track.provider_key();
-        let liked = !self.library.iter().any(|current| current.provider_key() == key);
+        let liked = !self
+            .library
+            .iter()
+            .any(|current| current.provider_key() == key);
         if liked {
             self.library.insert(0, track.clone());
         } else {
@@ -663,7 +684,11 @@ impl App {
                 }
 
                 let unplayed = self.queue[current + 1..].to_vec();
-                let shuffle_res = crate::wave::SmartShuffleInterleaver::interleave(&unplayed, &recommendations, 2);
+                let shuffle_res = crate::wave::SmartShuffleInterleaver::interleave(
+                    &unplayed,
+                    &recommendations,
+                    2,
+                );
 
                 self.queue.truncate(current + 1);
                 self.queue.extend(shuffle_res.interleaved_queue);
@@ -751,7 +776,11 @@ impl App {
     }
 
     pub fn gui_search(&mut self, query: String, provider: SearchProvider, immediate: bool) {
-        self.effects.push(AppEffect::Search { query, provider, immediate });
+        self.effects.push(AppEffect::Search {
+            query,
+            provider,
+            immediate,
+        });
     }
 
     pub fn gui_dispatch(&mut self, effect: AppEffect) {
@@ -769,7 +798,11 @@ fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{config::AppConfig, effect::AppEffect, model::{PlaybackCapability, ProviderKind}};
+    use crate::{
+        config::AppConfig,
+        effect::AppEffect,
+        model::{PlaybackCapability, ProviderKind},
+    };
     use url::Url;
 
     fn test_track() -> TrackRef {
@@ -902,17 +935,24 @@ mod tests {
         // Заполняем очередь двумя треками [A, B] и включаем трек A
         app.gui_play_tracks(vec![track_a.clone(), track_b.clone()], 0);
         assert_eq!(app.queue_index, Some(0));
-        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_a"));
+        assert_eq!(
+            app.now_playing.as_ref().map(|t| t.id.as_str()),
+            Some("track_a")
+        );
         let _ = app.take_effects();
 
         // Имитируем сбой открытия локального кэш-файла
         app.handle(Action::Audio(crate::audio::AudioEvent::Failed(
-            "локальный кэш-файл не найден: Не удается найти указанный файл. (os error 2)".to_string(),
+            "локальный кэш-файл не найден: Не удается найти указанный файл. (os error 2)"
+                .to_string(),
         )));
 
         // КРИТИЧНО: очередь НЕ должна была перескочить на трек B!
         assert_eq!(app.queue_index, Some(0));
-        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_a"));
+        assert_eq!(
+            app.now_playing.as_ref().map(|t| t.id.as_str()),
+            Some("track_a")
+        );
         assert_eq!(app.player.status, PlaybackStatus::Buffering);
 
         // Должен быть порожден эффект PlayWithoutCache для трека A
@@ -929,7 +969,10 @@ mod tests {
         )));
         assert_eq!(app.player.status, PlaybackStatus::Error);
         assert_eq!(app.queue_index, Some(0));
-        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_a"));
+        assert_eq!(
+            app.now_playing.as_ref().map(|t| t.id.as_str()),
+            Some("track_a")
+        );
     }
 
     #[test]
@@ -948,11 +991,17 @@ mod tests {
         app.control_play(track_b.clone());
         let _ = app.take_effects();
 
-        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_b"));
+        assert_eq!(
+            app.now_playing.as_ref().map(|t| t.id.as_str()),
+            Some("track_b")
+        );
 
         // Успешный старт трека B очищает состояния fallback
         app.handle(Action::Audio(crate::audio::AudioEvent::Playing));
         assert_eq!(app.player.status, PlaybackStatus::Playing);
-        assert_eq!(app.now_playing.as_ref().map(|t| t.id.as_str()), Some("track_b"));
+        assert_eq!(
+            app.now_playing.as_ref().map(|t| t.id.as_str()),
+            Some("track_b")
+        );
     }
 }

@@ -15,8 +15,7 @@ use crate::{
     provider::{CollectionItem, CollectionKind, MusicProvider, ProviderRegistry},
     storage::Storage,
     wave::{
-        is_tracklike, is_valid_artist_name, track_semantic_key, WaveGenreProfile,
-        WaveTasteProfile,
+        WaveGenreProfile, WaveTasteProfile, is_tracklike, is_valid_artist_name, track_semantic_key,
     },
 };
 
@@ -96,12 +95,19 @@ pub async fn get_or_generate_personal_mixes(
         "allpl".to_string()
     };
     let pl_tracks_count: usize = if include_playlists {
-        storage.list_playlists().map(|list| {
-            list.into_iter()
-                .filter(|p| !excluded_playlist_ids.iter().any(|id| id == &p.id.to_string()))
-                .map(|p| p.tracks.len())
-                .sum()
-        }).unwrap_or(0)
+        storage
+            .list_playlists()
+            .map(|list| {
+                list.into_iter()
+                    .filter(|p| {
+                        !excluded_playlist_ids
+                            .iter()
+                            .any(|id| id == &p.id.to_string())
+                    })
+                    .map(|p| p.tracks.len())
+                    .sum()
+            })
+            .unwrap_or(0)
     } else {
         0
     };
@@ -111,7 +117,14 @@ pub async fn get_or_generate_personal_mixes(
     } else {
         now_ms / (1000 * 3600) // 1-часовой слот для ротации
     };
-    let cache_key = format!("personal_mixes_v17_{}_{}_{}_{}_{}", prov_sorted.join("_"), lib_count, pl_tracks_count, pl_suffix, time_slot);
+    let cache_key = format!(
+        "personal_mixes_v17_{}_{}_{}_{}_{}",
+        prov_sorted.join("_"),
+        lib_count,
+        pl_tracks_count,
+        pl_suffix,
+        time_slot
+    );
 
     if !force_refresh {
         if let Ok(Some(cached_json)) = storage.get_cached_recommendation(&cache_key, 3600) {
@@ -127,11 +140,24 @@ pub async fn get_or_generate_personal_mixes(
     let mut rng = if force_refresh {
         now_ms as u64
     } else {
-        (time_slot as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+        (time_slot as u64)
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407)
     };
 
-    let mut core_artists: Vec<String> = profile.top_artists.iter().take(4).map(|(a, _)| a.clone()).collect();
-    let mut rotation_artists: Vec<String> = profile.top_artists.iter().skip(4).take(14).map(|(a, _)| a.clone()).collect();
+    let mut core_artists: Vec<String> = profile
+        .top_artists
+        .iter()
+        .take(4)
+        .map(|(a, _)| a.clone())
+        .collect();
+    let mut rotation_artists: Vec<String> = profile
+        .top_artists
+        .iter()
+        .skip(4)
+        .take(14)
+        .map(|(a, _)| a.clone())
+        .collect();
 
     // Добавляем коллабораторов любимых артистов в пул ротации
     for (name, _) in profile.top_artists.iter().take(5) {
@@ -147,13 +173,17 @@ pub async fn get_or_generate_personal_mixes(
     // Перемешиваем core и rotation
     let c_len = core_artists.len();
     for i in (1..c_len).rev() {
-        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng = rng
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = ((rng >> 32) as usize) % (i + 1);
         core_artists.swap(i, j);
     }
     let r_len = rotation_artists.len();
     for i in (1..r_len).rev() {
-        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng = rng
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = ((rng >> 32) as usize) % (i + 1);
         rotation_artists.swap(i, j);
     }
@@ -184,7 +214,10 @@ pub async fn get_or_generate_personal_mixes(
     }
 
     let semaphore = Arc::new(Semaphore::new(8));
-    let search_cache = Arc::new(tokio::sync::Mutex::new(HashMap::<(ProviderKind, String), Vec<TrackRef>>::new()));
+    let search_cache = Arc::new(tokio::sync::Mutex::new(HashMap::<
+        (ProviderKind, String),
+        Vec<TrackRef>,
+    >::new()));
     let mut mix_futures = Vec::new();
 
     for i in 0..12 {
@@ -250,7 +283,9 @@ pub async fn get_or_generate_personal_mixes(
                         if let Ok(Ok(search_res)) = timeout(
                             Duration::from_millis(2500),
                             provider.search(&artist_name, None),
-                        ).await {
+                        )
+                        .await
+                        {
                             let mut c = cache_ref.lock().await;
                             c.insert(cache_key, search_res.tracks.clone());
                             search_res.tracks
@@ -329,7 +364,9 @@ pub async fn get_or_generate_personal_mixes(
                             if let Ok(Ok(search_res)) = timeout(
                                 Duration::from_millis(2500),
                                 provider.search(&partner_name, None),
-                            ).await {
+                            )
+                            .await
+                            {
                                 let mut c = cache_ref.lock().await;
                                 c.insert(cache_key, search_res.tracks.clone());
                                 search_res.tracks
@@ -352,7 +389,9 @@ pub async fn get_or_generate_personal_mixes(
                             if !profile_ref.known_track_ids.contains(&t.id)
                                 && !profile_ref.known_semantic_keys.contains(&sk)
                                 && is_tracklike(&t)
-                                && (genre_sim >= 0.22 || (mix_genre_profile.is_empty() && profile_ref.genre_profile.is_empty()))
+                                && (genre_sim >= 0.22
+                                    || (mix_genre_profile.is_empty()
+                                        && profile_ref.genre_profile.is_empty()))
                             {
                                 prov_tracks.push(t);
                                 if prov_tracks.len() >= 6 {
@@ -402,7 +441,10 @@ pub async fn get_or_generate_personal_mixes(
                             } else {
                                 profile_ref.genre_profile.similarity(t)
                             };
-                            if genre_sim < 0.22 && (!mix_genre_profile.is_empty() || !profile_ref.genre_profile.is_empty()) {
+                            if genre_sim < 0.22
+                                && (!mix_genre_profile.is_empty()
+                                    || !profile_ref.genre_profile.is_empty())
+                            {
                                 continue;
                             }
                             let sk = track_semantic_key(t);
@@ -432,7 +474,9 @@ pub async fn get_or_generate_personal_mixes(
                 }
             }
 
-            let cover_url = organic_tracks.iter().find_map(|t| t.artwork_url.as_ref().map(|u| u.to_string()));
+            let cover_url = organic_tracks
+                .iter()
+                .find_map(|t| t.artwork_url.as_ref().map(|u| u.to_string()));
             MixItem {
                 id: i + 1,
                 pill_color: theme.0.to_string(),
@@ -498,12 +542,19 @@ pub async fn get_or_generate_explore_content(
         "allpl".to_string()
     };
     let pl_tracks_count: usize = if include_playlists {
-        storage.list_playlists().map(|list| {
-            list.into_iter()
-                .filter(|p| !excluded_playlist_ids.iter().any(|id| id == &p.id.to_string()))
-                .map(|p| p.tracks.len())
-                .sum()
-        }).unwrap_or(0)
+        storage
+            .list_playlists()
+            .map(|list| {
+                list.into_iter()
+                    .filter(|p| {
+                        !excluded_playlist_ids
+                            .iter()
+                            .any(|id| id == &p.id.to_string())
+                    })
+                    .map(|p| p.tracks.len())
+                    .sum()
+            })
+            .unwrap_or(0)
     } else {
         0
     };
@@ -513,7 +564,14 @@ pub async fn get_or_generate_explore_content(
     } else {
         now_ms / (1000 * 1800) // 30-минутный временной слот ротации
     };
-    let cache_key = format!("explore_content_v18_{}_{}_{}_{}_{}", prov_sorted.join("_"), lib_count, pl_tracks_count, pl_suffix, hour_slot);
+    let cache_key = format!(
+        "explore_content_v18_{}_{}_{}_{}_{}",
+        prov_sorted.join("_"),
+        lib_count,
+        pl_tracks_count,
+        pl_suffix,
+        hour_slot
+    );
 
     if !force_refresh {
         if let Ok(Some(cached_json)) = storage.get_cached_recommendation(&cache_key, 1800) {
@@ -569,7 +627,9 @@ pub async fn get_or_generate_explore_content(
         };
         let len = candidate_artists.len();
         for i in (1..len).rev() {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let j = ((rng >> 32) as usize) % (i + 1);
             candidate_artists.swap(i, j);
         }
@@ -598,7 +658,10 @@ pub async fn get_or_generate_explore_content(
                     let artists = timeout(
                         Duration::from_millis(3500),
                         provider.search_collections(&artist_name, CollectionKind::Artist),
-                    ).await.ok()?.ok()?;
+                    )
+                    .await
+                    .ok()?
+                    .ok()?;
                     for item in &artists {
                         let title_lower = item.title.trim().to_lowercase();
                         let target_lower = artist_name.trim().to_lowercase();
@@ -612,7 +675,11 @@ pub async fn get_or_generate_explore_content(
                     artists.into_iter().next()
                 }
             });
-            let matched_artists: Vec<CollectionItem> = join_all(artist_sub_futures).await.into_iter().flatten().collect();
+            let matched_artists: Vec<CollectionItem> = join_all(artist_sub_futures)
+                .await
+                .into_iter()
+                .flatten()
+                .collect();
 
             let album_sub_futures = prov_list.iter().map(|&(_prov_kind, ref provider)| {
                 let sem = sem.clone();
@@ -623,7 +690,10 @@ pub async fn get_or_generate_explore_content(
                     let albums = timeout(
                         Duration::from_millis(3500),
                         provider.search_collections(&artist_name, CollectionKind::Album),
-                    ).await.ok()?.ok()?;
+                    )
+                    .await
+                    .ok()?
+                    .ok()?;
                     let mut found = Vec::new();
                     for item in albums {
                         if item.track_count > 0 {
@@ -636,7 +706,12 @@ pub async fn get_or_generate_explore_content(
                     Some(found)
                 }
             });
-            let matched_albums: Vec<CollectionItem> = join_all(album_sub_futures).await.into_iter().flatten().flatten().collect();
+            let matched_albums: Vec<CollectionItem> = join_all(album_sub_futures)
+                .await
+                .into_iter()
+                .flatten()
+                .flatten()
+                .collect();
 
             (artist_name, matched_artists, matched_albums)
         });
@@ -694,7 +769,10 @@ pub async fn get_or_generate_explore_content(
     }
 
     if artist_items.is_empty() {
-        let fallback_prov = allowed_providers.first().copied().unwrap_or(ProviderKind::Spotify);
+        let fallback_prov = allowed_providers
+            .first()
+            .copied()
+            .unwrap_or(ProviderKind::Spotify);
         for (artist_name, _) in profile.top_artists.iter().take(12) {
             artist_items.push(CollectionItem {
                 kind: CollectionKind::Artist,

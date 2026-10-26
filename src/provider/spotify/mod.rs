@@ -84,7 +84,9 @@ impl SpotifyProvider {
         let album = value
             .pointer("/data/albumUnion")
             .context("Pathfinder не вернул albumUnion")?;
-        let title = mapping::jstr(album, &["name"]).unwrap_or("Spotify альбом").to_string();
+        let title = mapping::jstr(album, &["name"])
+            .unwrap_or("Spotify альбом")
+            .to_string();
         let artist = album
             .get("artists")
             .and_then(|a| a.get("items"))
@@ -194,7 +196,10 @@ impl MusicProvider for SpotifyProvider {
         } else {
             None
         };
-        Ok(SearchPage { tracks, next_cursor })
+        Ok(SearchPage {
+            tracks,
+            next_cursor,
+        })
     }
 
     async fn search_collections(
@@ -239,11 +244,7 @@ impl MusicProvider for SpotifyProvider {
         loop {
             let variables = serde_json::json!({ "limit": PAGE, "offset": offset });
             let value = self
-                .pathfinder(
-                    "fetchLibraryTracks",
-                    client::LIBRARY_TRACKS_HASH,
-                    variables,
-                )
+                .pathfinder("fetchLibraryTracks", client::LIBRARY_TRACKS_HASH, variables)
                 .await
                 .context("Spotify не отдал лайки (проверь вход через браузер)")?;
             let Some(items) = value
@@ -304,7 +305,9 @@ impl MusicProvider for SpotifyProvider {
         let playlist = value
             .pointer("/data/playlistV2")
             .context("Pathfinder не вернул playlistV2")?;
-        let title = mapping::jstr(playlist, &["name"]).unwrap_or("Spotify плейлист").to_string();
+        let title = mapping::jstr(playlist, &["name"])
+            .unwrap_or("Spotify плейлист")
+            .to_string();
         let owner = playlist
             .get("ownerV2")
             .and_then(|o| o.get("data"))
@@ -371,7 +374,10 @@ impl MusicProvider for SpotifyProvider {
         Ok(items
             .into_iter()
             .filter_map(|wrapper| {
-                let item = wrapper.get("track").and_then(|t| t.get("data")).unwrap_or(&wrapper);
+                let item = wrapper
+                    .get("track")
+                    .and_then(|t| t.get("data"))
+                    .unwrap_or(&wrapper);
                 mapping::map_pf_track(item)
             })
             .take(limit)

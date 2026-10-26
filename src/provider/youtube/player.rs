@@ -61,12 +61,19 @@ pub fn best_audio(player: &Value) -> Result<AudioStream> {
             }
             // нужны либо plain url, либо signatureCipher — оба decipherable
             if item.get("url").and_then(Value::as_str).is_none()
-                && item.get("signatureCipher").and_then(Value::as_str).is_none()
+                && item
+                    .get("signatureCipher")
+                    .and_then(Value::as_str)
+                    .is_none()
             {
                 return None;
             }
             let bitrate = item.get("bitrate").and_then(Value::as_u64).unwrap_or(0);
-            Some(AudioStream { url: String::new(), mime, bitrate })
+            Some(AudioStream {
+                url: String::new(),
+                mime,
+                bitrate,
+            })
         })
         .collect();
     if candidates.is_empty() {
@@ -135,7 +142,11 @@ pub async fn decipher_player_js(
 pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<ResolvedStream> {
     let http = clients_http();
     let cookie_raw = client.cookie_value();
-    let cookie = if cookie_raw.is_empty() { None } else { Some(cookie_raw.as_str()) };
+    let cookie = if cookie_raw.is_empty() {
+        None
+    } else {
+        Some(cookie_raw.as_str())
+    };
 
     // 1. Premium (есть cookies): WEB_REMIX отдаёт 256k AAC
     if cookie.is_some() {
@@ -143,7 +154,8 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
             Ok(stream) => {
                 crate::dlog!(
                     "[Playback] WEB_REMIX ok: clen={} range_safe={}",
-                    stream.content_length, stream.range_safe
+                    stream.content_length,
+                    stream.range_safe
                 );
                 return Ok(stream);
             }
@@ -154,7 +166,15 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
     }
 
     // 2. Аноним / без cookies: ANDROID_VR + POT — основной полноскоростной путь (Kopuz pipeline)
-    match try_android_vr_pot(&http, client, cookie, video_id, super::clients::ANDROID_VR_1_61_48).await {
+    match try_android_vr_pot(
+        &http,
+        client,
+        cookie,
+        video_id,
+        super::clients::ANDROID_VR_1_61_48,
+    )
+    .await
+    {
         Ok(stream) => {
             crate::dlog!(
                 "[Playback] ANDROID_VR_1_61_48+POT ok: clen={} range_safe=true",
@@ -166,7 +186,15 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
             crate::dlog!("[Playback] ANDROID_VR_1_61_48+POT путь не удался: {error:#}");
         }
     }
-    match try_android_vr_pot(&http, client, cookie, video_id, super::clients::ANDROID_VR_1_43_32).await {
+    match try_android_vr_pot(
+        &http,
+        client,
+        cookie,
+        video_id,
+        super::clients::ANDROID_VR_1_43_32,
+    )
+    .await
+    {
         Ok(stream) => {
             crate::dlog!(
                 "[Playback] ANDROID_VR_1_43_32+POT ok: clen={} range_safe=true",
@@ -198,7 +226,8 @@ pub async fn resolve_stream(client: &YoutubeClient, video_id: &str) -> Result<Re
         Ok(stream) => {
             crate::dlog!(
                 "[Playback] WEB_REMIX (fallback) ok: clen={} range_safe={}",
-                stream.content_length, stream.range_safe
+                stream.content_length,
+                stream.range_safe
             );
             return Ok(stream);
         }
@@ -245,7 +274,10 @@ async fn try_web_remix(
                     break;
                 }
                 Err(e) => {
-                    crate::dlog!("[Playback] Content POT mint failed (попытка {}): {e:#}", attempt + 1);
+                    crate::dlog!(
+                        "[Playback] Content POT mint failed (попытка {}): {e:#}",
+                        attempt + 1
+                    );
                 }
             }
         }
@@ -260,7 +292,11 @@ async fn try_web_remix(
         PlayerExtras {
             signature_timestamp: Some(sts),
             content_pot: content_pot.as_deref(),
-            visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
+            visitor_data: if visitor_data.is_empty() {
+                None
+            } else {
+                Some(&visitor_data)
+            },
             ..Default::default()
         },
     )
@@ -333,10 +369,16 @@ async fn try_web_remix(
     }
 
     let mut source = stream_source(
-        AudioStream { url, mime: mime.clone(), bitrate: 0 },
+        AudioStream {
+            url,
+            mime: mime.clone(),
+            bitrate: 0,
+        },
         None,
     )?;
-    source.headers.insert("User-Agent".to_string(), WEB_REMIX.user_agent.to_string());
+    source
+        .headers
+        .insert("User-Agent".to_string(), WEB_REMIX.user_agent.to_string());
     Ok(ResolvedStream {
         source,
         range_safe: pot_ok,
@@ -381,20 +423,31 @@ async fn try_android_vr_pot(
         cookie,
         PlayerExtras {
             content_pot: Some(&pot),
-            visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
+            visitor_data: if visitor_data.is_empty() {
+                None
+            } else {
+                Some(&visitor_data)
+            },
             signature_timestamp: None,
         },
     )
     .await?;
     let mut stream = stream_android_vr(player)?;
     if !pot.is_empty() {
-        let sep = if stream.source.url.query().is_some() { "&" } else { "?" };
+        let sep = if stream.source.url.query().is_some() {
+            "&"
+        } else {
+            "?"
+        };
         let new_url = format!("{}{sep}pot={pot}", stream.source.url);
         if let Ok(parsed) = url::Url::parse(&new_url) {
             stream.source.url = parsed;
         }
     }
-    stream.source.headers.insert("User-Agent".to_string(), target_client.user_agent.to_string());
+    stream.source.headers.insert(
+        "User-Agent".to_string(),
+        target_client.user_agent.to_string(),
+    );
     stream.range_safe = true;
     Ok(stream)
 }
@@ -413,8 +466,7 @@ async fn is_stream_url_alive(
     }
     match builder.send().await {
         Ok(resp) => {
-            resp.status().is_success()
-                || resp.status() == reqwest::StatusCode::PARTIAL_CONTENT
+            resp.status().is_success() || resp.status() == reqwest::StatusCode::PARTIAL_CONTENT
         }
         Err(_) => false,
     }
@@ -432,7 +484,11 @@ async fn try_visionos(
         video_id,
         cookie,
         PlayerExtras {
-            visitor_data: if visitor_data.is_empty() { None } else { Some(&visitor_data) },
+            visitor_data: if visitor_data.is_empty() {
+                None
+            } else {
+                Some(&visitor_data)
+            },
             ..Default::default()
         },
     )
@@ -514,11 +570,22 @@ fn stream_plain_client(player: Value, user_agent: &str) -> Result<ResolvedStream
     let url = best.get("url").and_then(Value::as_str).context("нет url")?;
 
     let mut source = stream_source(
-        AudioStream { url: url.to_string(), mime, bitrate: 0 },
+        AudioStream {
+            url: url.to_string(),
+            mime,
+            bitrate: 0,
+        },
         None,
     )?;
-    source.headers.insert("User-Agent".to_string(), user_agent.to_string());
-    Ok(ResolvedStream { source, range_safe: false, content_length, duration_ms })
+    source
+        .headers
+        .insert("User-Agent".to_string(), user_agent.to_string());
+    Ok(ResolvedStream {
+        source,
+        range_safe: false,
+        content_length,
+        duration_ms,
+    })
 }
 
 #[cfg(test)]
@@ -561,19 +628,25 @@ mod tests {
     async fn test_live_resolve_and_fetch() {
         let client = YoutubeClient::new().expect("client");
         let stream = resolve_stream(&client, "dQw4w9WgXcQ").await;
-        println!("Live resolve result: {:?}", stream.as_ref().map(|s| (&s.source.url, s.range_safe, s.content_length)));
+        println!(
+            "Live resolve result: {:?}",
+            stream
+                .as_ref()
+                .map(|s| (&s.source.url, s.range_safe, s.content_length))
+        );
         let stream = stream.expect("resolve failed");
-        
+
         tokio::task::spawn_blocking(move || {
             let mut source = crate::audio::HttpRangeSource::open(
                 stream.source.url.as_str(),
                 &stream.source.headers,
                 stream.source.supports_range,
-            ).expect("open HttpRangeSource");
+            )
+            .expect("open HttpRangeSource");
 
             use std::io::Read;
             let mut buf = vec![0u8; 512 * 1024];
-            
+
             let mut total_read = 0usize;
             let mut chunk_index = 0usize;
             loop {
@@ -582,12 +655,17 @@ mod tests {
                     break;
                 }
                 total_read += n;
-                println!("Read chunk {chunk_index}: {n} bytes (total: {total_read}/{})", stream.content_length);
+                println!(
+                    "Read chunk {chunk_index}: {n} bytes (total: {total_read}/{})",
+                    stream.content_length
+                );
                 chunk_index += 1;
             }
             println!("Finished reading entire stream: {total_read} bytes");
             assert_eq!(total_read as u64, stream.content_length);
-        }).await.expect("task join");
+        })
+        .await
+        .expect("task join");
     }
 
     #[tokio::test]
@@ -595,21 +673,33 @@ mod tests {
     async fn test_live_twin_team() {
         use crate::provider::MusicProvider;
         let provider = super::super::YouTubeMusicProvider::new().unwrap();
-        let page = provider.search("Playboi Carti - Twin Team (feat. Lil Uzi Vert)", None).await.unwrap();
+        let page = provider
+            .search("Playboi Carti - Twin Team (feat. Lil Uzi Vert)", None)
+            .await
+            .unwrap();
         println!("YTM search returned {} tracks:", page.tracks.len());
         for t in &page.tracks[..5.min(page.tracks.len())] {
-            println!("  Track: id={} title='{}' artists={:?}", t.id, t.title, t.artists);
+            println!(
+                "  Track: id={} title='{}' artists={:?}",
+                t.id, t.title, t.artists
+            );
         }
         let client = super::YoutubeClient::new().unwrap();
-        let stream = super::resolve_stream(&client, "anmYryzI_9w").await.expect("resolve_stream failed");
-        println!("resolve_stream result: URL={} safe={} clen={}", stream.source.url, stream.range_safe, stream.content_length);
+        let stream = super::resolve_stream(&client, "anmYryzI_9w")
+            .await
+            .expect("resolve_stream failed");
+        println!(
+            "resolve_stream result: URL={} safe={} clen={}",
+            stream.source.url, stream.range_safe, stream.content_length
+        );
 
         tokio::task::spawn_blocking(move || {
             let mut source = crate::audio::HttpRangeSource::open(
                 stream.source.url.as_str(),
                 &stream.source.headers,
                 stream.source.supports_range,
-            ).expect("open HttpRangeSource");
+            )
+            .expect("open HttpRangeSource");
 
             use std::io::Read;
             let mut buf = vec![0u8; 512 * 1024];
@@ -622,7 +712,10 @@ mod tests {
                     }
                     Ok(n) => {
                         total_read += n;
-                        println!("Read chunk {chunk_index}: {n} bytes (total: {total_read}/{})", stream.content_length);
+                        println!(
+                            "Read chunk {chunk_index}: {n} bytes (total: {total_read}/{})",
+                            stream.content_length
+                        );
                     }
                     Err(e) => {
                         panic!("Read chunk {chunk_index} FAILED: {e:#}");
@@ -630,14 +723,16 @@ mod tests {
                 }
             }
             assert_eq!(total_read as u64, stream.content_length);
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
     #[ignore = "hits remote server"]
     async fn test_live_youtube_server_twin_team() {
+        use crate::model::{PlaybackCapability, ProviderKind, TrackRef};
         use crate::provider::remote::ServerClient;
-        use crate::model::{ProviderKind, TrackRef, PlaybackCapability};
 
         let server_url = std::env::var("VESSEL_TEST_SERVER_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:7700".to_string());
@@ -647,12 +742,19 @@ mod tests {
                 // Пытаемся взять локальный токен сервера из secrets.json, если есть
                 if let Ok(paths) = crate::config::AppPaths::discover() {
                     let secrets = crate::secrets::SecretStore::new(paths.secrets_file);
-                    secrets.get(crate::secrets::SecretKey::SessionToken).ok().flatten()
+                    secrets
+                        .get(crate::secrets::SecretKey::SessionToken)
+                        .ok()
+                        .flatten()
                         .or_else(|| {
                             // Проверяем сохраненные server tokens
-                            if let Ok(content) = std::fs::read_to_string(paths.data_dir.join("secrets.json")) {
-                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                                    if let Some(obj) = val.get("values").and_then(|v| v.as_object()) {
+                            if let Ok(content) =
+                                std::fs::read_to_string(paths.data_dir.join("secrets.json"))
+                            {
+                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
+                                {
+                                    if let Some(obj) = val.get("values").and_then(|v| v.as_object())
+                                    {
                                         for (k, v) in obj {
                                             if k.starts_with("vessel-server:") {
                                                 return v.as_str().map(String::from);
@@ -671,7 +773,9 @@ mod tests {
         };
 
         if token.is_empty() {
-            println!("[Server Test] Токен сервера не задан (VESSEL_TEST_SERVER_TOKEN), пропускаем.");
+            println!(
+                "[Server Test] Токен сервера не задан (VESSEL_TEST_SERVER_TOKEN), пропускаем."
+            );
             return;
         }
         let client = ServerClient::new(&server_url, &token).expect("ServerClient");
@@ -694,7 +798,10 @@ mod tests {
             album_title: None,
         };
 
-        println!("[Server Test] Resolving track anmYryzI_9w via server relay: {}", server_url);
+        println!(
+            "[Server Test] Resolving track anmYryzI_9w via server relay: {}",
+            server_url
+        );
         let source = match client.playback_source(&track, true).await {
             Ok(s) => s,
             Err(e) => {
@@ -704,14 +811,18 @@ mod tests {
         };
 
         println!("[Server Test] Resolved source URL: {}", source.url);
-        assert!(source.url.as_str().contains("/api/v1/s/"), "Should be routed through server relay");
+        assert!(
+            source.url.as_str().contains("/api/v1/s/"),
+            "Should be routed through server relay"
+        );
 
         tokio::task::spawn_blocking(move || {
             let mut stream_source = crate::audio::HttpRangeSource::open(
                 source.url.as_str(),
                 &source.headers,
                 source.supports_range,
-            ).expect("open HttpRangeSource via server");
+            )
+            .expect("open HttpRangeSource via server");
 
             let stream = symphonia::core::io::MediaSourceStream::new(
                 Box::new(stream_source),
@@ -721,28 +832,27 @@ mod tests {
             if let Some(mime) = source.mime_type.as_deref() {
                 hint.mime_type(mime);
             }
-            let probed = symphonia::default::get_probe()
-                .probe(
-                    &hint,
-                    stream,
-                    Default::default(),
-                    Default::default(),
-                );
+            let probed = symphonia::default::get_probe().probe(
+                &hint,
+                stream,
+                Default::default(),
+                Default::default(),
+            );
             match probed {
                 Ok(mut format) => {
                     let track = format.default_track(symphonia::core::formats::TrackType::Audio);
-                    println!("[Server Test] Symphonia probe OK! Track: {:?}", track.is_some());
+                    println!(
+                        "[Server Test] Symphonia probe OK! Track: {:?}",
+                        track.is_some()
+                    );
                 }
                 Err(e) => {
                     panic!("[Server Test] Symphonia probe FAILED: {e:#}");
                 }
             }
             println!("[Server Test] УСПЕХ! Стрим через сервер полностью декодируется Symphonia.");
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 }
-
-
-
-
-

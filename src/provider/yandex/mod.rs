@@ -22,8 +22,8 @@ use yandex_music::YandexMusicClient;
 use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
     provider::{
-        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider,
-        SearchPage,
+        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist,
+        MusicProvider, SearchPage,
     },
 };
 
@@ -109,7 +109,9 @@ impl YandexProvider {
     /// Проверяет, что OAuth-токен валиден: делает реальный поисковый
     /// запрос тем же кодом, которым идёт обычный поиск.
     pub async fn probe(&self) -> Result<()> {
-        search_tracks(&self.client, "vessel probe", None).await.map(|_| ())
+        search_tracks(&self.client, "vessel probe", None)
+            .await
+            .map(|_| ())
     }
 }
 

@@ -78,9 +78,10 @@ impl Storage {
     }
 
     pub fn vacuum_into(&self, target: &Path) -> Result<()> {
-        self.connection()?.execute_batch(
-            &format!("VACUUM INTO '{}'", target.display().to_string().replace('\'', "''")),
-        )?;
+        self.connection()?.execute_batch(&format!(
+            "VACUUM INTO '{}'",
+            target.display().to_string().replace('\'', "''")
+        ))?;
         Ok(())
     }
 
@@ -131,6 +132,11 @@ impl Storage {
         FollowedArtistsRepository::save(&conn, artist)
     }
 
+    pub fn get_followed_artist(&self, id: &str) -> Result<Option<FollowedArtist>> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::get(&conn, id)
+    }
+
     pub fn unfollow_artist(&self, id: &str) -> Result<bool> {
         let conn = self.connection()?;
         FollowedArtistsRepository::delete(&conn, id)
@@ -144,6 +150,37 @@ impl Storage {
     pub fn list_followed_artists(&self) -> Result<Vec<FollowedArtist>> {
         let conn = self.connection()?;
         FollowedArtistsRepository::list(&conn)
+    }
+
+    pub fn record_pending_artist_deletion(
+        &self,
+        user_id: &str,
+        provider: &str,
+        artist_id: &str,
+    ) -> Result<()> {
+        let conn = self.connection()?;
+        let now = chrono::Utc::now().timestamp_millis();
+        FollowedArtistsRepository::record_pending_deletion(&conn, user_id, provider, artist_id, now)
+    }
+
+    pub fn remove_pending_artist_deletion(
+        &self,
+        user_id: &str,
+        provider: &str,
+        artist_id: &str,
+    ) -> Result<bool> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::remove_pending_deletion(&conn, user_id, provider, artist_id)
+    }
+
+    pub fn list_pending_artist_deletions(&self, user_id: &str) -> Result<Vec<(String, String)>> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::list_pending_deletions(&conn, user_id)
+    }
+
+    pub fn clear_pending_artist_deletions(&self, user_id: &str) -> Result<usize> {
+        let conn = self.connection()?;
+        FollowedArtistsRepository::clear_pending_deletions(&conn, user_id)
     }
 
     // --- Library Operations ---
@@ -229,7 +266,11 @@ impl Storage {
         Ok(())
     }
 
-    pub fn get_cached_recommendation(&self, key: &str, max_age_secs: i64) -> Result<Option<String>> {
+    pub fn get_cached_recommendation(
+        &self,
+        key: &str,
+        max_age_secs: i64,
+    ) -> Result<Option<String>> {
         let conn = self.connection()?;
         RecommendationCacheRepository::get(&conn, key, max_age_secs)
     }
@@ -240,7 +281,10 @@ impl Storage {
     }
 
     pub fn connection(&self) -> Result<StorageConnection<'_>> {
-        let mut guard = self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = self
+            .conn
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if guard.is_none() {
             if let Some(parent) = self.path.parent() {
                 let _ = std::fs::create_dir_all(parent);

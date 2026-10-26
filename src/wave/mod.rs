@@ -4,8 +4,8 @@ mod generator;
 mod genre;
 mod pool;
 mod profile;
-pub mod queue_context;
 mod queries;
+pub mod queue_context;
 mod quota;
 mod score;
 mod seeds;
@@ -18,11 +18,11 @@ pub use config::{WaveMode, WaveMood, WaveSettings, WaveSourceMode, WaveTimeOfDay
 pub use generator::{WaveGeneration, WaveGenerationRequest, generate_wave};
 pub use genre::WaveGenreProfile;
 pub use profile::WaveTasteProfile;
+pub use queries::{explore_queries, recent_title_keywords};
 pub use queue_context::{
     ArtistDiversityGuard, QueueContext, RepeatPenaltyDecay, SmartShuffleInterleaver,
     SmartShuffleResult,
 };
-pub use queries::{explore_queries, recent_title_keywords};
 pub use quota::WaveQueueQuotas;
 pub use score::{RankedWaveTrack, WaveRankInput, WaveReason, rank_candidates};
 pub use selector::select_ranked;

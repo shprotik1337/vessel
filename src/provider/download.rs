@@ -89,9 +89,8 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
             if cached == dest {
                 return Ok(());
             }
-            std::fs::copy(&cached, dest).with_context(|| {
-                format!("не удалось сохранить в {}", dest.display())
-            })?;
+            std::fs::copy(&cached, dest)
+                .with_context(|| format!("не удалось сохранить в {}", dest.display()))?;
             Ok(())
         }
         "http" | "https" => {
@@ -108,8 +107,9 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                 tokio::task::spawn_blocking(move || -> Result<()> {
                     use std::io::{Read, Write};
                     let mut hls = crate::audio::HlsSource::open(&url, &headers, 0)?;
-                    let mut file = std::fs::File::create(&temporary_clone)
-                        .with_context(|| format!("не удалось создать {}", temporary_clone.display()))?;
+                    let mut file = std::fs::File::create(&temporary_clone).with_context(|| {
+                        format!("не удалось создать {}", temporary_clone.display())
+                    })?;
                     let mut buffer = [0u8; 64 * 1024];
                     let mut total_bytes = 0usize;
                     loop {
@@ -163,7 +163,11 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
 
                         if status == reqwest::StatusCode::PARTIAL_CONTENT {
                             if total_expected.is_none() {
-                                if let Some(cr) = resp.headers().get("content-range").and_then(|v| v.to_str().ok()) {
+                                if let Some(cr) = resp
+                                    .headers()
+                                    .get("content-range")
+                                    .and_then(|v| v.to_str().ok())
+                                {
                                     if let Some(pos) = cr.rfind('/') {
                                         if let Ok(tot) = cr[pos + 1..].trim().parse::<u64>() {
                                             total_expected = Some(tot);
@@ -173,7 +177,9 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                             }
                             let mut stream = resp;
                             let mut read_in_stream = 0usize;
-                            while let Some(chunk) = stream.chunk().await.context("сбой чтения потока")? {
+                            while let Some(chunk) =
+                                stream.chunk().await.context("сбой чтения потока")?
+                            {
                                 if chunk.is_empty() {
                                     break;
                                 }
@@ -202,7 +208,11 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                             }
                         } else if status == reqwest::StatusCode::OK {
                             let mut stream = resp;
-                            while let Some(chunk) = stream.chunk().await.context("сбой при загрузке аудиоданных")? {
+                            while let Some(chunk) = stream
+                                .chunk()
+                                .await
+                                .context("сбой при загрузке аудиоданных")?
+                            {
                                 downloaded += chunk.len();
                                 file.write_all(&chunk).await.context("ошибка записи")?;
                             }
@@ -213,7 +223,9 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                             bail!("сервер вернул статус {status}");
                         }
                     }
-                    file.flush().await.context("не удалось сбросить буфер записи")?;
+                    file.flush()
+                        .await
+                        .context("не удалось сбросить буфер записи")?;
                     if downloaded == 0 {
                         bail!("сервер отдал пустой файл");
                     }
@@ -230,13 +242,19 @@ pub async fn download_playback_source(source: &PlaybackSource, dest: &Path) -> R
                         .error_for_status()
                         .context("сервер отказал в скачивании трека")?;
                     let mut total_bytes = 0usize;
-                    while let Some(chunk) = response.chunk().await.context("сбой при загрузке аудиоданных")? {
+                    while let Some(chunk) = response
+                        .chunk()
+                        .await
+                        .context("сбой при загрузке аудиоданных")?
+                    {
                         total_bytes += chunk.len();
                         file.write_all(&chunk)
                             .await
                             .with_context(|| format!("ошибка записи в {}", temporary.display()))?;
                     }
-                    file.flush().await.context("не удалось сбросить буфер записи")?;
+                    file.flush()
+                        .await
+                        .context("не удалось сбросить буфер записи")?;
                     if total_bytes == 0 {
                         bail!("сервер отдал пустой файл");
                     }

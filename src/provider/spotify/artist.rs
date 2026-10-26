@@ -16,10 +16,7 @@ use super::{
     },
 };
 
-pub async fn artist_profile(
-    provider: &SpotifyProvider,
-    artist_id: &str,
-) -> Result<ArtistProfile> {
+pub async fn artist_profile(provider: &SpotifyProvider, artist_id: &str) -> Result<ArtistProfile> {
     let variables = serde_json::json!({
         "uri": format!("spotify:artist:{artist_id}"),
         "locale": "",
@@ -93,12 +90,18 @@ pub async fn artist_profile(
     for track in &mut popular_tracks {
         if track.artwork_url.is_none() {
             if let Some(ref title) = track.album_title {
-                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(title)) {
+                if let Some(r) = releases
+                    .iter()
+                    .find(|rel| rel.title.eq_ignore_ascii_case(title))
+                {
                     track.artwork_url = r.artwork_url.clone();
                 }
             }
             if track.artwork_url.is_none() {
-                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(&track.title)) {
+                if let Some(r) = releases
+                    .iter()
+                    .find(|rel| rel.title.eq_ignore_ascii_case(&track.title))
+                {
                     track.artwork_url = r.artwork_url.clone();
                 }
             }
@@ -245,12 +248,18 @@ pub async fn artist_all_tracks(
     for track in &mut tracks {
         if track.artwork_url.is_none() {
             if let Some(ref title) = track.album_title {
-                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(title)) {
+                if let Some(r) = releases
+                    .iter()
+                    .find(|rel| rel.title.eq_ignore_ascii_case(title))
+                {
                     track.artwork_url = r.artwork_url.clone();
                 }
             }
             if track.artwork_url.is_none() {
-                if let Some(r) = releases.iter().find(|rel| rel.title.eq_ignore_ascii_case(&track.title)) {
+                if let Some(r) = releases
+                    .iter()
+                    .find(|rel| rel.title.eq_ignore_ascii_case(&track.title))
+                {
                     track.artwork_url = r.artwork_url.clone();
                 }
             }

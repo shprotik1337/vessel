@@ -40,8 +40,11 @@ pub async fn mint_pot(ident: &str) -> Result<String> {
     });
 
     let (reply_tx, reply_rx) = oneshot::channel();
-    tx.send(MintRequest { video_id: ident.to_string(), reply: reply_tx })
-        .map_err(|_| anyhow::anyhow!("botguard channel closed"))?;
+    tx.send(MintRequest {
+        video_id: ident.to_string(),
+        reply: reply_tx,
+    })
+    .map_err(|_| anyhow::anyhow!("botguard channel closed"))?;
     reply_rx.await.context("botguard mint dropped")?
 }
 

@@ -7,7 +7,13 @@ use crate::{
 };
 
 /// Маппит трек из search/browse-ответа с обложкой.
-pub fn normalize_track(video_id: &str, title: &str, artists: Vec<String>, duration_ms: Option<u64>, thumbnail: Option<&Value>) -> TrackRef {
+pub fn normalize_track(
+    video_id: &str,
+    title: &str,
+    artists: Vec<String>,
+    duration_ms: Option<u64>,
+    thumbnail: Option<&Value>,
+) -> TrackRef {
     let artwork_url = thumbnail
         .and_then(|t| t.get("thumbnails"))
         .and_then(Value::as_array)
@@ -28,7 +34,11 @@ pub fn normalize_track(video_id: &str, title: &str, artists: Vec<String>, durati
     TrackRef {
         provider: ProviderKind::YouTubeMusic,
         id: video_id.to_string(),
-        title: if title.trim().is_empty() { "Без названия".to_string() } else { title.to_string() },
+        title: if title.trim().is_empty() {
+            "Без названия".to_string()
+        } else {
+            title.to_string()
+        },
         artists,
         duration_ms,
         artwork_url,

@@ -23,7 +23,6 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
-
 const LIB: &str = include_str!("solver-lib.min.js");
 const CORE: &str = include_str!("solver-core.min.js");
 const WEB_UA: &str =
@@ -119,7 +118,11 @@ fn str_between<'a>(haystack: &'a str, start: &str, end: &str) -> Option<&'a str>
 /// Строит проигрываемый URL одного `adaptiveFormats[]` элемента.
 /// Обрабатывает и `signatureCipher` (решить `sig` + `n`), и plain `url`
 /// с `n`-throttle (решить только `n`).
-pub async fn deciphered_url(http: &reqwest::Client, base_js: &str, format: &Value) -> Result<String> {
+pub async fn deciphered_url(
+    http: &reqwest::Client,
+    base_js: &str,
+    format: &Value,
+) -> Result<String> {
     let (mut url, sig, sp) = extract_cipher(format)?;
     let n = query_param(&url, "n");
 
@@ -176,8 +179,7 @@ fn solver_bootstrap() -> String {
 /// в топ-уровневом коде, которого нет в node/deno.
 fn standalone_program(base_js: &str, requests: &[Value]) -> Result<String> {
     let data = json!({ "type": "player", "player": base_js, "requests": requests });
-    let data_json =
-        serde_json::to_string(&data).context("encode solver data")?;
+    let data_json = serde_json::to_string(&data).context("encode solver data")?;
     Ok(format!(
         "{}\n(function(){{\
          var __p=(typeof print==='function')?print:function(s){{console.log(s);}};\
@@ -197,8 +199,12 @@ fn parse_responses(stdout: &str) -> Result<Value> {
         .rev()
         .find(|l| l.trim_start().starts_with('['))
         .unwrap_or_else(|| stdout.trim());
-    serde_json::from_str(line)
-        .with_context(|| format!("solver output parse; got: {}", &stdout[..stdout.len().min(160)]))
+    serde_json::from_str(line).with_context(|| {
+        format!(
+            "solver output parse; got: {}",
+            &stdout[..stdout.len().min(160)]
+        )
+    })
 }
 
 /// Решает `requests` против `base_js`, возвращает parsed `responses`.
@@ -310,10 +316,22 @@ fn detect_runtime() -> Option<Runtime> {
     static RT: OnceLock<Option<Runtime>> = OnceLock::new();
     *RT.get_or_init(|| {
         const CANDIDATES: &[Runtime] = &[
-            Runtime { bin: "deno", args: &["run", "--quiet", "--no-prompt"] },
-            Runtime { bin: "node", args: &[] },
-            Runtime { bin: "bun", args: &["run"] },
-            Runtime { bin: "qjs", args: &[] },
+            Runtime {
+                bin: "deno",
+                args: &["run", "--quiet", "--no-prompt"],
+            },
+            Runtime {
+                bin: "node",
+                args: &[],
+            },
+            Runtime {
+                bin: "bun",
+                args: &["run"],
+            },
+            Runtime {
+                bin: "qjs",
+                args: &[],
+            },
         ];
         CANDIDATES.iter().copied().find(|c| {
             let mut cmd = std::process::Command::new(c.bin);
@@ -338,9 +356,8 @@ impl SubprocessEngine {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQ: AtomicU64 = AtomicU64::new(0);
 
-        let rt = detect_runtime().context(
-            "нет JS runtime (node/deno/bun/qjs) для нативного decipher YouTube",
-        )?;
+        let rt = detect_runtime()
+            .context("нет JS runtime (node/deno/bun/qjs) для нативного decipher YouTube")?;
         let path = std::env::temp_dir().join(format!(
             "vessel-yt-solve-{}-{}.js",
             std::process::id(),
@@ -365,8 +382,7 @@ impl SubprocessEngine {
             }
         };
         // Ограничение времени: зависший runtime не должен блокировать decipher.
-        let out =
-            tokio::time::timeout(Duration::from_secs(30), child.wait_with_output()).await;
+        let out = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output()).await;
         let _ = tokio::fs::remove_file(&path).await;
         let out = match out {
             Ok(Ok(o)) => o,

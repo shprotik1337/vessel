@@ -1,11 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{model::TrackRef, storage::{HistoryEntry, Storage}};
+use crate::{
+    model::TrackRef,
+    storage::{HistoryEntry, Storage},
+};
 
 use super::{
-    artist_id, track_key,
+    WaveGenreProfile, artist_id,
     text::{is_junk_artist, track_semantic_key},
-    WaveGenreProfile,
+    track_key,
 };
 
 const DAY_MS: i64 = 86_400_000;
@@ -49,14 +52,17 @@ impl WaveTasteProfile {
         let all_history_artists = rank_history_artists(&history, 0, 40);
         let liked_top_artists_recent = rank_liked_artists(liked, now_ms - 30 * DAY_MS, 24);
         let liked_top_artists_alltime = rank_taste_artists(liked, playlist_tracks, 0, 40);
-        let all_top_artists = combine_top_artists(&all_history_artists, &liked_top_artists_alltime, 40);
+        let all_top_artists =
+            combine_top_artists(&all_history_artists, &liked_top_artists_alltime, 40);
         let recent_artist_map = recent_top_artists.iter().cloned().collect();
         let all_artist_map = all_top_artists.iter().cloned().collect();
-        let mut liked_track_keys: HashSet<String> = liked.iter().map(|(track, _)| track_key(track)).collect();
+        let mut liked_track_keys: HashSet<String> =
+            liked.iter().map(|(track, _)| track_key(track)).collect();
         for track in playlist_tracks {
             liked_track_keys.insert(track_key(track));
         }
-        let mut liked_artist_ids: HashSet<String> = liked.iter().map(|(track, _)| artist_id(track)).collect();
+        let mut liked_artist_ids: HashSet<String> =
+            liked.iter().map(|(track, _)| artist_id(track)).collect();
         for track in playlist_tracks {
             let aid = artist_id(track);
             if !aid.is_empty() {

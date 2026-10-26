@@ -21,7 +21,10 @@ pub(super) async fn import_album(
         .context("Yandex Music не отдал альбом")?;
     let title = album_title(&album);
     let description = album_artist(&album);
-    let cover_url = album.cover_uri.as_deref().and_then(super::mapping::cover_url);
+    let cover_url = album
+        .cover_uri
+        .as_deref()
+        .and_then(super::mapping::cover_url);
     let tracks =
         zagruzit_treki_pleilista(client, Some(PlaylistTracks::Full(flatten(album)))).await?;
     Ok(ImportedPlaylist {

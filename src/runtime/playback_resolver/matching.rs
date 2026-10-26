@@ -2,7 +2,7 @@ use crate::model::{ProviderKind, TrackRef};
 
 use super::{
     normalize::{artist_alias_keys, normalize_title},
-    types::{MatchCandidate, MIN_CONFIDENCE, SEARCH_LIMIT},
+    types::{MIN_CONFIDENCE, MatchCandidate, SEARCH_LIMIT},
 };
 
 /// Выбор лучших кандидатов из выдачи чужого каталога (по убыванию confidence).
@@ -37,7 +37,9 @@ pub fn best_match(
     candidates: &[TrackRef],
     foreign_kind: ProviderKind,
 ) -> Option<MatchCandidate> {
-    best_candidates(spotify, candidates, foreign_kind).into_iter().next()
+    best_candidates(spotify, candidates, foreign_kind)
+        .into_iter()
+        .next()
 }
 
 /// Проверка совпадения артистов: точное, алиасы (Eldzhey/Allj) или подстрока.
@@ -180,7 +182,6 @@ pub(crate) fn match_confidence(spotify: &TrackRef, candidate: &TrackRef) -> Opti
         }
     }
 
-
     if confidence >= MIN_CONFIDENCE {
         Some(confidence)
     } else {
@@ -205,9 +206,9 @@ pub fn match_confidence_public(a: &TrackRef, b: &TrackRef) -> Option<f32> {
 /// должен встретиться в артистах кандидата ИЛИ в самом названии видео
 /// (в клипах «Feduk & Элджей — Розовое вино» имя в названии).
 pub(crate) fn video_artist_matches(artist_norm: &str, cand_artist: &str, cand_title: &str) -> bool {
-    artist_alias_keys(artist_norm).iter().any(|key| {
-        cand_artist.contains(key.as_str()) || cand_title.contains(key.as_str())
-    })
+    artist_alias_keys(artist_norm)
+        .iter()
+        .any(|key| cand_artist.contains(key.as_str()) || cand_title.contains(key.as_str()))
 }
 
 /// Кандидат из ОБЩЕГО поиска YTM (клипы): названия/артисты совпадают жёстко,

@@ -1,6 +1,6 @@
+use crate::model::TrackRef;
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use crate::model::TrackRef;
 
 pub fn encode_track(track: &TrackRef) -> Result<String> {
     serde_json::to_string(track).context("Не удалось сохранить трек")

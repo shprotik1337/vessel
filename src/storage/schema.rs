@@ -82,6 +82,16 @@ pub fn initialize_schema(connection: &Connection) -> Result<()> {
             ON followed_artists(provider);
         CREATE INDEX IF NOT EXISTS idx_followed_artists_added
             ON followed_artists(added_at_ms DESC);
+
+        CREATE TABLE IF NOT EXISTS pending_artist_deletions (
+            user_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            artist_id TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            PRIMARY KEY (user_id, provider, artist_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pending_artist_deletions_user
+            ON pending_artist_deletions(user_id);
         ",
     )?;
 
@@ -107,7 +117,10 @@ pub fn initialize_schema(connection: &Connection) -> Result<()> {
 
     // Миграция: колонки is_album и artist_name для разделения альбомов и плейлистов
     if !playlist_columns.iter().any(|name| name == "is_album") {
-        connection.execute("ALTER TABLE playlists ADD COLUMN is_album INTEGER NOT NULL DEFAULT 0", [])?;
+        connection.execute(
+            "ALTER TABLE playlists ADD COLUMN is_album INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
     }
     if !playlist_columns.iter().any(|name| name == "artist_name") {
         connection.execute("ALTER TABLE playlists ADD COLUMN artist_name TEXT", [])?;

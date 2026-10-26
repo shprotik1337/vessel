@@ -2,8 +2,8 @@ use anyhow::Result;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
-use crate::model::TrackRef;
 use super::codec::{decode_track, encode_track};
+use crate::model::TrackRef;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HistoryEntry {
@@ -16,7 +16,11 @@ pub struct HistoryEntry {
 pub struct HistoryRepository;
 
 impl HistoryRepository {
-    pub fn record(connection: &Connection, entry: &HistoryEntry, history_limit: usize) -> Result<()> {
+    pub fn record(
+        connection: &Connection,
+        entry: &HistoryEntry,
+        history_limit: usize,
+    ) -> Result<()> {
         connection.execute(
             "
             INSERT INTO history(provider_key, track_json, played_at_ms, completed, skipped)

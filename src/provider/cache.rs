@@ -92,7 +92,9 @@ fn mime_by_ext(ext: &str) -> &'static str {
 
 /// Удаляет скачанный файл трека (битый/устаревший кэш). Возвращает true, если файл был.
 pub fn delete_cached_track(track: &TrackRef) -> bool {
-    let Some(path) = cached_track_path(track) else { return false };
+    let Some(path) = cached_track_path(track) else {
+        return false;
+    };
     std::fs::remove_file(&path).is_ok()
 }
 
@@ -123,14 +125,10 @@ pub fn cached_source(track: &TrackRef) -> Option<PlaybackSource> {
 }
 
 /// Скачивает трек в кэш (если ещё нет) и возвращает путь к файлу.
-pub async fn download_track_to_cache(
-    track: &TrackRef,
-    source: &PlaybackSource,
-) -> Result<PathBuf> {
+pub async fn download_track_to_cache(track: &TrackRef, source: &PlaybackSource) -> Result<PathBuf> {
     let dir = track_cache_dir();
-    std::fs::create_dir_all(&dir).with_context(|| {
-        format!("не удалось создать кэш-папку {}", dir.display())
-    })?;
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("не удалось создать кэш-папку {}", dir.display()))?;
     let ext = track_file_extension(source);
     let stem = cache_stem(track);
     let dest = dir.join(format!("{stem}.{ext}"));
@@ -151,9 +149,8 @@ pub async fn download_track_to_cache(
         return Err(e);
     }
     // Атомарное перемещение из .part в целевой файл
-    std::fs::rename(&part_dest, &dest).with_context(|| {
-        format!("не удалось сохранить кэш-файл в {}", dest.display())
-    })?;
+    std::fs::rename(&part_dest, &dest)
+        .with_context(|| format!("не удалось сохранить кэш-файл в {}", dest.display()))?;
     Ok(dest)
 }
 
@@ -202,8 +199,8 @@ pub async fn download_track_to_cache_with_alias(
 /// трека — декодер не должен показывать сильно меньшую длительность
 /// (файл обрезан). Битый файл удаляется, чтобы следующий download перескачал.
 pub fn validate_cached_file(track: &TrackRef, path: &Path) -> Result<()> {
-    let metadata = std::fs::metadata(path)
-        .with_context(|| format!("кэш-файл исчез: {}", path.display()))?;
+    let metadata =
+        std::fs::metadata(path).with_context(|| format!("кэш-файл исчез: {}", path.display()))?;
     if metadata.len() == 0 {
         let _ = std::fs::remove_file(path);
         anyhow::bail!("кэш-файл пустой, удалён: {}", path.display());
@@ -234,10 +231,7 @@ fn probe_duration_ms(path: &Path) -> Option<u64> {
         meta::MetadataOptions,
     };
     let file = std::fs::File::open(path).ok()?;
-    let stream = MediaSourceStream::new(
-        Box::new(file),
-        Default::default(),
-    );
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|value| value.to_str()) {
         hint.with_extension(ext);
@@ -264,8 +258,7 @@ fn probe_duration_ms(path: &Path) -> Option<u64> {
 
 /// Пустой источник для file-кэша без capability (для тестов/заглушек).
 pub fn cache_file_source(path: &Path) -> Result<PlaybackSource> {
-    let url = Url::from_file_path(path)
-        .map_err(|_| anyhow::anyhow!("повреждённый путь кэша"))?;
+    let url = Url::from_file_path(path).map_err(|_| anyhow::anyhow!("повреждённый путь кэша"))?;
     let ext = path
         .extension()
         .and_then(|value| value.to_str())
@@ -347,7 +340,10 @@ fn cleanup_caches_in(temp_base: &Path, offline_dir: &Path) -> (usize, usize) {
                 .extension()
                 .and_then(|value| value.to_str())
                 .is_some_and(|value| value.eq_ignore_ascii_case("part"));
-            let is_empty = entry.metadata().map(|meta| meta.len() == 0).unwrap_or(false);
+            let is_empty = entry
+                .metadata()
+                .map(|meta| meta.len() == 0)
+                .unwrap_or(false);
             if is_part || is_empty {
                 match std::fs::remove_file(&path) {
                     Ok(()) => removed += 1,
@@ -409,8 +405,7 @@ mod cleanup_tests {
     fn missing_dirs_are_not_errors() {
         let temp = tempfile::tempdir().unwrap();
         let offline = tempfile::tempdir().unwrap();
-        let (removed, errors) =
-            cleanup_caches_in(temp.path(), offline.path());
+        let (removed, errors) = cleanup_caches_in(temp.path(), offline.path());
         assert_eq!((removed, errors), (0, 0));
     }
 
@@ -452,4 +447,3 @@ mod cleanup_tests {
         set_track_cache_dir(None);
     }
 }
-

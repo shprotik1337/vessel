@@ -107,9 +107,7 @@ impl ApiArtistEntry {
         let web_url = self
             .link
             .and_then(|value| Url::parse(&value).ok())
-            .unwrap_or_else(|| {
-                Url::parse(&format!("https://www.deezer.com/artist/{id}")).unwrap()
-            });
+            .unwrap_or_else(|| Url::parse(&format!("https://www.deezer.com/artist/{id}")).unwrap());
         let artwork_url = self
             .picture_xl
             .or(self.picture_big)

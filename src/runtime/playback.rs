@@ -1,7 +1,4 @@
-use std::{
-    sync::Arc,
-    time::SystemTime,
-};
+use std::{sync::Arc, time::SystemTime};
 
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
@@ -13,9 +10,9 @@ use crate::{
 };
 
 use super::{
+    Runtime,
     message::RuntimeMessage,
     playback_resolver::{PlaybackResolver, PlaybackSourceKind},
-    Runtime,
 };
 
 pub(super) fn spawn_playback(
@@ -60,7 +57,9 @@ pub(super) fn spawn_playback(
             let cache_track = track.clone();
             let cache_source = source.clone();
             tokio::spawn(async move {
-                let _ = crate::provider::cache::download_track_to_cache(&cache_track, &cache_source).await;
+                let _ =
+                    crate::provider::cache::download_track_to_cache(&cache_track, &cache_source)
+                        .await;
             });
         }
 
@@ -179,9 +178,7 @@ impl Runtime {
                 .chain()
                 .into_iter()
                 .filter(|source| {
-                    if *source == PlaybackSourceKind::Deezer
-                        && !has_deezer_arl
-                        && !is_remote_deezer
+                    if *source == PlaybackSourceKind::Deezer && !has_deezer_arl && !is_remote_deezer
                     {
                         return false;
                     }
@@ -224,7 +221,10 @@ impl Runtime {
                     crate::dlog!("[Playback][{session}] trying provider={}", source.label());
 
                     // Этап 1: матчинг в этом каталоге
-                    let (candidates, candidates_from_general) = match resolver.resolve_candidates_in(source, &track).await {
+                    let (candidates, candidates_from_general) = match resolver
+                        .resolve_candidates_in(source, &track)
+                        .await
+                    {
                         Ok((Some(candidates), stage)) => {
                             crate::dlog!(
                                 "[Playback][{session}] {} {} candidates={}",
@@ -252,7 +252,6 @@ impl Runtime {
                             // но в YTM остался официальный клип — общий поиск
                             if source == PlaybackSourceKind::YouTubeMusic {
                                 match resolver.resolve_candidates_general(&track).await {
-
                                     Ok((Some(video_candidates), stage)) => {
                                         crate::dlog!(
                                             "[Playback][{session}] {} {} candidates={}",
@@ -281,9 +280,7 @@ impl Runtime {
                                         crate::dlog!(
                                             "[Playback][{session}] general search failed: {error:#}"
                                         );
-                                        failures.push(format!(
-                                            "YouTube Music (клипы): {error:#}"
-                                        ));
+                                        failures.push(format!("YouTube Music (клипы): {error:#}"));
                                         continue;
                                     }
                                 }
@@ -327,7 +324,8 @@ impl Runtime {
                         match foreign.playback_source(foreign_track).await {
                             Ok(mut source_stream) => {
                                 if source_stream.duration_ms.is_none() {
-                                    source_stream.duration_ms = track.duration_ms.or(foreign_track.duration_ms);
+                                    source_stream.duration_ms =
+                                        track.duration_ms.or(foreign_track.duration_ms);
                                 }
                                 // Играем через чужого провайдера, но
                                 // UI-трек остаётся Spotify (лайки/история)
@@ -432,10 +430,7 @@ impl Runtime {
     pub(super) fn cancel_playback(&mut self) {
         if let Some(task) = self.playback_task.take() {
             task.abort();
-            crate::dlog!(
-                "[Playback][{}] session cancelled",
-                self.playback_session_id
-            );
+            crate::dlog!("[Playback][{}] session cancelled", self.playback_session_id);
         }
         if let Some(task) = self.control_search_task.take() {
             task.abort();

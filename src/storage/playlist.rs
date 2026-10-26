@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::model::{Playlist, TrackRef};
 use super::codec::{decode_track, encode_track, load_track_column};
+use crate::model::{Playlist, TrackRef};
 
 pub struct PlaylistRepository;
 
@@ -54,7 +54,10 @@ impl PlaylistRepository {
             [playlist.id.to_string()],
         )?;
         for (position, track) in playlist.tracks.iter().enumerate() {
-            let added_at_ms = existing_dates.get(&track.provider_key()).copied().unwrap_or(now_ms);
+            let added_at_ms = existing_dates
+                .get(&track.provider_key())
+                .copied()
+                .unwrap_or(now_ms);
             transaction.execute(
                 "
                 INSERT INTO playlist_tracks(playlist_id, position, provider_key, track_json, added_at_ms)
@@ -103,7 +106,8 @@ impl PlaylistRepository {
     }
 
     pub fn delete(connection: &Connection, id: Uuid) -> Result<bool> {
-        let changed = connection.execute("DELETE FROM playlists WHERE id = ?1", [id.to_string()])?;
+        let changed =
+            connection.execute("DELETE FROM playlists WHERE id = ?1", [id.to_string()])?;
         Ok(changed > 0)
     }
 
@@ -130,8 +134,17 @@ impl PlaylistRepository {
         })?;
         let mut playlists = Vec::new();
         for row in rows {
-            let (id, title, description, source_url, cover_url, created_at_ms, updated_at_ms, is_album_int, artist_name) =
-                row?;
+            let (
+                id,
+                title,
+                description,
+                source_url,
+                cover_url,
+                created_at_ms,
+                updated_at_ms,
+                is_album_int,
+                artist_name,
+            ) = row?;
             let id = Uuid::parse_str(&id).context("В БД найден повреждённый плейлист")?;
             let source_url = source_url
                 .map(|value| url::Url::parse(&value))

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use reqwest::{
     Client,
-    header::{HeaderValue, CONTENT_TYPE, COOKIE, USER_AGENT},
+    header::{CONTENT_TYPE, COOKIE, HeaderValue, USER_AGENT},
 };
 use serde_json::{Value, json};
 use std::sync::Mutex;
@@ -60,7 +60,8 @@ impl Clone for YoutubeClient {
 
 impl YoutubeClient {
     pub fn new() -> Result<Self> {
-        let http = Client::builder()            .user_agent(BROWSER_UA)
+        let http = Client::builder()
+            .user_agent(BROWSER_UA)
             .build()
             .context("не удалось создать HTTP-клиент YouTube")?;
         Ok(Self {
@@ -112,31 +113,47 @@ impl YoutubeClient {
     /// OAuth: начало device code flow. Возвращает user_code и открывает браузер.
     /// После вызова жди oauth_complete().
     pub async fn oauth_begin(&self) -> Result<(String, String)> {
-        let yttv = self.http
+        let yttv = self
+            .http
             .get("https://www.youtube.com/tv")
-            .header(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"))
+            .header(
+                USER_AGENT,
+                HeaderValue::from_static("Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"),
+            )
             .header("Accept-Language", HeaderValue::from_static("en-US"))
-            .send().await
+            .send()
+            .await
             .context("TV страница не ответила")?
-            .text().await
+            .text()
+            .await
             .context("TV страница повреждена")?;
 
         // Извлекаем client_id из base.js скрипта
-        let script_url = yttv.split("base-js").nth(1)
+        let script_url = yttv
+            .split("base-js")
+            .nth(1)
             .and_then(|s| s.split("src=\"").nth(1))
             .and_then(|s| s.split('"').next())
             .map(|s| format!("https://www.youtube.com{s}"))
             .context("не найден base-js URL")?;
-        let script = self.http.get(&script_url)
+        let script = self
+            .http
+            .get(&script_url)
             .header(USER_AGENT, HeaderValue::from_static(BROWSER_UA))
-            .send().await
+            .send()
+            .await
             .context("base.js не загрузился")?
-            .text().await?;
-        let client_id = script.split("clientId:\"").nth(1)
+            .text()
+            .await?;
+        let client_id = script
+            .split("clientId:\"")
+            .nth(1)
             .and_then(|s| s.split('"').next())
             .context("clientId не найден в base.js")?
             .to_string();
-        let client_secret = script.split("clientId:\"").nth(1)
+        let client_secret = script
+            .split("clientId:\"")
+            .nth(1)
             .and_then(|s| s.split("\",\"").nth(1))
             .and_then(|s| s.split('"').next())
             .unwrap_or("")
@@ -155,9 +172,21 @@ impl YoutubeClient {
             .error_for_status()
             .context("device/code отклонил")?
             .json::<Value>().await?;
-        let user_code = dev.get("user_code").and_then(Value::as_str).context("нет user_code")?.to_string();
-        let verification_url = dev.get("verification_url").and_then(Value::as_str).context("нет verification_url")?.to_string();
-        let device_code = dev.get("device_code").and_then(Value::as_str).context("нет device_code")?.to_string();
+        let user_code = dev
+            .get("user_code")
+            .and_then(Value::as_str)
+            .context("нет user_code")?
+            .to_string();
+        let verification_url = dev
+            .get("verification_url")
+            .and_then(Value::as_str)
+            .context("нет verification_url")?
+            .to_string();
+        let device_code = dev
+            .get("device_code")
+            .and_then(Value::as_str)
+            .context("нет device_code")?
+            .to_string();
         let interval = dev.get("interval").and_then(Value::as_u64).unwrap_or(5);
 
         *self.oauth.lock().unwrap() = Some(OAuthPending {
@@ -167,15 +196,17 @@ impl YoutubeClient {
             client_secret,
         });
         // Открываем страницу активации с кодом
-        let _ = open::that(format!(
-            "https://www.youtube.com/activate?code={user_code}"
-        ));
+        let _ = open::that(format!("https://www.youtube.com/activate?code={user_code}"));
         Ok((user_code, verification_url))
     }
 
     /// OAuth: ожидает подтверждения и возвращает refresh_token.
     pub async fn oauth_complete(&self) -> Result<String> {
-        let pending = self.oauth.lock().unwrap().take()
+        let pending = self
+            .oauth
+            .lock()
+            .unwrap()
+            .take()
             .context("OAuth не был начат — вызови oauth_begin сначала")?;
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(600);
         loop {
@@ -183,14 +214,17 @@ impl YoutubeClient {
                 bail!("OAuth-подтверждение не получено за 10 минут")
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(pending.interval)).await;
-            let resp = self.http.post("https://www.youtube.com/o/oauth2/token")
+            let resp = self
+                .http
+                .post("https://www.youtube.com/o/oauth2/token")
                 .json(&json!({
                     "client_id": pending.client_id,
                     "client_secret": pending.client_secret,
                     "code": pending.device_code,
                     "grant_type": "http://oauth.net/grant_type/device/1.0"
                 }))
-                .send().await
+                .send()
+                .await
                 .context("token endpoint не ответил")?;
             let value: Value = resp.json().await?;
             if let Some(err) = value.get("error").and_then(Value::as_str) {
@@ -199,9 +233,16 @@ impl YoutubeClient {
                     _ => bail!("OAuth: {err}"),
                 }
             }
-            let refresh = value.get("refresh_token").and_then(Value::as_str)
-                .context("нет refresh_token")?.to_string();
-            let access = value.get("access_token").and_then(Value::as_str).unwrap_or("").to_string();
+            let refresh = value
+                .get("refresh_token")
+                .and_then(Value::as_str)
+                .context("нет refresh_token")?
+                .to_string();
+            let access = value
+                .get("access_token")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             if !access.is_empty() {
                 *self.oauth_token.lock().unwrap() = access;
             }
@@ -211,49 +252,76 @@ impl YoutubeClient {
 
     /// Обновляет access_token из сохранённого refresh_token.
     async fn refresh_access_token(&self) -> Result<()> {
-        let refresh = self.oauth_refresh.lock().unwrap().clone()
+        let refresh = self
+            .oauth_refresh
+            .lock()
+            .unwrap()
+            .clone()
             .context("нет refresh_token для обновления")?;
-        let yttv = self.http
+        let yttv = self
+            .http
             .get("https://www.youtube.com/tv")
-            .header(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"))
+            .header(
+                USER_AGENT,
+                HeaderValue::from_static("Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"),
+            )
             .header("Accept-Language", HeaderValue::from_static("en-US"))
-            .send().await
+            .send()
+            .await
             .context("TV страница не ответила при refresh")?
-            .text().await
+            .text()
+            .await
             .context("TV страница повреждена при refresh")?;
-        let script_url = yttv.split("base-js").nth(1)
+        let script_url = yttv
+            .split("base-js")
+            .nth(1)
             .and_then(|s| s.split("src=\"").nth(1))
             .and_then(|s| s.split('"').next())
             .map(|s| format!("https://www.youtube.com{s}"))
             .context("не найден base-js URL при refresh")?;
-        let script = self.http.get(&script_url)
+        let script = self
+            .http
+            .get(&script_url)
             .header(USER_AGENT, HeaderValue::from_static(BROWSER_UA))
-            .send().await
+            .send()
+            .await
             .context("base.js не загрузился при refresh")?
-            .text().await?;
-        let client_id = script.split("clientId:\"").nth(1)
+            .text()
+            .await?;
+        let client_id = script
+            .split("clientId:\"")
+            .nth(1)
             .and_then(|s| s.split('"').next())
             .context("clientId не найден при refresh")?
             .to_string();
-        let client_secret = script.split("clientId:\"").nth(1)
+        let client_secret = script
+            .split("clientId:\"")
+            .nth(1)
             .and_then(|s| s.split("\",\"").nth(1))
             .and_then(|s| s.split('"').next())
             .unwrap_or("")
             .to_string();
-        let resp = self.http.post("https://www.youtube.com/o/oauth2/token")
+        let resp = self
+            .http
+            .post("https://www.youtube.com/o/oauth2/token")
             .json(&json!({
                 "client_id": client_id,
                 "client_secret": client_secret,
                 "refresh_token": refresh,
                 "grant_type": "refresh_token"
             }))
-            .send().await
+            .send()
+            .await
             .context("refresh token endpoint не ответил")?
             .error_for_status()
             .context("refresh token endpoint отклонил")?
-            .json::<Value>().await?;
-        let access = resp.get("access_token").and_then(Value::as_str)
-            .context("нет access_token в ответе refresh")?.to_string();
+            .json::<Value>()
+            .await?;
+        let access = resp
+            .get("access_token")
+            .and_then(Value::as_str)
+            .context("нет access_token в ответе refresh")?
+            .to_string();
         *self.oauth_token.lock().unwrap() = access;
         Ok(())
     }
@@ -269,7 +337,8 @@ impl YoutubeClient {
 
     /// Достаёт visitorData: сначала через лёгкий /visitor_id, затем ytcfg на главной.
     async fn fetch_visitor_data(&self) -> Result<String> {
-        static GLOBAL_VISITOR_DATA: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+        static GLOBAL_VISITOR_DATA: tokio::sync::OnceCell<String> =
+            tokio::sync::OnceCell::const_new();
         if let Some(cached) = GLOBAL_VISITOR_DATA.get() {
             if !cached.is_empty() {
                 return Ok(cached.clone());
@@ -277,7 +346,11 @@ impl YoutubeClient {
         }
 
         let cookie_raw = self.cookie_value();
-        let cookie = if cookie_raw.is_empty() { None } else { Some(cookie_raw.as_str()) };
+        let cookie = if cookie_raw.is_empty() {
+            None
+        } else {
+            Some(cookie_raw.as_str())
+        };
         if let Ok(vid) = super::innertube::visitor_id_maybe_auth(cookie).await {
             if !vid.is_empty() {
                 let _ = GLOBAL_VISITOR_DATA.set(vid.clone());
@@ -444,9 +517,7 @@ impl YoutubeClient {
                     }
                 }
             }
-            if let Some(url_val) = result
-                .pointer_mut("/streamingData/hlsManifestUrl")
-            {
+            if let Some(url_val) = result.pointer_mut("/streamingData/hlsManifestUrl") {
                 if let Some(url_str) = url_val.as_str() {
                     *url_val = Value::String(format!("{url_str}&pot={token}"));
                 }

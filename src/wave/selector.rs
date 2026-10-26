@@ -107,8 +107,13 @@ fn pick_from_pool(
                 }
                 for (index, item) in state.pool.iter().enumerate() {
                     if target_bucket.is_some_and(|bucket| item.bucket != bucket)
-                        || (!rules.allowed_providers.is_empty() && !rules.allowed_providers.contains(&item.track.provider))
-                        || !artist_streak_allowed(&state.final_tracks, item, rules.max_artist_streak)
+                        || (!rules.allowed_providers.is_empty()
+                            && !rules.allowed_providers.contains(&item.track.provider))
+                        || !artist_streak_allowed(
+                            &state.final_tracks,
+                            item,
+                            rules.max_artist_streak,
+                        )
                         || !artist_cap_allowed(&state.final_tracks, item, effective_cap)
                         || item.is_liked_exact
                             && (state.liked_exact_picked >= rules.liked_exact_cap
@@ -183,7 +188,10 @@ fn pick_from_pool(
             break;
         };
         let picked = state.pool.remove(index);
-        *state.provider_picks.entry(picked.track.provider).or_default() += 1;
+        *state
+            .provider_picks
+            .entry(picked.track.provider)
+            .or_default() += 1;
         if picked.is_new_artist {
             state.picked_new_tracks = state.picked_new_tracks.saturating_add(1);
         }

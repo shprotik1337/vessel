@@ -163,7 +163,6 @@ impl ProviderRegistry {
         self.providers.remove(&kind)
     }
 
-
     pub fn kinds(&self) -> impl Iterator<Item = ProviderKind> + '_ {
         self.providers.keys().copied()
     }

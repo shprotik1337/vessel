@@ -659,7 +659,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
     setFollowLoading(true);
     try {
       if (isFollowed) {
-        await api.unfollowArtist(targetId);
+        await api.unfollowArtist(targetId, targetProv);
         setIsFollowed(false);
       } else {
         await api.followArtist({

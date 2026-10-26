@@ -19,15 +19,13 @@ fn http_client() -> std::sync::Arc<Client> {
 }
 
 fn new_client() -> Client {
-    Client::builder()
-        .build()
-        .expect("innertube http client")
+    Client::builder().build().expect("innertube http client")
 }
 
 /// `Authorization: SAPISIDHASH <ts>_<sha1(ts " " SAPISID " " origin)>`.
 pub fn sapisid_hash(cookies: &str, origin: &str) -> Option<String> {
-    let sapisid = cookie_value(cookies, "SAPISID")
-        .or_else(|| cookie_value(cookies, "__Secure-3PAPISID"))?;
+    let sapisid =
+        cookie_value(cookies, "SAPISID").or_else(|| cookie_value(cookies, "__Secure-3PAPISID"))?;
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
     let mut hasher = Sha1::new();
     hasher.update(format!("{ts} {sapisid} {origin}").as_bytes());
@@ -54,7 +52,10 @@ pub fn cookie_value(header: &str, name: &str) -> Option<String> {
 
 fn build_context(client: YouTubeClient) -> Value {
     let mut obj = serde_json::Map::new();
-    obj.insert("clientName".into(), Value::String(client.client_name.into()));
+    obj.insert(
+        "clientName".into(),
+        Value::String(client.client_name.into()),
+    );
     obj.insert(
         "clientVersion".into(),
         Value::String(client.client_version.into()),
@@ -68,7 +69,10 @@ fn build_context(client: YouTubeClient) -> Value {
         obj.insert("osVersion".into(), Value::String(client.os_version.into()));
     }
     if !client.device_make.is_empty() {
-        obj.insert("deviceMake".into(), Value::String(client.device_make.into()));
+        obj.insert(
+            "deviceMake".into(),
+            Value::String(client.device_make.into()),
+        );
     }
     if !client.device_model.is_empty() {
         obj.insert(
@@ -234,7 +238,11 @@ pub async fn browse_continuation_maybe_auth(
             None => req = req.header("Cookie", c),
         }
     }
-    let resp = req.json(&body).send().await.context("browse continuation HTTP")?;
+    let resp = req
+        .json(&body)
+        .send()
+        .await
+        .context("browse continuation HTTP")?;
     if !resp.status().is_success() {
         anyhow::bail!("browse continuation HTTP {}", resp.status());
     }

@@ -7,10 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::model::{ProviderKind, TrackRef};
 
-use super::{
-    config::WaveMode,
-    text::track_semantic_key,
-};
+use super::{config::WaveMode, text::track_semantic_key};
 
 /// Состояние сессии воспроизведения для непрерывного потока («Моя волна» или Autoplay).
 #[derive(Clone, Debug)]
@@ -27,11 +24,7 @@ pub struct WaveSession {
 }
 
 impl WaveSession {
-    pub fn new(
-        session_id: String,
-        mode: WaveMode,
-        primary_provider: Option<ProviderKind>,
-    ) -> Self {
+    pub fn new(session_id: String, mode: WaveMode, primary_provider: Option<ProviderKind>) -> Self {
         Self {
             session_id,
             mode,
@@ -50,7 +43,8 @@ impl WaveSession {
         let sk = track_semantic_key(track);
         self.played_in_session.insert(sk);
         // Добавляем в скользящее окно активных сидов (держим до 8 свежих треков)
-        self.current_seeds.retain(|t| track_semantic_key(t) != track_semantic_key(track));
+        self.current_seeds
+            .retain(|t| track_semantic_key(t) != track_semantic_key(track));
         self.current_seeds.push(track.clone());
         if self.current_seeds.len() > 8 {
             self.current_seeds.remove(0);
@@ -68,7 +62,8 @@ impl WaveSession {
         if was_liked {
             self.liked_in_session.insert(sk);
             // При лайке делаем этот трек приоритетным сидом
-            self.current_seeds.retain(|t| track_semantic_key(t) != track_semantic_key(track));
+            self.current_seeds
+                .retain(|t| track_semantic_key(t) != track_semantic_key(track));
             self.current_seeds.push(track.clone());
         }
     }

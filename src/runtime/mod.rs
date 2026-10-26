@@ -130,7 +130,6 @@ impl Runtime {
         self.playback_generation
     }
 
-
     pub fn dispatch(&mut self, effects: Vec<AppEffect>) -> Vec<Action> {
         let mut actions = Vec::new();
         for effect in effects {
@@ -188,7 +187,9 @@ impl Runtime {
                         actions.push(Action::AudioOutputChanged(Err(error.to_string())));
                     }
                 },
-                AppEffect::Play(track) => self.start_playback_with_cache_flag(*track, true, &mut actions),
+                AppEffect::Play(track) => {
+                    self.start_playback_with_cache_flag(*track, true, &mut actions)
+                }
                 AppEffect::PlayWithoutCache(track) => {
                     self.start_playback_with_cache_flag(*track, false, &mut actions)
                 }
@@ -205,7 +206,9 @@ impl Runtime {
                 AppEffect::Seek(position_ms) => {
                     if let Some(audio) = &self.audio
                         && let Err(error) = audio.seek_to(position_ms)
-                        && !error.to_string().contains("сейчас ничего не воспроизводится")
+                        && !error
+                            .to_string()
+                            .contains("сейчас ничего не воспроизводится")
                     {
                         // «Нечего мотать» ( buffering/резолв нового трека) —
                         // не фейлим воспроизведение, просто игнорируем seek
@@ -256,8 +259,7 @@ impl Runtime {
                     generation,
                     source,
                     video_only_notice,
-                } if generation == self.playback_generation =>
-                {
+                } if generation == self.playback_generation => {
                     crate::dlog!(
                         "[Playback][{}] playback started (gen {generation})",
                         self.playback_session_id
@@ -761,13 +763,27 @@ mod tests {
     #[tokio::test]
     async fn drop_aborts_all_runtime_tasks() {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let t1 = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await; });
-        let t2 = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await; });
-        let t3 = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await; });
-        let t4 = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await; });
-        let t5 = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await; });
-        let t6 = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await; });
-        let t7 = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await; });
+        let t1 = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let t2 = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let t3 = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let t4 = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let t5 = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let t6 = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        let t7 = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
 
         let runtime = Runtime {
             providers: Arc::new(ProviderRegistry::default()),

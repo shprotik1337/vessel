@@ -317,3 +317,37 @@ export interface StorageStats {
   lyrics_bytes: number;
   total_bytes: number;
 }
+
+export interface SyncedUserSettings {
+  schema_version?: number;
+  language?: string;
+  theme?: string;
+  customization?: any;
+  user_presets?: any;
+  font?: string;
+  recommendation_providers?: string;
+  include_playlists_in_recommendations?: boolean;
+  excluded_recommendation_playlist_ids?: string[];
+  auto_similar?: boolean;
+  audio_agc?: boolean;
+  autoplay_last?: boolean;
+  crossfade_enabled?: boolean;
+  crossfade_sec?: number;
+  history_limit?: number;
+}
+
+export interface UserSettingsResponse {
+  settings: SyncedUserSettings | null;
+  version: number;
+  updated_at_ms: number;
+}
+
+export interface SaveUserSettingsRequest {
+  settings: SyncedUserSettings;
+  expected_version: number;
+}
+
+export interface SaveUserSettingsResponse {
+  version: number;
+  updated_at_ms: number;
+}

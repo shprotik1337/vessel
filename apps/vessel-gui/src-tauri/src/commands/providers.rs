@@ -2,11 +2,11 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use vessel_core::credentials::CredentialKind;
 
-use crate::GuiCore;
 use super::common::{
-    credential_kind_from_str, lock, provider_kind_from_str, CoreState,
-    POPUP_HOOK_JS, SOUNDCLOUD_HOOK_JS,
+    credential_kind_from_str, lock, provider_kind_from_str, CoreState, POPUP_HOOK_JS,
+    SOUNDCLOUD_HOOK_JS,
 };
+use crate::GuiCore;
 
 /// Текущий источник аудио для Spotify-треков ("youtube_music" | "deezer" | "").
 #[tauri::command]
@@ -19,7 +19,10 @@ pub async fn get_spotify_playback_source(core: CoreState<'_>) -> Result<String, 
 /// Сменить источник аудио для Spotify-треков (без перезапуска).
 /// Auto проверяется по цепочке: нужен хотя бы один источник из неё.
 #[tauri::command]
-pub async fn set_spotify_playback_source(core: CoreState<'_>, source: String) -> Result<(), String> {
+pub async fn set_spotify_playback_source(
+    core: CoreState<'_>,
+    source: String,
+) -> Result<(), String> {
     use vessel_core::runtime::playback_resolver::PlaybackSourceKind;
     let Some(kind) = PlaybackSourceKind::from_str(&source) else {
         return Err(format!("неизвестный источник: {source}"));
@@ -27,10 +30,12 @@ pub async fn set_spotify_playback_source(core: CoreState<'_>, source: String) ->
     let mut core = lock(&core);
     // Источник должен быть настроен — иначе треки просто не заиграют
     let available = match kind {
-        PlaybackSourceKind::Auto => kind
-            .chain()
-            .iter()
-            .any(|s| core.runtime.provider_registry().get(s.provider_kind()).is_some()),
+        PlaybackSourceKind::Auto => kind.chain().iter().any(|s| {
+            core.runtime
+                .provider_registry()
+                .get(s.provider_kind())
+                .is_some()
+        }),
         other => core
             .runtime
             .provider_registry()
@@ -67,7 +72,9 @@ pub async fn set_spotify_proxy(core: CoreState<'_>, path: Option<String>) -> Res
 }
 
 #[tauri::command]
-pub async fn get_provider_status(core: CoreState<'_>) -> Result<Vec<crate::ProviderStatus>, String> {
+pub async fn get_provider_status(
+    core: CoreState<'_>,
+) -> Result<Vec<crate::ProviderStatus>, String> {
     let core = lock(&core);
     Ok(crate::provider_statuses(&core))
 }
@@ -148,16 +155,31 @@ fn spawn_spotify_cookie_watcher(app: AppHandle, core: CoreState<'_>) {
             // sp_dc сохраняем сразу: поиск/артисты/плеер оживают моментально.
             // Лайки идут через Pathfinder fetchLibraryTracks на том же sp_dc —
             // OAuth не нужен вовсе.
-            {
-                let mut core = core
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                let _ = core.runtime
+            let (account_state, secrets_file, session_token) = {
+                let mut core = core.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let _ = core
+                    .runtime
                     .save_credential(CredentialKind::SpotifySpDc, &cookie_line);
                 core.app.spotify_enabled = true;
                 core.app.config_dirty = true;
                 core.app.status_message = "Spotify подключён".to_string();
-            }
+
+                let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+                let token = secrets.get_named("vessel-user-session").ok().flatten();
+                (core.account_state.clone(), core.paths.secrets_file.clone(), token)
+            };
+
+            let secrets = vessel_core::secrets::SecretStore::new(secrets_file);
+            let client = super::auth::official_client().ok();
+            let _ = vessel_core::vault_sync::sync_save_credential(
+                client.as_ref(),
+                session_token.as_deref(),
+                &account_state,
+                CredentialKind::SpotifySpDc,
+                &cookie_line,
+                &secrets,
+            )
+            .await;
 
             if let Some(window) = app.get_webview_window("spotify_login") {
                 let _ = window.close();
@@ -217,12 +239,30 @@ pub async fn spotify_capture_cookies(
         return Err("не найдена cookie sp_dc — войди в аккаунт Spotify и повтори".to_string());
     }
 
-    let mut core = lock(&core);
-    core.runtime
-        .save_credential(CredentialKind::SpotifySpDc, &cookie_line)
-        .map_err(|e| e.to_string())?;
-    core.app.spotify_enabled = true;
-    core.app.config_dirty = true;
+    let (account_state, secrets_file, session_token) = {
+        let mut core = lock(&core);
+        core.runtime
+            .save_credential(CredentialKind::SpotifySpDc, &cookie_line)
+            .map_err(|e| e.to_string())?;
+        core.app.spotify_enabled = true;
+        core.app.config_dirty = true;
+        let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+        let token = secrets.get_named("vessel-user-session").ok().flatten();
+        (core.account_state.clone(), core.paths.secrets_file.clone(), token)
+    };
+
+    let secrets = vessel_core::secrets::SecretStore::new(secrets_file);
+    let client = super::auth::official_client().ok();
+    let _ = vessel_core::vault_sync::sync_save_credential(
+        client.as_ref(),
+        session_token.as_deref(),
+        &account_state,
+        CredentialKind::SpotifySpDc,
+        &cookie_line,
+        &secrets,
+    )
+    .await;
+
     if let Some(window) = app.get_webview_window("spotify_login") {
         let _ = window.close();
     }
@@ -290,13 +330,13 @@ fn spawn_soundcloud_auth_watcher(app: AppHandle, core: CoreState<'_>) {
 
             let client_id = match client_id_from_cookie {
                 Some(id) if !id.trim().is_empty() => Some(id),
-                _ => vessel_core::provider::soundcloud::discover_client_id().await.ok(),
+                _ => vessel_core::provider::soundcloud::discover_client_id()
+                    .await
+                    .ok(),
             };
 
-            {
-                let mut core = core
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let (account_state, secrets_file, session_token) = {
+                let mut core = core.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 let _ = core
                     .runtime
                     .save_credential(CredentialKind::SoundCloudOAuthToken, &oauth_token);
@@ -308,7 +348,24 @@ fn spawn_soundcloud_auth_watcher(app: AppHandle, core: CoreState<'_>) {
                 core.app.soundcloud_enabled = true;
                 core.app.config_dirty = true;
                 core.app.status_message = "SoundCloud аккаунт подключён".to_string();
-            }
+
+                let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+                let token = secrets.get_named("vessel-user-session").ok().flatten();
+                (core.account_state.clone(), core.paths.secrets_file.clone(), token)
+            };
+
+            let secrets = vessel_core::secrets::SecretStore::new(secrets_file);
+            let client = super::auth::official_client().ok();
+            let _ = vessel_core::vault_sync::sync_save_credential(
+                client.as_ref(),
+                session_token.as_deref(),
+                &account_state,
+                CredentialKind::SoundCloudOAuthToken,
+                &oauth_token,
+                &secrets,
+            )
+            .await;
+
             if let Some(window) = app.get_webview_window("soundcloud_login") {
                 let _ = window.close();
             }
@@ -385,15 +442,32 @@ fn spawn_deezer_arl_watcher(app: AppHandle, core: CoreState<'_>) {
                 Err(_) => continue,
             };
             vessel_core::dlog!("[deezer] arl detected ({} bytes) — saving", arl.len());
-            {
-                let mut core = core
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                let _ = core.runtime.save_credential(CredentialKind::DeezerArl, &arl);
+            let (account_state, secrets_file, session_token) = {
+                let mut core = core.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let _ = core
+                    .runtime
+                    .save_credential(CredentialKind::DeezerArl, &arl);
                 core.app.deezer_enabled = true;
                 core.app.config_dirty = true;
                 core.app.status_message = "Deezer подключён".to_string();
-            }
+
+                let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+                let token = secrets.get_named("vessel-user-session").ok().flatten();
+                (core.account_state.clone(), core.paths.secrets_file.clone(), token)
+            };
+
+            let secrets = vessel_core::secrets::SecretStore::new(secrets_file);
+            let client = super::auth::official_client().ok();
+            let _ = vessel_core::vault_sync::sync_save_credential(
+                client.as_ref(),
+                session_token.as_deref(),
+                &account_state,
+                CredentialKind::DeezerArl,
+                &arl,
+                &secrets,
+            )
+            .await;
+
             if let Some(window) = app.get_webview_window("deezer_login") {
                 let _ = window.close();
             }
@@ -431,31 +505,60 @@ pub async fn save_credential(
     if value.is_empty() {
         return Err("ключ пустой".to_string());
     }
-    let mut core = lock(&core);
-    core.runtime
-        .save_credential(kind, value)
-        .map_err(|e| e.to_string())?;
-    match kind {
-        CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
-            core.app.soundcloud_enabled = true;
+    let (account_state, secrets_file, session_token) = {
+        let mut core = lock(&core);
+        core.runtime
+            .save_credential(kind, value)
+            .map_err(|e| e.to_string())?;
+        match kind {
+            CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
+                core.app.soundcloud_enabled = true;
+            }
+            CredentialKind::YandexToken => {
+                core.app.yandex_enabled = true;
+            }
+            CredentialKind::DeezerArl => {
+                core.app.deezer_enabled = true;
+            }
+            CredentialKind::SpotifySpDc => {
+                core.app.spotify_enabled = true;
+            }
+            CredentialKind::SpotifyOAuthRefreshToken => {
+                core.app.spotify_enabled = true;
+            }
+            CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {
+                core.app.youtube_music_enabled = true;
+            }
         }
-        CredentialKind::YandexToken => {
-            core.app.yandex_enabled = true;
-        }
-        CredentialKind::DeezerArl => {
-            core.app.deezer_enabled = true;
-        }
-        CredentialKind::SpotifySpDc => {
-            core.app.spotify_enabled = true;
-        }
-        CredentialKind::SpotifyOAuthRefreshToken => {
-            core.app.spotify_enabled = true;
-        }
-        CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {
-            core.app.youtube_music_enabled = true;
+        core.app.config_dirty = true;
+
+        let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+        let token = secrets.get_named("vessel-user-session").ok().flatten();
+        (core.account_state.clone(), core.paths.secrets_file.clone(), token)
+    };
+
+    let secrets = vessel_core::secrets::SecretStore::new(secrets_file);
+    let client = super::auth::official_client().ok();
+    if let Err(err) = vessel_core::vault_sync::sync_save_credential(
+        client.as_ref(),
+        session_token.as_deref(),
+        &account_state,
+        kind,
+        value,
+        &secrets,
+    )
+    .await
+    {
+        match err {
+            vessel_core::provider::remote::VaultTransportError::Conflict => {
+                return Err("Конфликт версий в облачном Vault (409 Conflict). Обновите данные перед сохранением.".to_string());
+            }
+            _ => {
+                vessel_core::dlog!("[vault_sync] save sync non-fatal error: {err}");
+            }
         }
     }
-    core.app.config_dirty = true;
+
     Ok(())
 }
 
@@ -514,28 +617,46 @@ pub async fn set_provider_enabled(
 #[tauri::command]
 pub async fn remove_credential(core: CoreState<'_>, provider: String) -> Result<(), String> {
     let kind = credential_kind_from_str(&provider)?;
-    let mut core = lock(&core);
-    core.runtime
-        .remove_credential(kind.secret_key())
-        .map_err(|e| e.to_string())?;
-    match kind {
-        CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
-            core.app.soundcloud_enabled = false;
+    let (account_state, secrets_file, session_token) = {
+        let mut core = lock(&core);
+        core.runtime
+            .remove_credential(kind.secret_key())
+            .map_err(|e| e.to_string())?;
+        match kind {
+            CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
+                core.app.soundcloud_enabled = false;
+            }
+            CredentialKind::YandexToken => {
+                core.app.yandex_enabled = false;
+            }
+            CredentialKind::DeezerArl => {
+                core.app.deezer_enabled = false;
+            }
+            CredentialKind::SpotifySpDc => {
+                core.app.spotify_enabled = false;
+            }
+            CredentialKind::SpotifyOAuthRefreshToken => {
+                core.app.spotify_enabled = false;
+            }
+            CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {}
         }
-        CredentialKind::YandexToken => {
-            core.app.yandex_enabled = false;
-        }
-        CredentialKind::DeezerArl => {
-            core.app.deezer_enabled = false;
-        }
-        CredentialKind::SpotifySpDc => {
-            core.app.spotify_enabled = false;
-        }
-        CredentialKind::SpotifyOAuthRefreshToken => {
-            core.app.spotify_enabled = false;
-        }
-        CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {}
-    }
-    core.app.config_dirty = true;
+        core.app.config_dirty = true;
+
+        let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+        let token = secrets.get_named("vessel-user-session").ok().flatten();
+        (core.account_state.clone(), core.paths.secrets_file.clone(), token)
+    };
+
+    let secrets = vessel_core::secrets::SecretStore::new(secrets_file);
+    let client = super::auth::official_client().ok();
+    let _ = vessel_core::vault_sync::sync_delete_credential(
+        client.as_ref(),
+        session_token.as_deref(),
+        &account_state,
+        kind,
+        &secrets,
+    )
+    .await;
+
     Ok(())
 }

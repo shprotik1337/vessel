@@ -55,12 +55,18 @@ pub fn balance_providers_organic(
     }
     if available_providers.len() == 1 {
         let p = available_providers[0];
-        return buckets.remove(&p).unwrap_or_default().into_iter().take(target_count).collect();
+        return buckets
+            .remove(&p)
+            .unwrap_or_default()
+            .into_iter()
+            .take(target_count)
+            .collect();
     }
 
     const MAX_PROVIDER_STREAK: usize = 2;
 
-    let target_per_prov = (target_count + available_providers.len() - 1) / available_providers.len();
+    let target_per_prov =
+        (target_count + available_providers.len() - 1) / available_providers.len();
     let mut indices: HashMap<ProviderKind, usize> = HashMap::new();
     for &p in &available_providers {
         indices.insert(p, 0);
@@ -75,7 +81,9 @@ pub fn balance_providers_organic(
         .unwrap_or(12345);
 
     let mut next_rand = move || -> usize {
-        rng_seed = rng_seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng_seed = rng_seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (rng_seed >> 32) as usize
     };
 
@@ -110,7 +118,8 @@ pub fn balance_providers_organic(
         // исключаем его из пула выбора на этом шаге
         let candidate_pool: Vec<ProviderKind> = if let Some(last) = last_prov {
             if current_streak >= MAX_PROVIDER_STREAK {
-                let others: Vec<ProviderKind> = available.iter().copied().filter(|p| *p != last).collect();
+                let others: Vec<ProviderKind> =
+                    available.iter().copied().filter(|p| *p != last).collect();
                 if !others.is_empty() {
                     others
                 } else {
@@ -126,14 +135,19 @@ pub fn balance_providers_organic(
         let next_prov = if candidate_pool.len() == 1 {
             candidate_pool[0]
         } else {
-            let min_picks = candidate_pool.iter().map(|p| indices.get(p).copied().unwrap_or(0)).min().unwrap_or(0);
+            let min_picks = candidate_pool
+                .iter()
+                .map(|p| indices.get(p).copied().unwrap_or(0))
+                .min()
+                .unwrap_or(0);
             let viable: Vec<ProviderKind> = candidate_pool
                 .iter()
                 .copied()
                 .filter(|p| indices.get(p).copied().unwrap_or(0) == min_picks)
                 .collect();
             let choices: Vec<ProviderKind> = if let Some(last) = last_prov {
-                let others: Vec<ProviderKind> = viable.iter().copied().filter(|p| *p != last).collect();
+                let others: Vec<ProviderKind> =
+                    viable.iter().copied().filter(|p| *p != last).collect();
                 if !others.is_empty() { others } else { viable }
             } else {
                 viable
@@ -152,7 +166,11 @@ pub fn balance_providers_organic(
         let remaining_to_target = target_count - result.len();
         let other_available_count = available_providers
             .iter()
-            .filter(|p| **p != next_prov && indices.get(p).copied().unwrap_or(0) < buckets.get(p).map(|l| l.len()).unwrap_or(0))
+            .filter(|p| {
+                **p != next_prov
+                    && indices.get(p).copied().unwrap_or(0)
+                        < buckets.get(p).map(|l| l.len()).unwrap_or(0)
+            })
             .count();
 
         let remaining_in_streak = if other_available_count > 0 {
@@ -180,7 +198,9 @@ pub fn balance_providers_organic(
             .min();
 
         let balance_headroom = if let Some(min_other) = min_other_active {
-            (min_other + MAX_PROVIDER_STREAK).saturating_sub(cur_idx).max(1)
+            (min_other + MAX_PROVIDER_STREAK)
+                .saturating_sub(cur_idx)
+                .max(1)
         } else {
             remaining_to_target
         };

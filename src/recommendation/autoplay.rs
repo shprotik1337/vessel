@@ -13,12 +13,14 @@ use crate::{
     model::TrackRef,
     provider::ProviderRegistry,
     storage::Storage,
-    wave::{is_tracklike, track_semantic_key, ArtistDiversityGuard, QueueContext},
+    wave::{ArtistDiversityGuard, QueueContext, is_tracklike, track_semantic_key},
 };
 
 use super::{
     parse_provider_filter,
-    scoring::{balance_providers_organic, get_recently_smart_shuffle_keys, remember_smart_shuffle_keys},
+    scoring::{
+        balance_providers_organic, get_recently_smart_shuffle_keys, remember_smart_shuffle_keys,
+    },
 };
 
 /// Генерация компактного чанка треков для продолжения очереди (Infinite Queue / Autoplay).
@@ -29,8 +31,8 @@ pub async fn generate_autoplay_chunk(
     size: usize,
     provider_filter: Option<&str>,
 ) -> Result<Vec<TrackRef>> {
-    let allowed_providers = parse_provider_filter(provider_filter)
-        .unwrap_or_else(|| providers.kinds().collect());
+    let allowed_providers =
+        parse_provider_filter(provider_filter).unwrap_or_else(|| providers.kinds().collect());
     if allowed_providers.is_empty() {
         return Ok(Vec::new());
     }
@@ -42,7 +44,8 @@ pub async fn generate_autoplay_chunk(
     // Обогащение сидов при короткой очереди: используем историю и библиотеку пользователя
     if seed_tracks.len() < seed_count || seed_artists.len() < seed_count {
         let mut seen_seed_artists: HashSet<String> = seed_artists.iter().cloned().collect();
-        let mut seen_seed_keys: HashSet<String> = seed_tracks.iter().map(track_semantic_key).collect();
+        let mut seen_seed_keys: HashSet<String> =
+            seed_tracks.iter().map(track_semantic_key).collect();
 
         // 1. Недавняя история прослушивания (свежие предпочтения)
         if let Ok(history) = storage.recent_history(30) {
@@ -51,7 +54,10 @@ pub async fn generate_autoplay_chunk(
             for t in hist_candidates {
                 let sk = track_semantic_key(&t);
                 let art = crate::wave::clean_artist_name(&t.display_artist());
-                if !seen_seed_keys.contains(&sk) && !art.is_empty() && seen_seed_artists.insert(art.clone()) {
+                if !seen_seed_keys.contains(&sk)
+                    && !art.is_empty()
+                    && seen_seed_artists.insert(art.clone())
+                {
                     seen_seed_keys.insert(sk);
                     if seed_tracks.len() < seed_count {
                         seed_tracks.push(t);
@@ -75,7 +81,10 @@ pub async fn generate_autoplay_chunk(
             for t in lib {
                 let sk = track_semantic_key(&t);
                 let art = crate::wave::clean_artist_name(&t.display_artist());
-                if !seen_seed_keys.contains(&sk) && !art.is_empty() && seen_seed_artists.insert(art.clone()) {
+                if !seen_seed_keys.contains(&sk)
+                    && !art.is_empty()
+                    && seen_seed_artists.insert(art.clone())
+                {
                     seen_seed_keys.insert(sk);
                     if seed_tracks.len() < seed_count {
                         seed_tracks.push(t);
@@ -111,11 +120,14 @@ pub async fn generate_autoplay_chunk(
                 seed_tasks.push(async move {
                     let _permit = sem.acquire().await;
                     if seed_clone.provider == prov_kind {
-                        timeout(Duration::from_millis(3500), provider.related(&seed_clone, 8))
-                            .await
-                            .ok()
-                            .and_then(|r| r.ok())
-                            .unwrap_or_default()
+                        timeout(
+                            Duration::from_millis(3500),
+                            provider.related(&seed_clone, 8),
+                        )
+                        .await
+                        .ok()
+                        .and_then(|r| r.ok())
+                        .unwrap_or_default()
                     } else if let Some(artist) = artist_clone {
                         timeout(Duration::from_millis(3500), provider.search(&artist, None))
                             .await
@@ -140,12 +152,15 @@ pub async fn generate_autoplay_chunk(
                 let artist_clone = artist.clone();
                 artist_tasks.push(async move {
                     let _permit = sem.acquire().await;
-                    timeout(Duration::from_millis(3500), provider.search(&artist_clone, None))
-                        .await
-                        .ok()
-                        .and_then(|r| r.ok())
-                        .map(|res| res.tracks.into_iter().take(4).collect::<Vec<TrackRef>>())
-                        .unwrap_or_default()
+                    timeout(
+                        Duration::from_millis(3500),
+                        provider.search(&artist_clone, None),
+                    )
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
+                    .map(|res| res.tracks.into_iter().take(4).collect::<Vec<TrackRef>>())
+                    .unwrap_or_default()
                 });
             }
         }
@@ -172,14 +187,20 @@ pub async fn generate_autoplay_chunk(
         .and_then(|t| t.artists.first())
         .map(|a| crate::wave::clean_artist_name(a))
         .or_else(|| {
-            context.recent_played.last().and_then(|t| t.artists.first()).map(|a| crate::wave::clean_artist_name(a))
+            context
+                .recent_played
+                .last()
+                .and_then(|t| t.artists.first())
+                .map(|a| crate::wave::clean_artist_name(a))
         });
 
     let now_ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    let mut rng = (now_ms as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let mut rng = (now_ms as u64)
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     let recent_smart_keys = get_recently_smart_shuffle_keys();
 
     let diversity_guard = ArtistDiversityGuard::new(2);
@@ -198,13 +219,18 @@ pub async fn generate_autoplay_chunk(
                 score += 2.5;
             }
 
-            let freq_pen = ArtistDiversityGuard::artist_frequency_penalty(&track, &context.recent_played);
+            let freq_pen =
+                ArtistDiversityGuard::artist_frequency_penalty(&track, &context.recent_played);
             score -= freq_pen;
 
             // Artist Exhaustion Penalty: не давать артисту только что игравшего трека захватить чанк
             if let Some(ref last_art) = last_played_artist {
                 let track_art = crate::wave::clean_artist_name(&track.display_artist());
-                if !track_art.is_empty() && (track_art == *last_art || last_art.contains(&track_art) || track_art.contains(last_art)) {
+                if !track_art.is_empty()
+                    && (track_art == *last_art
+                        || last_art.contains(&track_art)
+                        || track_art.contains(last_art))
+                {
                     score -= 1.8;
                 }
             }
@@ -221,7 +247,9 @@ pub async fn generate_autoplay_chunk(
             }
 
             // Контролируемый шум PRNG (-0.08..+0.08) для ротации кандидатов с близким скором
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let noise = (((rng >> 32) % 1000) as f64 / 1000.0 - 0.5) * 0.16;
             score += noise;
 
@@ -236,7 +264,10 @@ pub async fn generate_autoplay_chunk(
     for (track, _) in scored_candidates {
         let is_last_artist = if let Some(ref last_art) = last_played_artist {
             let track_art = crate::wave::clean_artist_name(&track.display_artist());
-            !track_art.is_empty() && (track_art == *last_art || last_art.contains(&track_art) || track_art.contains(last_art))
+            !track_art.is_empty()
+                && (track_art == *last_art
+                    || last_art.contains(&track_art)
+                    || track_art.contains(last_art))
         } else {
             false
         };

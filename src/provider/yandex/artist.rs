@@ -3,8 +3,7 @@ use url::Url;
 use yandex_music::{
     YandexMusicClient,
     api::artist::{
-        get_artist::GetArtistOptions,
-        get_artist_albums::GetArtistAlbumsOptions,
+        get_artist::GetArtistOptions, get_artist_albums::GetArtistAlbumsOptions,
         get_artist_tracks::ArtistTracksOptions,
     },
     model::album::Album as YandexAlbum,
@@ -51,7 +50,11 @@ pub(super) async fn artist_profile(
         .and_then(cover_url);
 
     let top = client
-        .get_artist_tracks(&ArtistTracksOptions::new(artist_id).page(0).page_size(POPULAR_LIMIT as u32))
+        .get_artist_tracks(
+            &ArtistTracksOptions::new(artist_id)
+                .page(0)
+                .page_size(POPULAR_LIMIT as u32),
+        )
         .await
         .context("Yandex Music не отдал популярные треки артиста")?;
     let popular_tracks: Vec<TrackRef> = top
@@ -104,9 +107,7 @@ pub(super) async fn artist_all_tracks(
     let mut page = 0u32;
     loop {
         let found = client
-            .get_artist_tracks(
-                &ArtistTracksOptions::new(artist_id).page(page).page_size(50),
-            )
+            .get_artist_tracks(&ArtistTracksOptions::new(artist_id).page(page).page_size(50))
             .await
             .context("Yandex Music не отдал треки артиста")?;
         let loaded = found.tracks.len();

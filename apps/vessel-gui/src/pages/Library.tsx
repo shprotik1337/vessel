@@ -124,10 +124,10 @@ export function Library() {
     }
   };
 
-  const handleUnfollowArtist = async (e: React.MouseEvent, id: string, _name?: string) => {
+  const handleUnfollowArtist = async (e: React.MouseEvent, id: string, _name?: string, provider?: string) => {
     e.stopPropagation();
     try {
-      await api.unfollowArtist(id);
+      await api.unfollowArtist(id, provider);
       await loadArtists();
     } catch (err) {
       showToast(String(err), true);
@@ -810,7 +810,7 @@ export function Library() {
                       </div>
 
                       <button
-                        onClick={(e) => handleUnfollowArtist(e, artist.id, artist.name)}
+                        onClick={(e) => handleUnfollowArtist(e, artist.id, artist.name, artist.provider)}
                         title={lang === "ru" ? "Отписаться" : "Unfollow"}
                         style={{
                           position: "absolute",
@@ -919,7 +919,7 @@ export function Library() {
                       </div>
 
                       <button
-                        onClick={(e) => handleUnfollowArtist(e, artist.id, artist.name)}
+                        onClick={(e) => handleUnfollowArtist(e, artist.id, artist.name, artist.provider)}
                         title={lang === "ru" ? "Отписаться" : "Unfollow"}
                         style={{
                           background: "transparent",

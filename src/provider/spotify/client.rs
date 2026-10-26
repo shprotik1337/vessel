@@ -24,8 +24,7 @@ pub const SEARCH_ALBUMS_HASH: &str =
     "a71d2c993fc98e1c880093738a55a38b57e69cc4ce5a8c113e6c5920f9513ee2";
 pub const SEARCH_PLAYLISTS_HASH: &str =
     "fc3a690182167dbad20ac7a03f842b97be4e9737710600874cb903f30112ad58";
-pub const GET_ALBUM_HASH: &str =
-    "6a74b456cd1735c9193d9e8ec8cc5184cad7ce13572210315229db3975964361";
+pub const GET_ALBUM_HASH: &str = "6a74b456cd1735c9193d9e8ec8cc5184cad7ce13572210315229db3975964361";
 pub const FETCH_PLAYLIST_HASH: &str =
     "243c0ba2736f16da721e3a227004bbcdb8df6c846f198bd478172e00aa1faf42";
 pub const ARTIST_OVERVIEW_HASH: &str =
@@ -64,10 +63,12 @@ pub fn build_http_client(cookie: &str, proxy: Option<&str>) -> Result<Client> {
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30));
     if let Some(proxy) = proxy {
-        builder =
-            builder.proxy(reqwest::Proxy::all(proxy).context("не удалось разобрать прокси Spotify")?);
+        builder = builder
+            .proxy(reqwest::Proxy::all(proxy).context("не удалось разобрать прокси Spotify")?);
     }
-    builder.build().context("не удалось создать HTTP-клиент Spotify")
+    builder
+        .build()
+        .context("не удалось создать HTTP-клиент Spotify")
 }
 
 pub fn browser_headers() -> HeaderMap {
@@ -76,26 +77,41 @@ pub fn browser_headers() -> HeaderMap {
     h.insert(ACCEPT, HeaderValue::from_static("*/*"));
     h.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
     h.insert("App-Platform", HeaderValue::from_static("WebPlayer"));
-    h.insert("spotify-app-version", HeaderValue::from_static(CLIENT_VERSION));
+    h.insert(
+        "spotify-app-version",
+        HeaderValue::from_static(CLIENT_VERSION),
+    );
     h.insert("Sec-Fetch-Dest", HeaderValue::from_static("empty"));
     h.insert("Sec-Fetch-Mode", HeaderValue::from_static("cors"));
     h.insert("Sec-Fetch-Site", HeaderValue::from_static("same-site"));
     h.insert(
         "Sec-Ch-Ua",
-        HeaderValue::from_static(r#""Not)A;Brand";v="99", "Google Chrome";v="138", "Chromium";v="138""#),
+        HeaderValue::from_static(
+            r#""Not)A;Brand";v="99", "Google Chrome";v="138", "Chromium";v="138""#,
+        ),
     );
     h.insert("Sec-Ch-Ua-Mobile", HeaderValue::from_static("?0"));
     h.insert("Sec-Ch-Ua-Platform", HeaderValue::from_static("Windows"));
     h.insert("Priority", HeaderValue::from_static("u=1, i"));
-    h.insert("Origin", HeaderValue::from_static("https://open.spotify.com"));
-    h.insert("Referer", HeaderValue::from_static("https://open.spotify.com/"));
+    h.insert(
+        "Origin",
+        HeaderValue::from_static("https://open.spotify.com"),
+    );
+    h.insert(
+        "Referer",
+        HeaderValue::from_static("https://open.spotify.com/"),
+    );
     h
 }
 
 pub fn entity_id(url: &Url, kind: &str) -> Option<String> {
-    url.path_segments()?.collect::<Vec<_>>().windows(2).find_map(|pair| {
-        (pair[0].eq_ignore_ascii_case(kind) && !pair[1].contains('/')).then(|| pair[1].to_string())
-    })
+    url.path_segments()?
+        .collect::<Vec<_>>()
+        .windows(2)
+        .find_map(|pair| {
+            (pair[0].eq_ignore_ascii_case(kind) && !pair[1].contains('/'))
+                .then(|| pair[1].to_string())
+        })
 }
 
 /// Запрос к внутреннему GraphQL Pathfinder API (работает с web-player токеном).

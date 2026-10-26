@@ -299,24 +299,35 @@ async fn collect_related(
         if settings.mixed_providers {
             let provider_count = settings.provider_order().len().max(1);
             let per_cap = (candidate_target / provider_count).max(8);
-            if settings.provider_order().iter().all(|k| pool.provider_count(*k) >= per_cap) && seeds_processed >= 6 {
+            if settings
+                .provider_order()
+                .iter()
+                .all(|k| pool.provider_count(*k) >= per_cap)
+                && seeds_processed >= 6
+            {
                 break;
             }
         }
         seeds_processed += 1;
-        if !settings.mixed_providers && native_related && seed.provider != settings.primary_provider {
+        if !settings.mixed_providers && native_related && seed.provider != settings.primary_provider
+        {
             let query = format!("{} {}", seed.display_artist(), seed.title);
             if let Some(provider) = providers.get(settings.primary_provider) {
                 if let Ok(Ok(page)) = timeout_at(deadline, provider.search(&query, None)).await {
                     if let Some(matched) = page.tracks.into_iter().next() {
-                        let related_res = timeout_at(deadline, provider.related(&matched, target.min(64))).await;
+                        let related_res =
+                            timeout_at(deadline, provider.related(&matched, target.min(64))).await;
                         if let Ok(Ok(rel_tracks)) = related_res
                             && !rel_tracks.is_empty()
                         {
                             let capped: Vec<TrackRef> = rel_tracks.into_iter().take(8).collect();
                             pool.extend(capped, WaveCandidateOrigin::Related, candidate_target * 2);
                         }
-                        pool.extend(vec![matched], WaveCandidateOrigin::Related, candidate_target * 2);
+                        pool.extend(
+                            vec![matched],
+                            WaveCandidateOrigin::Related,
+                            candidate_target * 2,
+                        );
                         if pool.len() >= candidate_target * 2 && seeds_processed >= 6 {
                             break;
                         }
@@ -343,7 +354,8 @@ async fn collect_related(
                 let query = format!("{} {}", seed.display_artist(), seed.title);
                 if let Ok(Ok(page)) = timeout_at(deadline, provider.search(&query, None)).await {
                     if let Some(matched) = page.tracks.into_iter().next() {
-                        let rel_res = timeout_at(deadline, provider.related(&matched, target.min(64))).await;
+                        let rel_res =
+                            timeout_at(deadline, provider.related(&matched, target.min(64))).await;
                         match rel_res {
                             Ok(Ok(rel_tracks)) if !rel_tracks.is_empty() => Ok(Ok(rel_tracks)),
                             _ => Ok(Ok(vec![matched])),

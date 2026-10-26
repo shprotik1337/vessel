@@ -178,7 +178,8 @@ where
                             value = if normalized.abs() < 0.75 {
                                 normalized
                             } else {
-                                (normalized / (1.0 + normalized * normalized * 0.5).sqrt()).clamp(-1.0, 1.0)
+                                (normalized / (1.0 + normalized * normalized * 0.5).sqrt())
+                                    .clamp(-1.0, 1.0)
                             };
                         }
 

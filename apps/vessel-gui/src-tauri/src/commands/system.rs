@@ -1,8 +1,8 @@
 use serde::Serialize;
 use tauri::AppHandle;
 
-use crate::GuiCore;
 use super::common::{file_path_to_string, lock, CoreState};
+use crate::GuiCore;
 
 #[tauri::command]
 pub async fn reset_settings(core: CoreState<'_>) -> Result<(), String> {
@@ -12,7 +12,9 @@ pub async fn reset_settings(core: CoreState<'_>) -> Result<(), String> {
     core.config.global_hotkeys_enabled = false;
     core.app.player.volume_percent = defaults.volume_percent;
     core.app
-        .gui_dispatch(vessel_core::effect::AppEffect::SetVolume(defaults.volume_percent));
+        .gui_dispatch(vessel_core::effect::AppEffect::SetVolume(
+            defaults.volume_percent,
+        ));
     core.app.config_dirty = true;
     Ok(())
 }
@@ -82,13 +84,19 @@ pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub async fn pick_file(app: AppHandle, extensions: Option<Vec<String>>) -> Result<Option<String>, String> {
+pub async fn pick_file(
+    app: AppHandle,
+    extensions: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         use tauri_plugin_dialog::DialogExt;
         let mut dialog = app.dialog().file();
         if let Some(exts) = extensions {
             if !exts.is_empty() {
-                dialog = dialog.add_filter("Файлы", &exts.iter().map(String::as_str).collect::<Vec<_>>());
+                dialog = dialog.add_filter(
+                    "Файлы",
+                    &exts.iter().map(String::as_str).collect::<Vec<_>>(),
+                );
             }
         }
         dialog.blocking_pick_file().map(file_path_to_string)
@@ -111,7 +119,10 @@ pub async fn save_file_as(
         }
         if let Some(exts) = extensions {
             if !exts.is_empty() {
-                dialog = dialog.add_filter("Файлы", &exts.iter().map(String::as_str).collect::<Vec<_>>());
+                dialog = dialog.add_filter(
+                    "Файлы",
+                    &exts.iter().map(String::as_str).collect::<Vec<_>>(),
+                );
             }
         }
         dialog.blocking_save_file().map(file_path_to_string)
@@ -123,13 +134,17 @@ pub async fn save_file_as(
 #[tauri::command]
 pub async fn open_path(app: AppHandle, path: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    app.opener().open_path(path, None::<String>).map_err(|e| e.to_string())
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    app.opener().open_url(url, None::<String>).map_err(|e| e.to_string())
+    app.opener()
+        .open_url(url, None::<String>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -170,7 +185,10 @@ fn vessel_secret_name(id: &str) -> String {
     format!("vessel-server:{id}")
 }
 
-fn server_view(core: &GuiCore, server: &vessel_core::config::VesselServerConfig) -> VesselServerView {
+fn server_view(
+    core: &GuiCore,
+    server: &vessel_core::config::VesselServerConfig,
+) -> VesselServerView {
     let prefix = format!("server:{}", server.id);
     let routed = core
         .config
@@ -193,7 +211,10 @@ fn server_view(core: &GuiCore, server: &vessel_core::config::VesselServerConfig)
     }
 }
 
-fn server_client(core: &GuiCore, server_id: &str) -> Result<vessel_core::provider::remote::ServerClient, String> {
+fn server_client(
+    core: &GuiCore,
+    server_id: &str,
+) -> Result<vessel_core::provider::remote::ServerClient, String> {
     let config_server = core
         .config
         .vessel_servers
@@ -225,12 +246,19 @@ fn server_client(core: &GuiCore, server_id: &str) -> Result<vessel_core::provide
 #[tauri::command]
 pub fn vessel_servers(core: CoreState<'_>) -> Result<Vec<VesselServerView>, String> {
     let core = lock(&core);
-    Ok(core.config.vessel_servers.iter().map(|s| server_view(&core, s)).collect())
+    Ok(core
+        .config
+        .vessel_servers
+        .iter()
+        .map(|s| server_view(&core, s))
+        .collect())
 }
 
 /// Все маршруты «провайдер → локально/сервер».
 #[tauri::command]
-pub fn vessel_routes(core: CoreState<'_>) -> Result<std::collections::BTreeMap<String, String>, String> {
+pub fn vessel_routes(
+    core: CoreState<'_>,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
     let core = lock(&core);
     Ok(core.config.provider_routing.clone())
 }
@@ -299,13 +327,17 @@ pub async fn vessel_server_add(
         existing.name = name.trim().to_string();
         existing.url = url.clone();
     } else {
-        core.config.vessel_servers.push(vessel_core::config::VesselServerConfig {
-            id: id.clone(),
-            name: name.trim().to_string(),
-            url,
-        });
+        core.config
+            .vessel_servers
+            .push(vessel_core::config::VesselServerConfig {
+                id: id.clone(),
+                name: name.trim().to_string(),
+                url,
+            });
     }
-    core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
+    core.config
+        .save(&core.paths)
+        .map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
     let view = core
         .config
@@ -333,9 +365,13 @@ pub fn vessel_server_remove(core: CoreState<'_>, id: String) -> Result<(), Strin
     let mut core = lock(&core);
     core.config.vessel_servers.retain(|s| s.id != id);
     let prefix = format!("server:{id}");
-    core.config.provider_routing.retain(|_, target| target != &prefix);
+    core.config
+        .provider_routing
+        .retain(|_, target| target != &prefix);
     let _ = core.runtime.remove_named_secret(&vessel_secret_name(&id));
-    core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
+    core.config
+        .save(&core.paths)
+        .map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
     let config_clone = core.config.clone();
     core.runtime.sync_config(&config_clone);
@@ -363,9 +399,13 @@ pub fn vessel_route_set(
         if !core.config.vessel_servers.iter().any(|s| s.id == id) {
             return Err("такого сервера нет — сначала добавь его".to_string());
         }
-        core.config.provider_routing.insert(provider.clone(), target.clone());
+        core.config
+            .provider_routing
+            .insert(provider.clone(), target.clone());
     }
-    core.config.save(&core.paths).map_err(|e| format!("{e:#}"))?;
+    core.config
+        .save(&core.paths)
+        .map_err(|e| format!("{e:#}"))?;
     core.app.config_dirty = true;
     let config_clone = core.config.clone();
     core.runtime.sync_config(&config_clone);

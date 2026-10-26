@@ -6,7 +6,11 @@ mod single_instance {
     use std::ptr::null_mut;
 
     extern "system" {
-        fn CreateMutexW(lpMutexAttributes: *mut std::ffi::c_void, bInitialOwner: i32, lpName: *const u16) -> *mut std::ffi::c_void;
+        fn CreateMutexW(
+            lpMutexAttributes: *mut std::ffi::c_void,
+            bInitialOwner: i32,
+            lpName: *const u16,
+        ) -> *mut std::ffi::c_void;
         fn GetLastError() -> u32;
         fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
         fn FindWindowW(lpClassName: *const u16, lpWindowName: *const u16) -> *mut std::ffi::c_void;
@@ -27,7 +31,9 @@ mod single_instance {
     }
 
     pub fn acquire() -> Option<MutexGuard> {
-        let name: Vec<u16> = "Local\\VesselMusicAppSingleInstanceMutex\0".encode_utf16().collect();
+        let name: Vec<u16> = "Local\\VesselMusicAppSingleInstanceMutex\0"
+            .encode_utf16()
+            .collect();
         unsafe {
             let handle = CreateMutexW(null_mut(), 1, name.as_ptr());
             let err = GetLastError();
@@ -53,7 +59,10 @@ mod single_instance {
 
 fn startup_log_path() -> std::path::PathBuf {
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        let dir = std::path::PathBuf::from(appdata).join("vessel").join("vessel").join("data");
+        let dir = std::path::PathBuf::from(appdata)
+            .join("vessel")
+            .join("vessel")
+            .join("data");
         let _ = std::fs::create_dir_all(&dir);
         return dir.join("startup-debug.log");
     }
@@ -77,7 +86,11 @@ fn main() {
         .open(&log_path)
         .and_then(|mut f| {
             use std::io::Write;
-            writeln!(f, "[startup] main entered at {:?}", std::time::SystemTime::now())
+            writeln!(
+                f,
+                "[startup] main entered at {:?}",
+                std::time::SystemTime::now()
+            )
         });
 
     std::panic::set_hook(Box::new(|info| {

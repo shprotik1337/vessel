@@ -16,7 +16,9 @@ pub async fn prepare_full_track(provider: &DeezerProvider, track_id: &str) -> Re
     if let Some(cached) = get_cached_track(track_id) {
         return Ok(cached);
     }
-    let user = provider.gateway("deezer.getUserData", "", json!({})).await?;
+    let user = provider
+        .gateway("deezer.getUserData", "", json!({}))
+        .await?;
     let mut token = text_at(&user, &["results", "checkForm"])
         .context("ARL не авторизован: Deezer не выдал checkForm")?
         .to_string();
@@ -27,7 +29,9 @@ pub async fn prepare_full_track(provider: &DeezerProvider, track_id: &str) -> Re
         .gateway("song.getListData", &token, json!({ "SNG_IDS": [track_id] }))
         .await?;
     if gateway_has_invalid_token(&raw) {
-        let refreshed = provider.gateway("deezer.getUserData", "", json!({})).await?;
+        let refreshed = provider
+            .gateway("deezer.getUserData", "", json!({}))
+            .await?;
         token = text_at(&refreshed, &["results", "checkForm"])
             .context("Deezer не обновил checkForm")?
             .to_string();
@@ -44,8 +48,7 @@ pub async fn prepare_full_track(provider: &DeezerProvider, track_id: &str) -> Re
     let song = raw
         .pointer("/results/data/0")
         .context("Deezer не вернул метаданные полного трека")?;
-    let track_token =
-        text_at(song, &["TRACK_TOKEN"]).context("Deezer не вернул TRACK_TOKEN")?;
+    let track_token = text_at(song, &["TRACK_TOKEN"]).context("Deezer не вернул TRACK_TOKEN")?;
     let mut candidates = resolve_media(&provider.http, &license, track_token)
         .await
         .unwrap_or_default();

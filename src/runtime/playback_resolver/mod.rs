@@ -32,13 +32,11 @@ use crate::{
 };
 
 pub use cache::MatchCache;
-pub use matching::{
-    best_candidates, best_candidates_video, best_match, match_confidence_public,
-};
+pub use matching::{best_candidates, best_candidates_video, best_match, match_confidence_public};
 pub use normalize::{clean_search_query, normalize_title, search_query};
 pub use types::{
-    MatchCandidate, PlaybackSourceKind, ResolveStage, MAX_CANDIDATES, MIN_CONFIDENCE,
-    SEARCH_LIMIT, SEARCH_TIMEOUT,
+    MAX_CANDIDATES, MIN_CONFIDENCE, MatchCandidate, PlaybackSourceKind, ResolveStage, SEARCH_LIMIT,
+    SEARCH_TIMEOUT,
 };
 
 pub struct PlaybackResolver {
@@ -96,7 +94,10 @@ impl PlaybackResolver {
                 Err(_) => continue,
             }
         }
-        bail!("трек не нашёлся ни в одном источнике цепочки «{}»", self.source().label())
+        bail!(
+            "трек не нашёлся ни в одном источнике цепочки «{}»",
+            self.source().label()
+        )
     }
 
     /// Матчинг трека в конкретном каталоге (для фолбэка).
@@ -109,10 +110,9 @@ impl PlaybackResolver {
         let (candidates, stage) = self.resolve_candidates_in(source, track).await?;
         let Some(mut list) = candidates else {
             return Err(match stage {
-                ResolveStage::MatchNotFound => anyhow::anyhow!(
-                    "в {} не нашёлся этот трек",
-                    source.as_str()
-                ),
+                ResolveStage::MatchNotFound => {
+                    anyhow::anyhow!("в {} не нашёлся этот трек", source.as_str())
+                }
                 ResolveStage::MatchNotConfident => anyhow::anyhow!(
                     "в {} нет уверенного совпадения (лучший кандидат слишком отличается)",
                     source.as_str()
@@ -147,11 +147,8 @@ impl PlaybackResolver {
 
         // 3. Поиск в чужом каталоге (с таймаутом — сеть может висеть)
         let query = search_query(track);
-        let search = tokio::time::timeout(
-            SEARCH_TIMEOUT,
-            foreign_provider.search(&query, None),
-        )
-        .await;
+        let search =
+            tokio::time::timeout(SEARCH_TIMEOUT, foreign_provider.search(&query, None)).await;
         let page = match search {
             Ok(Ok(page)) => page,
             Ok(Err(error)) => bail!("поиск в {} не удался: {error}", source.as_str()),
@@ -168,10 +165,10 @@ impl PlaybackResolver {
             // Фолбэк: пробуем очищенный запрос без feat/скобок (актуально для Deezer)
             let clean_q = clean_search_query(track);
             if clean_q != query {
-                if let Ok(Ok(clean_page)) = tokio::time::timeout(
-                    SEARCH_TIMEOUT,
-                    foreign_provider.search(&clean_q, None),
-                ).await {
+                if let Ok(Ok(clean_page)) =
+                    tokio::time::timeout(SEARCH_TIMEOUT, foreign_provider.search(&clean_q, None))
+                        .await
+                {
                     let clean_candidates = best_candidates(track, &clean_page.tracks, foreign_kind);
                     if !clean_candidates.is_empty() {
                         candidates = clean_candidates;
@@ -217,15 +214,11 @@ impl PlaybackResolver {
     /// (Deezer/YouTube Music, плюс общий поиск клипов как при игре);
     /// native-источник Spotify не используется нигде и никогда. Возвращает трек
     /// кандидата (под ним и кэшируется файл) и его PlaybackSource.
-    pub async fn playable_for(
-        &self,
-        track: &TrackRef,
-    ) -> Result<(TrackRef, PlaybackSource)> {
+    pub async fn playable_for(&self, track: &TrackRef) -> Result<(TrackRef, PlaybackSource)> {
         if track.provider != ProviderKind::Spotify {
-            let provider = self
-                .registry
-                .get(track.provider)
-                .ok_or_else(|| anyhow::anyhow!("провайдер {} недоступен", track.provider.label()))?;
+            let provider = self.registry.get(track.provider).ok_or_else(|| {
+                anyhow::anyhow!("провайдер {} недоступен", track.provider.label())
+            })?;
             let source = provider.playback_source(track).await?;
             return Ok((track.clone(), source));
         }
@@ -305,9 +298,9 @@ impl PlaybackResolver {
         };
         // Общий поиск идёт через общий Innertube-клиент YTM-провайдера (если локальный)
         // либо через штатный поиск провайдера (если удалённый ServerProvider)
-        let tracks = if let Some(ytm_provider) = ytm
-            .as_any()
-            .downcast_ref::<crate::provider::youtube::YouTubeMusicProvider>()
+        let tracks = if let Some(ytm_provider) =
+            ytm.as_any()
+                .downcast_ref::<crate::provider::youtube::YouTubeMusicProvider>()
         {
             let client = ytm_provider.client();
             let query = search_query(track);

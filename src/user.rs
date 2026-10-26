@@ -21,10 +21,7 @@ pub const FORMAT_VERSION: u32 = 1;
 pub enum AccountState {
     Guest,
     Restoring,
-    Authenticated {
-        username: String,
-        user_id: String,
-    },
+    Authenticated { username: String, user_id: String },
 }
 
 impl Default for AccountState {
@@ -100,8 +97,7 @@ impl User {
         let json = serde_json::to_string_pretty(&self.profile)
             .context("Не удалось сериализовать профиль")?;
         let path = self.profile_path();
-        fs::write(&path, &json)
-            .with_context(|| format!("Не удалось сохранить {}", path.display()))
+        fs::write(&path, &json).with_context(|| format!("Не удалось сохранить {}", path.display()))
     }
 
     pub fn backup(&self) -> Result<PathBuf> {
@@ -197,8 +193,8 @@ impl UserManager {
 
     pub fn load_profile(user_dir: &Path) -> Result<UserProfile> {
         let path = user_dir.join("profile.json");
-        let source =
-            fs::read_to_string(&path).with_context(|| format!("Не удалось прочитать {}", path.display()))?;
+        let source = fs::read_to_string(&path)
+            .with_context(|| format!("Не удалось прочитать {}", path.display()))?;
         let profile: UserProfile =
             serde_json::from_str(&source).context("Не удалось разобрать profile.json")?;
         Ok(profile)
@@ -244,7 +240,11 @@ impl UserManager {
     pub fn delete_user(&mut self, name: &str) -> Result<()> {
         let name = name.trim();
         let dir = self.resolve_user_dir(name)?;
-        if self.active_user.profile.display_name.eq_ignore_ascii_case(name)
+        if self
+            .active_user
+            .profile
+            .display_name
+            .eq_ignore_ascii_case(name)
             || self.active_user.dir == dir
         {
             anyhow::bail!("Нельзя удалить активного пользователя");
@@ -448,12 +448,14 @@ mod tests {
         let backup = manager.active_user().backup().unwrap();
         assert!(backup.exists());
         assert_eq!(backup.extension().unwrap_or_default(), "sqlite3");
-        assert!(backup
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("library_"));
+        assert!(
+            backup
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("library_")
+        );
     }
 
     #[test]

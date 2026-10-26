@@ -139,7 +139,8 @@ impl AudioEngine {
         }
         self.played_samples.store(0, Ordering::Release);
         self.buffered_samples.store(0, Ordering::Release);
-        self.duration_ms.store(initial_duration_ms, Ordering::Release);
+        self.duration_ms
+            .store(initial_duration_ms, Ordering::Release);
         self.start_decoder(source, 0);
     }
 

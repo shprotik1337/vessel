@@ -24,7 +24,7 @@ pub enum SecretKey {
 }
 
 impl SecretKey {
-    const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::SessionToken => "session-token",
             Self::InstallationId => "installation-id",
@@ -93,7 +93,8 @@ impl SecretStore {
         if self.system_enabled {
             // Новое хранилище (vessel), затем старый service name (noverplay-tui)
             for service in [SERVICE_NAME, OLD_SERVICE_NAME] {
-                if let Ok(value) = Entry::new(service, key.name()).and_then(|entry| entry.get_password())
+                if let Ok(value) =
+                    Entry::new(service, key.name()).and_then(|entry| entry.get_password())
                     && !value.is_empty()
                 {
                     return Ok(Some(value));

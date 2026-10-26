@@ -49,11 +49,8 @@ impl AuthManager {
             return Ok((token.clone(), client_token.clone()));
         }
         let (token, client_token) = self.fetch_access_token(http).await?;
-        *self.access_token.lock().unwrap() = Some((
-            token.clone(),
-            client_token.clone(),
-            Instant::now(),
-        ));
+        *self.access_token.lock().unwrap() =
+            Some((token.clone(), client_token.clone(), Instant::now()));
         Ok((token, client_token))
     }
 

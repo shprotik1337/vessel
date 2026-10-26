@@ -1,7 +1,6 @@
 //! InnerTube client identities (по образцу Kopuz `clients.rs`, EUPL-1.2).
 //! Константы — публичные идентификаторы клиентов YouTube (NewPipe, yt-dlp).
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct YouTubeClient {
     pub client_name: &'static str,
@@ -100,7 +99,8 @@ pub const VISIONOS: YouTubeClient = YouTubeClient {
     use_signature_timestamp: false,
 };
 
-pub const STREAM_FALLBACK_CLIENTS: &[YouTubeClient] = &[VISIONOS, ANDROID_VR_1_43_32, ANDROID_VR_1_61_48];
+pub const STREAM_FALLBACK_CLIENTS: &[YouTubeClient] =
+    &[VISIONOS, ANDROID_VR_1_43_32, ANDROID_VR_1_61_48];
 
 /// Premium itag'и (256–270 kbps аудио). Free-аккаунт их не видит (Kopuz).
 pub fn is_premium_itag(itag: u32) -> bool {

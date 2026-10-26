@@ -56,10 +56,7 @@ pub fn legacy_urls(raw: &Value, format: &str) -> Result<Vec<String>> {
         "FLAC" => "9",
         _ => bail!("неподдерживаемый Deezer legacy format: {format}"),
     };
-    if track_id.is_empty()
-        || md5_origin.is_empty()
-        || md5_origin == "0"
-        || media_version.is_empty()
+    if track_id.is_empty() || md5_origin.is_empty() || md5_origin == "0" || media_version.is_empty()
     {
         bail!("не хватает legacy-метаданных Deezer")
     }

@@ -117,7 +117,9 @@ pub fn text_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
 }
 
 pub fn user_id_at(value: &Value, path: &[&str]) -> Option<String> {
-    let v = path.iter().try_fold(value, |current, key| current.get(*key))?;
+    let v = path
+        .iter()
+        .try_fold(value, |current, key| current.get(*key))?;
     match v {
         Value::Number(n) => n.to_string().into(),
         Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),

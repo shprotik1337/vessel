@@ -3,11 +3,7 @@ use url::Url;
 use yandex_music::{
     YandexMusicClient,
     api::search::get_search::SearchOptions,
-    model::{
-        album::Album,
-        playlist::Playlist,
-        search::SearchType,
-    },
+    model::{album::Album, playlist::Playlist, search::SearchType},
 };
 
 use crate::{

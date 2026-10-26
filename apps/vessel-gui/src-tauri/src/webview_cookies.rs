@@ -4,10 +4,8 @@ use tauri::{AppHandle, Manager};
 use url::Url;
 
 /// Домены, с которых собираем cookies для входа в Spotify.
-const SPOTIFY_COOKIE_DOMAINS: &[&str] = &[
-    "https://open.spotify.com/",
-    "https://accounts.spotify.com/",
-];
+const SPOTIFY_COOKIE_DOMAINS: &[&str] =
+    &["https://open.spotify.com/", "https://accounts.spotify.com/"];
 
 /// Собирает cookies Spotify (sp_dc и др.) из окна webview.
 pub fn collect_spotify_cookies(app: &AppHandle) -> anyhow::Result<String> {
@@ -216,4 +214,3 @@ pub fn collect_soundcloud_client_id(app: &AppHandle) -> anyhow::Result<String> {
 
     client_id.ok_or_else(|| anyhow::anyhow!("client_id ещё не перехвачен"))
 }
-

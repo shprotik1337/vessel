@@ -21,7 +21,8 @@ pub async fn probe_soundcloud() -> SoundCloudAccess {
 }
 
 async fn probe_url(url: Url, timeout: Duration) -> SoundCloudAccess {
-    let client = match Client::builder()        .user_agent(format!("vessel/{}", crate::APP_VERSION))
+    let client = match Client::builder()
+        .user_agent(format!("vessel/{}", crate::APP_VERSION))
         .redirect(Policy::limited(3))
         .timeout(timeout)
         .build()

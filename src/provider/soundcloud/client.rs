@@ -115,7 +115,10 @@ impl SoundCloudClient {
                             attempt + 1,
                             MAX_ATTEMPTS
                         );
-                        tokio::time::sleep(std::time::Duration::from_millis(300 * (attempt as u64 + 1))).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            300 * (attempt as u64 + 1),
+                        ))
+                        .await;
                         continue;
                     }
                     return Err(err).context("SoundCloud не ответил");
@@ -123,7 +126,9 @@ impl SoundCloudClient {
             };
 
             let status = resp.status();
-            if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
                 // Протухший или невалидный ключ — форсированно сканируем новый
                 crate::dlog!(
                     "[SoundCloud] client_id вернул {}, попытка {}/{}, обновляем ключ...",
@@ -153,7 +158,10 @@ impl SoundCloudClient {
                             client_id = new_id;
                         }
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(350 * (attempt as u64 + 1))).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        350 * (attempt as u64 + 1),
+                    ))
+                    .await;
                     continue;
                 }
             }
@@ -171,8 +179,7 @@ impl SoundCloudClient {
     }
 }
 
-pub(super) const SOUNDCLOUD_BROWSER_UA: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+pub(super) const SOUNDCLOUD_BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 pub(super) fn build_http(builder: ClientBuilder) -> Result<Client> {
     builder

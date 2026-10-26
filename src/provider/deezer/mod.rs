@@ -44,12 +44,7 @@ impl DeezerProvider {
         self.get(url).await
     }
 
-    pub(crate) async fn gateway(
-        &self,
-        method: &str,
-        token: &str,
-        params: Value,
-    ) -> Result<Value> {
+    pub(crate) async fn gateway(&self, method: &str, token: &str, params: Value) -> Result<Value> {
         client::gateway(&self.http, method, token, params).await
     }
 
@@ -131,7 +126,11 @@ impl MusicProvider for DeezerProvider {
                 .find_map(|(key, value)| (key == "index").then(|| value.into_owned()))
         });
         Ok(SearchPage {
-            tracks: page.data.into_iter().filter_map(mapping::map_track).collect(),
+            tracks: page
+                .data
+                .into_iter()
+                .filter_map(mapping::map_track)
+                .collect(),
             next_cursor,
         })
     }
@@ -285,7 +284,10 @@ impl MusicProvider for DeezerProvider {
                 continue;
             };
             match self
-                .get::<mapping::ApiAlbumDetails>(Url::parse(&format!("{}/album/{id}", client::API))?)
+                .get::<mapping::ApiAlbumDetails>(Url::parse(&format!(
+                    "{}/album/{id}",
+                    client::API
+                ))?)
                 .await
             {
                 Ok(details) => {
@@ -358,7 +360,11 @@ impl MusicProvider for DeezerProvider {
             limit.clamp(1, 100)
         ))?;
         let page: mapping::ApiPage<mapping::ApiTrack> = self.get(url).await?;
-        Ok(page.data.into_iter().filter_map(mapping::map_track).collect())
+        Ok(page
+            .data
+            .into_iter()
+            .filter_map(mapping::map_track)
+            .collect())
     }
 
     async fn liked_tracks(&self, _profile_url: Option<&str>) -> Result<Vec<TrackRef>> {

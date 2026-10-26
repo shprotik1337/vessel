@@ -17,8 +17,8 @@ use url::Url;
 use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
     provider::{
-        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider,
-        SearchPage,
+        ArtistProfile, Attribution, CollectionItem, CollectionKind, ImportedPlaylist,
+        MusicProvider, SearchPage,
     },
 };
 
@@ -104,9 +104,7 @@ impl MusicProvider for SoundCloudProvider {
     }
 
     async fn liked_tracks(&self, profile_url: Option<&str>) -> Result<Vec<TrackRef>> {
-        let raw = profile_url
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
+        let raw = profile_url.map(str::trim).filter(|s| !s.is_empty());
 
         let (mut url, mut query) = match raw {
             Some(raw) => {
@@ -155,11 +153,10 @@ impl MusicProvider for SoundCloudProvider {
                 if self.client.has_oauth() {
                     let me_url = self.client.v2_url(&["me"])?;
                     let empty_query: [(&str, String); 0] = [];
-                    let me: models::ScUser = self
-                        .client
-                        .get_json(me_url, &empty_query)
-                        .await
-                        .context("не удалось получить профиль текущего пользователя SoundCloud")?;
+                    let me: models::ScUser =
+                        self.client.get_json(me_url, &empty_query).await.context(
+                            "не удалось получить профиль текущего пользователя SoundCloud",
+                        )?;
                     if me.id.is_empty() {
                         bail!("SoundCloud не вернул id текущего пользователя");
                     }
@@ -171,7 +168,9 @@ impl MusicProvider for SoundCloudProvider {
                         ],
                     )
                 } else {
-                    bail!("для импорта лайков SoundCloud укажи URL профиля (например https://soundcloud.com/username) или войди в свой аккаунт SoundCloud в Настройках")
+                    bail!(
+                        "для импорта лайков SoundCloud укажи URL профиля (например https://soundcloud.com/username) или войди в свой аккаунт SoundCloud в Настройках"
+                    )
                 }
             }
         };
@@ -212,14 +211,14 @@ impl SoundCloudProvider {
     pub async fn probe(&self) -> Result<()> {
         if self.client.has_oauth() {
             let url = self.client.v2_url(&["me"])?;
-            let _: models::ScUser = self
-                .client
-                .get_json(url, &[])
-                .await
-                .context("не удалось подтвердить авторизацию в SoundCloud (токен недействителен)")?;
+            let _: models::ScUser = self.client.get_json(url, &[]).await.context(
+                "не удалось подтвердить авторизацию в SoundCloud (токен недействителен)",
+            )?;
             Ok(())
         } else {
-            search_tracks(&self.client, "vessel probe", None).await.map(|_| ())
+            search_tracks(&self.client, "vessel probe", None)
+                .await
+                .map(|_| ())
         }
     }
 }

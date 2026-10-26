@@ -6,7 +6,9 @@ use crate::model::TrackRef;
 
 use super::{
     genre::WaveGenreProfile,
-    text::{clean_artist_name, is_junk_artist, is_valid_artist_name, track_key, track_semantic_key},
+    text::{
+        clean_artist_name, is_junk_artist, is_valid_artist_name, track_key, track_semantic_key,
+    },
 };
 
 /// Многоуровневый контекст воспроизведения для Autoplay и Smart Shuffle.
@@ -48,7 +50,10 @@ impl QueueContext {
         for t in self.recent_played.iter().chain(self.remaining_queue.iter()) {
             for a in &t.artists {
                 let clean = clean_artist_name(a);
-                if is_valid_artist_name(&clean) && !seen.contains(&clean) && !candidate_artists.contains(&clean) {
+                if is_valid_artist_name(&clean)
+                    && !seen.contains(&clean)
+                    && !candidate_artists.contains(&clean)
+                {
                     candidate_artists.push(clean);
                 }
             }
@@ -106,7 +111,11 @@ impl QueueContext {
                 break;
             }
             let sk = track_semantic_key(t);
-            let art = t.artists.first().map(|a| clean_artist_name(a)).unwrap_or_default();
+            let art = t
+                .artists
+                .first()
+                .map(|a| clean_artist_name(a))
+                .unwrap_or_default();
             if seen_keys.insert(sk) {
                 if art.is_empty() || seen_artists.insert(art) {
                     seeds.push(t.clone());
@@ -154,10 +163,18 @@ impl QueueContext {
                 return true;
             }
         }
-        if self.recent_played.iter().any(|t| track_semantic_key(t) == sk) {
+        if self
+            .recent_played
+            .iter()
+            .any(|t| track_semantic_key(t) == sk)
+        {
             return true;
         }
-        if self.remaining_queue.iter().any(|t| track_semantic_key(t) == sk) {
+        if self
+            .remaining_queue
+            .iter()
+            .any(|t| track_semantic_key(t) == sk)
+        {
             return true;
         }
         false
@@ -313,15 +330,26 @@ mod tests {
         let seeds = ctx.extract_seed_artists(4);
         assert_eq!(seeds.len(), 4);
         // Kanye West должен быть представлен только один раз, а остальные сиды должны охватывать других артистов очереди
-        let kanye_count = seeds.iter().filter(|a| a.to_lowercase() == "kanye west").count();
+        let kanye_count = seeds
+            .iter()
+            .filter(|a| a.to_lowercase() == "kanye west")
+            .count();
         assert_eq!(kanye_count, 1, "Current artist must not dominate seed list");
-        assert!(seeds.contains(&"kid cudi".to_string()) || seeds.contains(&"travis scott".to_string()) || seeds.contains(&"playboi carti".to_string()));
+        assert!(
+            seeds.contains(&"kid cudi".to_string())
+                || seeds.contains(&"travis scott".to_string())
+                || seeds.contains(&"playboi carti".to_string())
+        );
     }
 
     #[test]
     fn smart_shuffle_interleaver_ratio_3() {
-        let base = (0..9).map(|i| make_test_track(&format!("b{i}"), "Artist", &format!("Base {i}"))).collect::<Vec<_>>();
-        let recs = (0..3).map(|i| make_test_track(&format!("r{i}"), "Rec Artist", &format!("Rec {i}"))).collect::<Vec<_>>();
+        let base = (0..9)
+            .map(|i| make_test_track(&format!("b{i}"), "Artist", &format!("Base {i}")))
+            .collect::<Vec<_>>();
+        let recs = (0..3)
+            .map(|i| make_test_track(&format!("r{i}"), "Rec Artist", &format!("Rec {i}")))
+            .collect::<Vec<_>>();
 
         let res = SmartShuffleInterleaver::interleave(&base, &recs, 3);
         assert_eq!(res.interleaved_queue.len(), 12);

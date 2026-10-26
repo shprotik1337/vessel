@@ -1,5 +1,6 @@
-pub mod clients;
+pub mod botguard;
 mod client;
+pub mod clients;
 pub mod decipher;
 pub mod innertube;
 mod mapping;
@@ -7,7 +8,6 @@ mod models;
 pub mod player;
 mod provider;
 pub mod search;
-pub mod botguard;
 
 use url::Url;
 

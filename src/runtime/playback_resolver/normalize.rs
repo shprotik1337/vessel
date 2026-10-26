@@ -49,8 +49,20 @@ pub fn normalize_title(raw: &str) -> String {
     let mut s = s.to_lowercase();
     // убираем содержимое скобок с типовыми маркерами
     for marker in [
-        "official", "audio", "video", "lyric", "remaster", "remix", "feat", "ft", "featuring",
-        "with", "live", "prod", "deluxe", "instrumental",
+        "official",
+        "audio",
+        "video",
+        "lyric",
+        "remaster",
+        "remix",
+        "feat",
+        "ft",
+        "featuring",
+        "with",
+        "live",
+        "prod",
+        "deluxe",
+        "instrumental",
     ] {
         // (…marker…) и […]marker…]
         strip_parenthesized(&mut s, marker);
@@ -178,7 +190,9 @@ pub(crate) fn strip_parenthesized(s: &mut String, marker: &str) {
         let mut search_from = 0;
         while let Some(rel_start) = s[search_from..].find(open) {
             let start = search_from + rel_start;
-            let Some(rel_end) = s[start..].find(close) else { break };
+            let Some(rel_end) = s[start..].find(close) else {
+                break;
+            };
             let end = start + rel_end + close.len_utf8();
             let inner = s[start..end].to_lowercase();
             if inner.contains(marker) {

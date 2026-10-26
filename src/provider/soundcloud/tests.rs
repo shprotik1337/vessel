@@ -82,7 +82,10 @@ async fn test_live_soundcloud_search_and_playback() {
 
     println!("Найдено {} треков SoundCloud", page.tracks.len());
     for track in &page.tracks[..3] {
-        println!("Пробуем resolve для '{}' ({:?})...", track.title, track.capability);
+        println!(
+            "Пробуем resolve для '{}' ({:?})...",
+            track.title, track.capability
+        );
         let source = provider.playback_source(track).await.unwrap();
         println!("Успешно: {} (mime: {:?})", source.url, source.mime_type);
         assert!(!source.url.as_str().is_empty());

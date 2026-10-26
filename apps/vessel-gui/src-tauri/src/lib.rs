@@ -4,6 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State};
 use vessel_core::{
     app::{App, PlaybackStatus, PlayerState},
     config::{AppConfig, AppPaths},
@@ -14,8 +16,6 @@ use vessel_core::{
     storage::{HistoryEntry, Storage},
     user::UserManager,
 };
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State};
 
 mod commands;
 mod discord_rpc;
@@ -147,13 +147,19 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
         };
         let connected = match kind {
             // YouTube Music работает анонимно — всегда connected, если enabled
-            vessel_core::model::ProviderKind::YouTubeMusic => registry.get(kind).is_some() && enabled,
+            vessel_core::model::ProviderKind::YouTubeMusic => {
+                registry.get(kind).is_some() && enabled
+            }
             // Остальные — показываем «подключено» только если пользователь
             // явно сохранил ключ/cookie (иначе на свежей установке SoundCloud
             // авто-дискавери показывает зелёный бейдж хотя никто не входил)
             _ => registry.get(kind).is_some() && enabled && has_credentials,
         };
-        let origin = match core.config.provider_routing.get(vessel_core::protocol::kind_segment(kind)) {
+        let origin = match core
+            .config
+            .provider_routing
+            .get(vessel_core::protocol::kind_segment(kind))
+        {
             Some(target) if target.starts_with("server:") => {
                 let id = &target["server:".len()..];
                 core.config
@@ -195,7 +201,10 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
         }
 
         let server = active_server_id.and_then(|server_id| {
-            core.config.vessel_servers.iter().find(|s| s.id == server_id)
+            core.config
+                .vessel_servers
+                .iter()
+                .find(|s| s.id == server_id)
         });
 
         if let Some(server) = server {
@@ -326,7 +335,6 @@ fn drive_runtime(core: &mut GuiCore) {
     }
 }
 
-
 fn persist(core: &mut GuiCore) {
     if core.app.queue_dirty {
         let storage = core.storage.clone();
@@ -408,7 +416,11 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| paths.users_dir());
-    let mut users = UserManager::open(users_dir, config.history_limit, Some(paths.database_file.clone()))?;
+    let mut users = UserManager::open(
+        users_dir,
+        config.history_limit,
+        Some(paths.database_file.clone()),
+    )?;
     // Р С’Р Р†РЎвЂљР С•-Р Р†РЎвЂ¦Р С•Р Т‘ Р С‘Р В»Р С‘ Р Р†РЎвЂ№Р В±Р С•РЎР‚ Р С—Р С•Р В»РЎРЉР В·Р С•Р Р†Р В°РЎвЂљР ВµР В»РЎРЏ Р С—РЎР‚Р С‘ РЎРѓРЎвЂљР В°РЎР‚РЎвЂљР Вµ
     if let Some(auto) = config.auto_login_user.clone() {
         if users.user_exists(&auto) {
@@ -493,7 +505,7 @@ pub fn run() -> anyhow::Result<()> {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(core)
-.invoke_handler(tauri::generate_handler![
+        .invoke_handler(tauri::generate_handler![
             get_state,
             commands::search,
             commands::search_collections,
@@ -542,6 +554,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::follow_artist,
             commands::unfollow_artist,
             commands::is_artist_followed,
+            commands::auth_sync_followed_artists,
             commands::get_history,
             commands::clear_history,
             commands::get_provider_status,
@@ -633,6 +646,9 @@ pub fn run() -> anyhow::Result<()> {
             commands::auth_get_account_state,
             commands::auth_get_profile,
             commands::auth_update_profile,
+            commands::auth_get_user_settings,
+            commands::auth_save_user_settings,
+            commands::auth_sync_settings,
             commands::window_minimize,
             commands::window_toggle_maximize,
             commands::window_is_maximized,
@@ -674,7 +690,10 @@ pub fn run() -> anyhow::Result<()> {
                         let core = core_session.lock().unwrap_or_else(|p| p.into_inner());
                         let secrets = SecretStore::new(core.paths.secrets_file.clone());
                         let token = secrets.get_named("vessel-user-session").ok().flatten();
-                        (token, core.account_state != vessel_core::user::AccountState::Guest)
+                        (
+                            token,
+                            core.account_state != vessel_core::user::AccountState::Guest,
+                        )
                     };
 
                     if let Some(token) = token_opt {
@@ -683,44 +702,136 @@ pub fn run() -> anyhow::Result<()> {
                                 Ok(session_resp) => {
                                     let lib = client.user_library(&token).await.ok();
                                     let pl = client.user_playlists(&token).await.ok();
-                                    let mut core = core_session.lock().unwrap_or_else(|p| p.into_inner());
+                                    let cloud_settings = client.user_settings(&token).await.ok();
+                                    let cloud_artists =
+                                        client.user_followed_artists(&token).await.ok();
+                                    let secrets_file = {
+                                        let mut core =
+                                            core_session.lock().unwrap_or_else(|p| p.into_inner());
                                     let secrets = SecretStore::new(core.paths.secrets_file.clone());
-                                    let _ = secrets.set_named("vessel-user-username", &session_resp.user.username);
-                                    let _ = secrets.set_named("vessel-user-id", &session_resp.user.id);
-                                    core.account_state = vessel_core::user::AccountState::Authenticated {
-                                        username: session_resp.user.username,
-                                        user_id: session_resp.user.id,
-                                    };
+                                    let _ = secrets.set_named(
+                                        "vessel-user-username",
+                                        &session_resp.user.username,
+                                    );
+                                    let _ =
+                                        secrets.set_named("vessel-user-id", &session_resp.user.id);
+                                    core.account_state =
+                                        vessel_core::user::AccountState::Authenticated {
+                                            username: session_resp.user.username,
+                                            user_id: session_resp.user.id.clone(),
+                                        };
+                                    if let Some(cs) = cloud_settings {
+                                        if let Some(s) = cs.settings {
+                                            if let Some(lang) = s.language {
+                                                core.config.language = lang;
+                                            }
+                                            if let Some(theme) = s.theme {
+                                                core.config.theme = theme;
+                                            }
+                                            if let Some(rec) = s.recommendation_providers {
+                                                core.config.recommendation_providers = Some(rec);
+                                            }
+                                            if let Some(incl) =
+                                                s.include_playlists_in_recommendations
+                                            {
+                                                core.config.include_playlists_in_recommendations =
+                                                    incl;
+                                            }
+                                            if let Some(excl) =
+                                                s.excluded_recommendation_playlist_ids
+                                            {
+                                                core.config.excluded_recommendation_playlist_ids =
+                                                    excl;
+                                            }
+                                            if let Some(hist) = s.history_limit {
+                                                core.config.history_limit = hist.clamp(500, 10_000);
+                                            }
+                                            core.app.config_dirty = true;
+                                        }
+                                    }
                                     if let Some(lib) = lib {
                                         core.app.library = lib.tracks;
                                     }
                                     if let Some(mut pl) = pl {
-                                        let local_db = core.storage.list_playlists().unwrap_or_default();
+                                        let local_db =
+                                            core.storage.list_playlists().unwrap_or_default();
                                         for p in &mut pl.playlists {
-                                            let is_album_from_url = p.source_url.as_ref().map(|u| {
-                                                let s = u.as_str().to_lowercase();
-                                                s.contains("/album/")
-                                                    || s.contains("spotify:album:")
-                                                    || s.contains("browse/mpre")
-                                                    || s.contains("album")
-                                            }).unwrap_or(false);
+                                            let is_album_from_url = p
+                                                .source_url
+                                                .as_ref()
+                                                .map(|u| {
+                                                    let s = u.as_str().to_lowercase();
+                                                    s.contains("/album/")
+                                                        || s.contains("spotify:album:")
+                                                        || s.contains("browse/mpre")
+                                                        || s.contains("album")
+                                                })
+                                                .unwrap_or(false);
 
-                                            let is_album_from_local = core.app.playlists.iter().find(|local| local.id == p.id).map(|local| local.is_album).unwrap_or(false);
-                                            let is_album_from_db = local_db.iter().find(|stored| stored.id == p.id).map(|stored| stored.is_album).unwrap_or(false);
+                                            let is_album_from_local = core
+                                                .app
+                                                .playlists
+                                                .iter()
+                                                .find(|local| local.id == p.id)
+                                                .map(|local| local.is_album)
+                                                .unwrap_or(false);
+                                            let is_album_from_db = local_db
+                                                .iter()
+                                                .find(|stored| stored.id == p.id)
+                                                .map(|stored| stored.is_album)
+                                                .unwrap_or(false);
 
-                                            if is_album_from_url || is_album_from_local || is_album_from_db {
+                                            if is_album_from_url
+                                                || is_album_from_local
+                                                || is_album_from_db
+                                            {
                                                 p.is_album = true;
                                             }
                                             if p.artist_name.is_none() {
-                                                if let Some(local) = core.app.playlists.iter().find(|l| l.id == p.id) {
+                                                if let Some(local) =
+                                                    core.app.playlists.iter().find(|l| l.id == p.id)
+                                                {
                                                     p.artist_name = local.artist_name.clone();
-                                                } else if let Some(stored) = local_db.iter().find(|s| s.id == p.id) {
+                                                } else if let Some(stored) =
+                                                    local_db.iter().find(|s| s.id == p.id)
+                                                {
                                                     p.artist_name = stored.artist_name.clone();
                                                 }
                                             }
                                             let _ = core.storage.save_playlist(p);
                                         }
                                         core.app.playlists = pl.playlists;
+                                    }
+                                    if let Some(artists) = cloud_artists {
+                                        for a in artists.artists {
+                                            let _ = core.storage.follow_artist(&a);
+                                        }
+                                    }
+                                    core.paths.secrets_file.clone()
+                                };
+
+                                    // Синхронизация учетных данных провайдеров из облачного Vault
+                                    let secrets = SecretStore::new(secrets_file);
+                                    let gen = vessel_core::vault_sync::next_account_generation();
+                                    if let Ok(()) = vessel_core::vault_sync::sync_credentials_on_login(
+                                        &client,
+                                        &token,
+                                        &session_resp.user.id,
+                                        gen,
+                                        &secrets,
+                                    )
+                                    .await
+                                    {
+                                        let mut core =
+                                            core_session.lock().unwrap_or_else(|p| p.into_inner());
+                                        core.runtime.reload_providers();
+                                        let creds =
+                                            core.runtime.credential_state().unwrap_or_default();
+                                        core.app.spotify_enabled = creds.spotify;
+                                        core.app.yandex_enabled = creds.yandex;
+                                        core.app.deezer_enabled = creds.deezer;
+                                        core.app.soundcloud_enabled = creds.soundcloud;
+                                        core.app.config_dirty = true;
                                     }
                                 }
                                 Err(err) => {
@@ -730,12 +841,36 @@ pub fn run() -> anyhow::Result<()> {
                                         || err_str.contains("неавторизован")
                                         || err_str.contains("Unauthorized");
                                     if is_unauthorized {
-                                        let mut core = core_session.lock().unwrap_or_else(|p| p.into_inner());
-                                        let secrets = SecretStore::new(core.paths.secrets_file.clone());
+                                        let (uid, secrets_file) = {
+                                            let mut core =
+                                                core_session.lock().unwrap_or_else(|p| p.into_inner());
+                                            let uid = match &core.account_state {
+                                                vessel_core::user::AccountState::Authenticated { user_id, .. } => {
+                                                    Some(user_id.clone())
+                                                }
+                                                _ => None,
+                                            };
+                                            core.account_state = vessel_core::user::AccountState::Guest;
+                                            (uid, core.paths.secrets_file.clone())
+                                        };
+                                        let secrets =
+                                            SecretStore::new(secrets_file);
                                         let _ = secrets.remove_named("vessel-user-session");
                                         let _ = secrets.remove_named("vessel-user-username");
                                         let _ = secrets.remove_named("vessel-user-id");
-                                        core.account_state = vessel_core::user::AccountState::Guest;
+                                        if let Some(uid) = uid {
+                                            vessel_core::vault_sync::clear_account_local_secrets(&uid, &secrets);
+                                        }
+                                        let mut core =
+                                            core_session.lock().unwrap_or_else(|p| p.into_inner());
+                                        core.runtime.reload_providers();
+                                        let creds =
+                                            core.runtime.credential_state().unwrap_or_default();
+                                        core.app.spotify_enabled = creds.spotify;
+                                        core.app.yandex_enabled = creds.yandex;
+                                        core.app.deezer_enabled = creds.deezer;
+                                        core.app.soundcloud_enabled = creds.soundcloud;
+                                        core.app.config_dirty = true;
                                     }
                                 }
                             }
@@ -746,27 +881,27 @@ pub fn run() -> anyhow::Result<()> {
                 driver_loop(core, app_handle);
             });
 
-            let show_item = tauri::menu::MenuItem::with_id(app, "show", "Показать", true, None::<&str>)?;
-            let quit_item = tauri::menu::MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
+            let show_item =
+                tauri::menu::MenuItem::with_id(app, "show", "Показать", true, None::<&str>)?;
+            let quit_item =
+                tauri::menu::MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
             let tray_menu = tauri::menu::Menu::with_items(app, &[&show_item, &quit_item])?;
 
             let mut tray_builder = tauri::tray::TrayIconBuilder::new()
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
                         }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
                     }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::Click {
@@ -800,7 +935,7 @@ pub fn run() -> anyhow::Result<()> {
 
             Ok(())
         })
-    .run(tauri::generate_context!())?;
+        .run(tauri::generate_context!())?;
 
     Ok(())
 }

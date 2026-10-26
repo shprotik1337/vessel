@@ -70,7 +70,11 @@ pub async fn search_collections(
     if registry.is_empty() {
         return Err("Сначала добавь ключ провайдера в Настройках".to_string());
     }
-    let target_kind = match provider.as_deref().map(str::trim).filter(|s| !s.is_empty() && *s != "all") {
+    let target_kind = match provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != "all")
+    {
         Some(s) => Some(provider_kind_from_str(s)?),
         None => None,
     };
@@ -131,7 +135,11 @@ pub async fn search_collections(
         .into_iter()
         .map(|list| {
             list.into_iter()
-                .filter(|item| item.kind == vessel_core::provider::CollectionKind::Artist || item.track_count != 0 || !item.title.is_empty())
+                .filter(|item| {
+                    item.kind == vessel_core::provider::CollectionKind::Artist
+                        || item.track_count != 0
+                        || !item.title.is_empty()
+                })
                 .take(take_count)
                 .collect()
         })
@@ -145,7 +153,11 @@ pub async fn search_collections(
             }
         }
     }
-    vessel_core::dlog!("[search_collections] итого {} для '{}' ({kind:?})", items.len(), query);
+    vessel_core::dlog!(
+        "[search_collections] итого {} для '{}' ({kind:?})",
+        items.len(),
+        query
+    );
     Ok(items)
 }
 
@@ -252,19 +264,46 @@ pub async fn get_wave_recommendations(
         )
     };
     if registry.is_empty() {
-        return Err("Сначала добавь SoundCloud client_id или Yandex OAuth в Настройках".to_string());
+        return Err(
+            "Сначала добавь SoundCloud client_id или Yandex OAuth в Настройках".to_string(),
+        );
     }
     let src = vessel_core::recommendation::RecommendationSource::normalize(&source);
     let explicit_filter = providers.as_deref().filter(|s| !s.trim().is_empty());
     let filter = explicit_filter.or(wave_config.as_deref());
     let result = if src == vessel_core::recommendation::RecommendationSource::Playlists {
         if let Some(pid) = playlist_id {
-            vessel_core::recommendation::recommend_from_playlist(&registry, &storage, pid, size.unwrap_or(20), filter).await
+            vessel_core::recommendation::recommend_from_playlist(
+                &registry,
+                &storage,
+                pid,
+                size.unwrap_or(20),
+                filter,
+            )
+            .await
         } else {
-            vessel_core::recommendation::recommend(&registry, &storage, src, size.unwrap_or(20), filter, include_playlists, &excluded_playlists).await
+            vessel_core::recommendation::recommend(
+                &registry,
+                &storage,
+                src,
+                size.unwrap_or(20),
+                filter,
+                include_playlists,
+                &excluded_playlists,
+            )
+            .await
         }
     } else {
-        vessel_core::recommendation::recommend(&registry, &storage, src, size.unwrap_or(20), filter, include_playlists, &excluded_playlists).await
+        vessel_core::recommendation::recommend(
+            &registry,
+            &storage,
+            src,
+            size.unwrap_or(20),
+            filter,
+            include_playlists,
+            &excluded_playlists,
+        )
+        .await
     };
     Ok(result.tracks)
 }
@@ -294,7 +333,11 @@ pub async fn set_wave_source(core: CoreState<'_>, source: String) -> Result<(), 
 #[tauri::command]
 pub async fn get_wave_providers(core: CoreState<'_>) -> Result<String, String> {
     let core = lock(&core);
-    Ok(core.config.wave_providers.clone().unwrap_or_else(|| "all".to_string()))
+    Ok(core
+        .config
+        .wave_providers
+        .clone()
+        .unwrap_or_else(|| "all".to_string()))
 }
 
 /// Сохраняет выбранные провайдеры «Моей волны».
@@ -324,7 +367,10 @@ pub async fn get_recommendation_providers(core: CoreState<'_>) -> Result<String,
 
 /// Сохраняет выбранные провайдеры для рекомендаций в поиске.
 #[tauri::command]
-pub async fn set_recommendation_providers(core: CoreState<'_>, providers: String) -> Result<(), String> {
+pub async fn set_recommendation_providers(
+    core: CoreState<'_>,
+    providers: String,
+) -> Result<(), String> {
     let mut core = lock(&core);
     let normalized = if providers.trim().is_empty() {
         "all".to_string()
@@ -343,7 +389,10 @@ pub async fn get_include_playlists_in_recommendations(core: CoreState<'_>) -> Re
 }
 
 #[tauri::command]
-pub async fn set_include_playlists_in_recommendations(core: CoreState<'_>, enabled: bool) -> Result<(), String> {
+pub async fn set_include_playlists_in_recommendations(
+    core: CoreState<'_>,
+    enabled: bool,
+) -> Result<(), String> {
     let mut core = lock(&core);
     core.config.include_playlists_in_recommendations = enabled;
     core.app.config_dirty = true;
@@ -351,20 +400,32 @@ pub async fn set_include_playlists_in_recommendations(core: CoreState<'_>, enabl
 }
 
 #[tauri::command]
-pub async fn get_excluded_recommendation_playlists(core: CoreState<'_>) -> Result<Vec<String>, String> {
+pub async fn get_excluded_recommendation_playlists(
+    core: CoreState<'_>,
+) -> Result<Vec<String>, String> {
     let core = lock(&core);
     Ok(core.config.excluded_recommendation_playlist_ids.clone())
 }
 
 #[tauri::command]
-pub async fn toggle_playlist_taste_exclusion(core: CoreState<'_>, playlist_id: String) -> Result<bool, String> {
+pub async fn toggle_playlist_taste_exclusion(
+    core: CoreState<'_>,
+    playlist_id: String,
+) -> Result<bool, String> {
     let mut core = lock(&core);
     let target = playlist_id.trim();
-    let is_now_excluded = if let Some(pos) = core.config.excluded_recommendation_playlist_ids.iter().position(|id| id == target) {
+    let is_now_excluded = if let Some(pos) = core
+        .config
+        .excluded_recommendation_playlist_ids
+        .iter()
+        .position(|id| id == target)
+    {
         core.config.excluded_recommendation_playlist_ids.remove(pos);
         false
     } else {
-        core.config.excluded_recommendation_playlist_ids.push(target.to_string());
+        core.config
+            .excluded_recommendation_playlist_ids
+            .push(target.to_string());
         true
     };
     core.app.config_dirty = true;
@@ -530,7 +591,11 @@ pub async fn apply_smart_shuffle(
         }
         let now_key = core.app.now_playing.as_ref().map(|t| t.provider_key());
         if let Some(now_key) = now_key {
-            if let Some(pos) = res.interleaved_queue.iter().position(|t| t.provider_key() == now_key) {
+            if let Some(pos) = res
+                .interleaved_queue
+                .iter()
+                .position(|t| t.provider_key() == now_key)
+            {
                 core.app.queue_index = Some(pos);
             }
         }
@@ -540,4 +605,3 @@ pub async fn apply_smart_shuffle(
 
     Ok(res)
 }
-

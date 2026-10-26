@@ -9,12 +9,16 @@ import type {
   LoginRequest,
   RegisterRequest,
   StorageStats,
+  SyncedUserSettings,
   TrackRef,
   UpdateProfileRequest,
   UserInfo,
+  UserSettingsResponse,
+  SaveUserSettingsRequest,
+  SaveUserSettingsResponse,
 } from "../types";
 
-export type { CloudSyncResult, DownloadBatchResult };
+export type { CloudSyncResult, DownloadBatchResult, SyncedUserSettings, UserSettingsResponse, SaveUserSettingsRequest, SaveUserSettingsResponse };
 
 export async function getState(): Promise<FullState> {
   return invoke<FullState>("get_state");
@@ -198,4 +202,16 @@ export async function getStorageStats(): Promise<StorageStats> {
 
 export async function clearStorageCache(target?: "all" | "tracks" | "covers"): Promise<StorageStats> {
   return invoke<StorageStats>("clear_storage_cache", { target: target ?? null });
+}
+
+export async function authGetUserSettings(): Promise<UserSettingsResponse> {
+  return invoke<UserSettingsResponse>("auth_get_user_settings");
+}
+
+export async function authSaveUserSettings(req: SaveUserSettingsRequest): Promise<SaveUserSettingsResponse> {
+  return invoke<SaveUserSettingsResponse>("auth_save_user_settings", { req });
+}
+
+export async function authSyncSettings(localSettings?: SyncedUserSettings | null): Promise<UserSettingsResponse> {
+  return invoke<UserSettingsResponse>("auth_sync_settings", { localSettings: localSettings ?? null });
 }

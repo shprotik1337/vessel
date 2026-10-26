@@ -1,6 +1,6 @@
 use vessel_core::{model::TrackRef, storage::HistoryEntry};
 
-use super::common::{CoreState, lock, repeat_from_str};
+use super::common::{lock, repeat_from_str, CoreState};
 
 #[tauri::command]
 pub async fn play(core: CoreState<'_>, track: TrackRef) -> Result<(), String> {
@@ -122,11 +122,7 @@ pub async fn remove_from_queue(core: CoreState<'_>, index: usize) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn move_queue_item(
-    core: CoreState<'_>,
-    from: usize,
-    to: usize,
-) -> Result<(), String> {
+pub async fn move_queue_item(core: CoreState<'_>, from: usize, to: usize) -> Result<(), String> {
     let mut core = lock(&core);
     if from >= core.app.queue.len() || to >= core.app.queue.len() {
         return Err("индекс вне очереди".to_string());
@@ -136,10 +132,7 @@ pub async fn move_queue_item(
 }
 
 #[tauri::command]
-pub async fn reorder_queue(
-    core: CoreState<'_>,
-    tracks: Vec<TrackRef>,
-) -> Result<(), String> {
+pub async fn reorder_queue(core: CoreState<'_>, tracks: Vec<TrackRef>) -> Result<(), String> {
     let mut core = lock(&core);
     if tracks.is_empty() && !core.app.queue.is_empty() {
         return Err("пустой порядок очереди".to_string());

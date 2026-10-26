@@ -11,6 +11,7 @@ pub enum SearchProvider {
     All,
     #[serde(rename = "soundcloud", alias = "sound_cloud")]
     SoundCloud,
+    #[serde(rename = "yandex_music", alias = "yandex")]
     YandexMusic,
     Deezer,
     Spotify,
@@ -59,6 +60,7 @@ pub enum ProviderKind {
     #[default]
     #[serde(rename = "soundcloud", alias = "sound_cloud")]
     SoundCloud,
+    #[serde(rename = "yandex_music", alias = "yandex")]
     YandexMusic,
     Deezer,
     Spotify,

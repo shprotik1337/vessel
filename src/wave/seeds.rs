@@ -38,7 +38,10 @@ pub(crate) fn build_seeds(
         let mut recent_candidates = Vec::new();
         for track in &profile.recent_tracks {
             let aid = artist_id(track);
-            if !aid.is_empty() && !seen_artists.contains(&aid) && !seen_tracks.contains(&track_key(track)) {
+            if !aid.is_empty()
+                && !seen_artists.contains(&aid)
+                && !seen_tracks.contains(&track_key(track))
+            {
                 recent_candidates.push(track.clone());
             }
         }
@@ -60,8 +63,10 @@ pub(crate) fn build_seeds(
             let recent_slice = &liked[..len.min(25)];
             let older_slice = &liked[len.min(25)..];
 
-            let mut recent_pool: Vec<TrackRef> = recent_slice.iter().map(|(t, _)| t.clone()).collect();
-            let mut older_pool: Vec<TrackRef> = older_slice.iter().map(|(t, _)| t.clone()).collect();
+            let mut recent_pool: Vec<TrackRef> =
+                recent_slice.iter().map(|(t, _)| t.clone()).collect();
+            let mut older_pool: Vec<TrackRef> =
+                older_slice.iter().map(|(t, _)| t.clone()).collect();
             crate::app::shuffle_slice(&mut recent_pool);
             crate::app::shuffle_slice(&mut older_pool);
 
@@ -213,7 +218,6 @@ pub(crate) fn build_seeds(
         strict_artist_ids,
     }
 }
-
 
 fn unique(values: Vec<String>, limit: usize) -> Vec<String> {
     let mut seen = HashSet::new();

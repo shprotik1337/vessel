@@ -1,8 +1,8 @@
 use serde::Serialize;
 use vessel_core::model::{Playlist, TrackRef};
 
+use super::common::{lock, now_ms, provider_kind_from_str, CoreState};
 use crate::GuiCore;
-use super::common::{CoreState, lock, now_ms, provider_kind_from_str};
 
 #[derive(Serialize)]
 pub struct TrackTime {
@@ -40,7 +40,13 @@ fn sync_playlist_if_authenticated(core: &GuiCore, playlist_id: uuid::Uuid) {
     if !core.account_state.is_authenticated() {
         return;
     }
-    let Some(playlist) = core.app.playlists.iter().find(|p| p.id == playlist_id).cloned() else {
+    let Some(playlist) = core
+        .app
+        .playlists
+        .iter()
+        .find(|p| p.id == playlist_id)
+        .cloned()
+    else {
         return;
     };
     let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
@@ -83,25 +89,18 @@ pub async fn toggle_favorite(core: CoreState<'_>, track: TrackRef) -> Result<boo
 }
 
 #[tauri::command]
-pub async fn reorder_library(
-    core: CoreState<'_>,
-    from: usize,
-    to: usize,
-) -> Result<(), String> {
+pub async fn reorder_library(core: CoreState<'_>, from: usize, to: usize) -> Result<(), String> {
     let mut core = lock(&core);
     let len = core.app.library.len();
     if from >= len || to >= len {
         return Err("индекс вне библиотеки".to_string());
     }
-    let mut order: Vec<String> = core
-        .app
-        .library
-        .iter()
-        .map(|t| t.provider_key())
-        .collect();
+    let mut order: Vec<String> = core.app.library.iter().map(|t| t.provider_key()).collect();
     let key = order.remove(from);
     order.insert(to, key);
-    core.storage.reorder_library(&order).map_err(|e| e.to_string())?;
+    core.storage
+        .reorder_library(&order)
+        .map_err(|e| e.to_string())?;
     let track = core.app.library.remove(from);
     core.app.library.insert(to, track);
     Ok(())
@@ -131,10 +130,7 @@ pub async fn preview_playlist_url(core: CoreState<'_>, url: String) -> Result<Pl
 }
 
 #[tauri::command]
-pub async fn save_imported_playlist(
-    core: CoreState<'_>,
-    playlist: Playlist,
-) -> Result<(), String> {
+pub async fn save_imported_playlist(core: CoreState<'_>, playlist: Playlist) -> Result<(), String> {
     let mut playlist = playlist;
     let url_lower = playlist
         .source_url
@@ -148,23 +144,25 @@ pub async fn save_imported_playlist(
     {
         playlist.is_album = true;
     }
-    let kind_label = if playlist.is_album { "альбом" } else { "плейлист" };
+    let kind_label = if playlist.is_album {
+        "альбом"
+    } else {
+        "плейлист"
+    };
 
     let mut core = lock(&core);
     // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
-    if playlist
-        .source_url
-        .as_ref()
-        .is_some_and(|url| core.app.playlists.iter().any(|p| p.source_url.as_ref() == Some(url)))
-    {
+    if playlist.source_url.as_ref().is_some_and(|url| {
+        core.app
+            .playlists
+            .iter()
+            .any(|p| p.source_url.as_ref() == Some(url))
+    }) {
         return Err(format!("Этот {kind_label} уже добавлен в библиотеку"));
     }
-    if core
-        .app
-        .playlists
-        .iter()
-        .any(|p| p.source_url.is_none() && p.title == playlist.title && playlist.source_url.is_none())
-    {
+    if core.app.playlists.iter().any(|p| {
+        p.source_url.is_none() && p.title == playlist.title && playlist.source_url.is_none()
+    }) {
         return Err(format!("Этот {kind_label} уже добавлен в библиотеку"));
     }
     core.storage
@@ -178,10 +176,7 @@ pub async fn save_imported_playlist(
 }
 
 #[tauri::command]
-pub async fn reorder_playlists(
-    core: CoreState<'_>,
-    order: Vec<String>,
-) -> Result<(), String> {
+pub async fn reorder_playlists(core: CoreState<'_>, order: Vec<String>) -> Result<(), String> {
     let mut core = lock(&core);
     core.storage
         .save_playlists_order(&order)
@@ -196,9 +191,7 @@ pub async fn reorder_playlists(
 }
 
 #[tauri::command]
-pub async fn get_library_times(
-    core: CoreState<'_>,
-) -> Result<Vec<TrackTime>, String> {
+pub async fn get_library_times(core: CoreState<'_>) -> Result<Vec<TrackTime>, String> {
     let core = lock(&core);
     let times = core
         .storage
@@ -234,10 +227,7 @@ pub async fn get_playlist_track_times(
 }
 
 #[tauri::command]
-pub async fn import_playlist_url(
-    core: CoreState<'_>,
-    url: String,
-) -> Result<Playlist, String> {
+pub async fn import_playlist_url(core: CoreState<'_>, url: String) -> Result<Playlist, String> {
     let parsed = url::Url::parse(&url).map_err(|e| format!("Неверный URL: {e}"))?;
     let is_album = {
         let url_lower = url.to_lowercase();
@@ -246,7 +236,11 @@ pub async fn import_playlist_url(
             || url_lower.contains("browse/mpre")
             || url_lower.contains("album")
     };
-    let kind_label = if is_album { "альбом" } else { "плейлист" };
+    let kind_label = if is_album {
+        "альбом"
+    } else {
+        "плейлист"
+    };
     // Дубли по ссылке нельзя: один плейлист/альбом — одна запись
     {
         let core = lock(&core);
@@ -329,7 +323,9 @@ pub async fn rename_playlist(core: CoreState<'_>, id: String, title: String) -> 
 pub async fn delete_playlist(core: CoreState<'_>, id: String) -> Result<(), String> {
     let mut core = lock(&core);
     let id = uuid::Uuid::parse_str(&id).map_err(|e| e.to_string())?;
-    core.storage.delete_playlist(id).map_err(|e| e.to_string())?;
+    core.storage
+        .delete_playlist(id)
+        .map_err(|e| e.to_string())?;
     core.app.gui_delete_playlist(id);
     if core.account_state.is_authenticated() {
         let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
@@ -521,28 +517,211 @@ pub async fn follow_artist(
     core: CoreState<'_>,
     artist: vessel_core::model::FollowedArtist,
 ) -> Result<(), String> {
-    let core = lock(&core);
-    core.storage
-        .follow_artist(&artist)
-        .map_err(|e| e.to_string())
+    let (token_opt, user_id_opt) = {
+        let core = lock(&core);
+        core.storage
+            .follow_artist(&artist)
+            .map_err(|e| e.to_string())?;
+
+        if let vessel_core::user::AccountState::Authenticated { user_id, .. } = &core.account_state
+        {
+            let _ = core.storage.remove_pending_artist_deletion(
+                user_id,
+                artist.provider.as_str(),
+                &artist.id,
+            );
+            let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+            let token = secrets.get_named("vessel-user-session").ok().flatten();
+            (token, Some(user_id.clone()))
+        } else {
+            (None, None)
+        }
+    };
+
+    if let (Some(token), Some(_)) = (token_opt, user_id_opt) {
+        let artist_clone = artist.clone();
+        tokio::spawn(async move {
+            if let Ok(client) = super::users::official_client() {
+                let req = vessel_core::protocol::FollowArtistRequest {
+                    artist: artist_clone,
+                };
+                if let Err(e) = client.user_follow_artist(&token, &req).await {
+                    vessel_core::dlog!("[vessel] follow_artist network sync failed: {e}");
+                }
+            }
+        });
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn unfollow_artist(
     core: CoreState<'_>,
     id: String,
+    provider: Option<String>,
 ) -> Result<bool, String> {
+    let (deleted, token_opt, user_id_opt, prov_str) = {
+        let core = lock(&core);
+        let existing = core.storage.get_followed_artist(&id).ok().flatten();
+        let prov_str = provider
+            .or_else(|| existing.as_ref().map(|a| a.provider.as_str().to_string()))
+            .unwrap_or_else(|| "spotify".to_string());
+
+        let deleted = core
+            .storage
+            .unfollow_artist(&id)
+            .map_err(|e| e.to_string())?;
+
+        if let vessel_core::user::AccountState::Authenticated { user_id, .. } = &core.account_state
+        {
+            let _ = core
+                .storage
+                .record_pending_artist_deletion(user_id, &prov_str, &id);
+            let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+            let token = secrets.get_named("vessel-user-session").ok().flatten();
+            (deleted, token, Some(user_id.clone()), prov_str)
+        } else {
+            (deleted, None, None, prov_str)
+        }
+    };
+
+    if let (Some(token), Some(uid)) = (token_opt, user_id_opt) {
+        let core_storage = {
+            let core = lock(&core);
+            core.storage.clone()
+        };
+        let id_clone = id.clone();
+        let prov_clone = prov_str.clone();
+        tokio::spawn(async move {
+            if let Ok(client) = super::users::official_client() {
+                let prov_kind = match prov_clone.as_str() {
+                    "soundcloud" | "sound_cloud" => vessel_core::model::ProviderKind::SoundCloud,
+                    "yandex" | "yandex_music" => vessel_core::model::ProviderKind::YandexMusic,
+                    "deezer" => vessel_core::model::ProviderKind::Deezer,
+                    "spotify" => vessel_core::model::ProviderKind::Spotify,
+                    "youtube_music" | "you_tube_music" => {
+                        vessel_core::model::ProviderKind::YouTubeMusic
+                    }
+                    _ => vessel_core::model::ProviderKind::Spotify,
+                };
+                let req = vessel_core::protocol::UnfollowArtistRequest {
+                    provider: prov_kind,
+                    id: id_clone.clone(),
+                };
+                match client.user_unfollow_artist(&token, &req).await {
+                    Ok(_) => {
+                        let _ = core_storage.remove_pending_artist_deletion(
+                            &uid,
+                            &prov_clone,
+                            &id_clone,
+                        );
+                    }
+                    Err(e) => {
+                        vessel_core::dlog!("[vessel] unfollow_artist network sync failed: {e}");
+                    }
+                }
+            }
+        });
+    }
+
+    Ok(deleted)
+}
+
+#[tauri::command]
+pub async fn auth_sync_followed_artists(
+    core: CoreState<'_>,
+) -> Result<Vec<vessel_core::model::FollowedArtist>, String> {
+    let (token, user_id) = {
+        let core = lock(&core);
+        if let vessel_core::user::AccountState::Authenticated { user_id, .. } = &core.account_state
+        {
+            let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
+            let token = secrets
+                .get_named("vessel-user-session")
+                .ok()
+                .flatten()
+                .ok_or_else(|| "Нет активной сессии пользователя".to_string())?;
+            (token, user_id.clone())
+        } else {
+            return Err("Пользователь не авторизован".to_string());
+        }
+    };
+
+    let client = super::users::official_client()?;
+
+    // 1. Сбрасываем накопленные локальные удаления
+    let pending_deletions = {
+        let core = lock(&core);
+        core.storage
+            .list_pending_artist_deletions(&user_id)
+            .unwrap_or_default()
+    };
+
+    for (prov_str, art_id) in pending_deletions {
+        let prov_kind = match prov_str.as_str() {
+            "soundcloud" | "sound_cloud" => vessel_core::model::ProviderKind::SoundCloud,
+            "yandex" | "yandex_music" => vessel_core::model::ProviderKind::YandexMusic,
+            "deezer" => vessel_core::model::ProviderKind::Deezer,
+            "spotify" => vessel_core::model::ProviderKind::Spotify,
+            "youtube_music" | "you_tube_music" => vessel_core::model::ProviderKind::YouTubeMusic,
+            _ => vessel_core::model::ProviderKind::Spotify,
+        };
+        let req = vessel_core::protocol::UnfollowArtistRequest {
+            provider: prov_kind,
+            id: art_id.clone(),
+        };
+        if client.user_unfollow_artist(&token, &req).await.is_ok() {
+            let core = lock(&core);
+            let _ = core
+                .storage
+                .remove_pending_artist_deletion(&user_id, &prov_str, &art_id);
+        }
+    }
+
+    // 2. Получаем актуальный локальный список подписок
+    let local_artists = {
+        let core = lock(&core);
+        core.storage.list_followed_artists().unwrap_or_default()
+    };
+
+    // 3. Отправляем на сервер для двухстороннего слияния
+    let sync_req = vessel_core::protocol::SyncArtistsRequest {
+        artists: local_artists,
+    };
+    let sync_resp = client
+        .user_sync_artists(&token, &sync_req)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 4. Проверяем оставшиеся ожидающие удаления
+    let remaining_deletions = {
+        let core = lock(&core);
+        core.storage
+            .list_pending_artist_deletions(&user_id)
+            .unwrap_or_default()
+    };
+
     let core = lock(&core);
+    for artist in sync_resp.artists {
+        let prov_str = artist.provider.as_str();
+        let is_pending_deletion = remaining_deletions.iter().any(|(p, id)| {
+            (p == prov_str || p == &format!("{:?}", artist.provider).to_lowercase())
+                && id == &artist.id
+        });
+
+        if !is_pending_deletion {
+            let _ = core.storage.follow_artist(&artist);
+        }
+    }
+
     core.storage
-        .unfollow_artist(&id)
+        .list_followed_artists()
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn is_artist_followed(
-    core: CoreState<'_>,
-    id: String,
-) -> Result<bool, String> {
+pub async fn is_artist_followed(core: CoreState<'_>, id: String) -> Result<bool, String> {
     let core = lock(&core);
     core.storage
         .is_artist_followed(&id)
@@ -560,7 +739,9 @@ pub async fn set_playlist_is_album(
     if let Some(pl) = core.app.playlists.iter_mut().find(|p| p.id == playlist_id) {
         pl.is_album = is_album;
         let pl_clone = pl.clone();
-        core.storage.save_playlist(&pl_clone).map_err(|e| e.to_string())?;
+        core.storage
+            .save_playlist(&pl_clone)
+            .map_err(|e| e.to_string())?;
         core.app.playlists_dirty = true;
     }
     Ok(())

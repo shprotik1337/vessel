@@ -81,6 +81,35 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     applyThemeVariables(activeConfig);
   }, [activeConfig]);
 
+  // Synchronize remote customization when received from cloud
+  useEffect(() => {
+    const handleRemoteSettings = (event: Event) => {
+      const customEvent = event as CustomEvent<any>;
+      const remote = customEvent.detail;
+      if (!remote) return;
+      if (remote.customization) {
+        const sanitized = sanitizeConfig(remote.customization);
+        setSavedConfig(sanitized);
+        setDraftConfig(sanitized);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+        } catch {}
+      }
+      if (Array.isArray(remote.user_presets)) {
+        setUserPresets(remote.user_presets.slice(0, 3));
+        try {
+          localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(remote.user_presets.slice(0, 3)));
+        } catch {}
+      }
+      if (remote.font) {
+        localStorage.setItem("vessel_font", remote.font);
+        document.body.style.fontFamily = remote.font === "Default" ? "Inter, -apple-system, sans-serif" : `${remote.font}, sans-serif`;
+      }
+    };
+    window.addEventListener("vessel:cloud-settings-synced", handleRemoteSettings);
+    return () => window.removeEventListener("vessel:cloud-settings-synced", handleRemoteSettings);
+  }, []);
+
   const enterEditMode = () => {
     setDraftConfig(JSON.parse(JSON.stringify(savedConfig)));
     setIsEditMode(true);

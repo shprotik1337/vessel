@@ -82,7 +82,11 @@ fn wave_settings_clamp_like_pc_and_skip_deezer() {
     assert_eq!(settings.language_rotation, ["ru", "en"]);
     assert_eq!(
         settings.provider_order(),
-        [ProviderKind::Deezer, ProviderKind::YandexMusic, ProviderKind::SoundCloud]
+        [
+            ProviderKind::Deezer,
+            ProviderKind::YandexMusic,
+            ProviderKind::SoundCloud
+        ]
     );
 }
 
@@ -103,7 +107,11 @@ fn profile_uses_pc_windows_and_unique_recent_tracks() {
     assert_eq!(profile.recent_top_artists, [("artist a".to_string(), 2)]);
     assert_eq!(
         profile.all_top_artists,
-        [("artist a".to_string(), 3), ("artist b".to_string(), 1), ("artist c".to_string(), 1)]
+        [
+            ("artist a".to_string(), 3),
+            ("artist b".to_string(), 1),
+            ("artist c".to_string(), 1)
+        ]
     );
     assert_eq!(
         profile.liked_top_artists_recent,
@@ -390,11 +398,23 @@ fn mixed_providers_interleaves_without_starving_and_allows_runs() {
     let selected = select_ranked(tracks, &settings, quotas);
     assert_eq!(selected.len(), 10);
 
-    let sc_count = selected.iter().filter(|t| t.track.provider == ProviderKind::SoundCloud).count();
-    let sp_count = selected.iter().filter(|t| t.track.provider == ProviderKind::Spotify).count();
+    let sc_count = selected
+        .iter()
+        .filter(|t| t.track.provider == ProviderKind::SoundCloud)
+        .count();
+    let sp_count = selected
+        .iter()
+        .filter(|t| t.track.provider == ProviderKind::Spotify)
+        .count();
 
-    assert!(sp_count >= 3, "Spotify must get a fair share, got {sp_count}");
-    assert!(sc_count >= 3, "SoundCloud must get a fair share, got {sc_count}");
+    assert!(
+        sp_count >= 3,
+        "Spotify must get a fair share, got {sp_count}"
+    );
+    assert!(
+        sc_count >= 3,
+        "SoundCloud must get a fair share, got {sc_count}"
+    );
 
     let mut current_streak = 0;
     let mut last_p = None;
@@ -408,4 +428,3 @@ fn mixed_providers_interleaves_without_starving_and_allows_runs() {
         }
     }
 }
-

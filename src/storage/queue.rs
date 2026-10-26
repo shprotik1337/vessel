@@ -2,8 +2,8 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{RepeatMode, TrackRef};
 use super::codec::{encode_track, load_track_column};
+use crate::model::{RepeatMode, TrackRef};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct QueueSnapshot {

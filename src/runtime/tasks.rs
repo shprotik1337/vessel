@@ -11,11 +11,11 @@ use crate::{
 };
 
 use super::{
+    Runtime,
     importer::spawn_import,
     message::RuntimeMessage,
     search::{self, spawn_search},
     wave::spawn_wave,
-    Runtime,
 };
 
 impl Runtime {
@@ -271,4 +271,3 @@ mod tests {
         assert_eq!(runtime.select_wave_primary_provider(), None);
     }
 }
-

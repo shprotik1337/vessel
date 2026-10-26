@@ -98,6 +98,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const syncCloudSettings = useCallback(async () => {
+    try {
+      const customRaw = localStorage.getItem("vessel_customization_v2");
+      let customParsed = null;
+      if (customRaw) {
+        try { customParsed = JSON.parse(customRaw); } catch {}
+      }
+      const presetsRaw = localStorage.getItem("vessel_customization_user_presets_v2");
+      let presetsParsed = null;
+      if (presetsRaw) {
+        try { presetsParsed = JSON.parse(presetsRaw); } catch {}
+      }
+
+      const local: api.SyncedUserSettings = {
+        schema_version: 1,
+        customization: customParsed,
+        user_presets: presetsParsed,
+        font: localStorage.getItem("vessel_font") || undefined,
+        auto_similar: localStorage.getItem("vessel_auto_similar") !== "false",
+        audio_agc: localStorage.getItem("vessel_audio_agc") === "true",
+        autoplay_last: localStorage.getItem("vessel_autoplay_last") === "true",
+        crossfade_enabled: localStorage.getItem("vessel_crossfade_enabled") === "true",
+        crossfade_sec: Number(localStorage.getItem("vessel_crossfade_sec") || 5),
+      };
+
+      const resp = await api.authSyncSettings(local);
+      if (resp && resp.settings) {
+        window.dispatchEvent(
+          new CustomEvent("vessel:cloud-settings-synced", { detail: resp.settings })
+        );
+        if (typeof resp.settings.auto_similar === "boolean") {
+          localStorage.setItem("vessel_auto_similar", String(resp.settings.auto_similar));
+        }
+        if (typeof resp.settings.audio_agc === "boolean") {
+          localStorage.setItem("vessel_audio_agc", String(resp.settings.audio_agc));
+          void api.setAudioAgc(resp.settings.audio_agc);
+        }
+        if (typeof resp.settings.autoplay_last === "boolean") {
+          localStorage.setItem("vessel_autoplay_last", String(resp.settings.autoplay_last));
+        }
+        if (typeof resp.settings.crossfade_enabled === "boolean") {
+          localStorage.setItem("vessel_crossfade_enabled", String(resp.settings.crossfade_enabled));
+        }
+        if (typeof resp.settings.crossfade_sec === "number") {
+          localStorage.setItem("vessel_crossfade_sec", String(resp.settings.crossfade_sec));
+          if (resp.settings.crossfade_enabled) {
+            void api.setCrossfade(resp.settings.crossfade_sec * 1000);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[vessel] settings sync warning:", e);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const fresh = await api.getState();
@@ -116,13 +171,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setView("auth");
         } else {
           triggerAutoplayLast(fresh);
+          void syncCloudSettings();
         }
       }
     } catch (error) {
       console.error("get_state failed", error);
       showToast("Не удалось получить состояние", true);
     }
-  }, [showToast, triggerAutoplayLast, setView]);
+  }, [showToast, triggerAutoplayLast, setView, syncCloudSettings]);
 
   const {
     isAuthModalOpen,

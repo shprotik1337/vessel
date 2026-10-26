@@ -15,7 +15,8 @@ use symphonia::core::io::MediaSource;
 
 pub(crate) const HTTP_CHUNK_BYTES: usize = 512 * 1024; // 512KB — безопасный размер range-чанка (модель Kopuz)
 // UA по умолчанию, если источник не задал свой собственный
-const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
+const BROWSER_UA: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
 struct ChunkData {
     start: u64,
@@ -102,7 +103,11 @@ impl HttpRangeSource {
         if self.chunks.contains_key(&next_start) {
             return;
         }
-        if self.prefetch.as_ref().is_some_and(|p| p.start == next_start) {
+        if self
+            .prefetch
+            .as_ref()
+            .is_some_and(|p| p.start == next_start)
+        {
             return;
         }
         let client = self.client.clone();
@@ -131,7 +136,9 @@ impl HttpRangeSource {
                         return Ok(());
                     }
                     Ok(Err(err)) => {
-                        crate::dlog!("[http] предзагрузка {target_start} завершилась ошибкой: {err}");
+                        crate::dlog!(
+                            "[http] предзагрузка {target_start} завершилась ошибкой: {err}"
+                        );
                     }
                     Err(_) => {
                         crate::dlog!("[http] поток предзагрузки запаниковал на {target_start}");
@@ -299,8 +306,7 @@ impl Read for HttpRangeSource {
         let offset = (self.position - chunk_start) as usize;
         if offset >= chunk.len() {
             // Текущий чанк прочитан до конца
-            if self.length.is_some_and(|len| self.position >= len)
-                || chunk.len() < HTTP_CHUNK_BYTES
+            if self.length.is_some_and(|len| self.position >= len) || chunk.len() < HTTP_CHUNK_BYTES
             {
                 return Ok(0);
             }

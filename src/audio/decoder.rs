@@ -172,7 +172,10 @@ pub(super) fn decode_source(
         let sample_count = samples.len() as u64;
         buffered_samples.fetch_add(sample_count, Ordering::AcqRel);
         if chunk_count == 0 {
-            crate::dlog!("[decode][gen{generation}] sending FIRST chunk ({} samples)", sample_count);
+            crate::dlog!(
+                "[decode][gen{generation}] sending FIRST chunk ({} samples)",
+                sample_count
+            );
         }
         if chunks
             .send(AudioChunk {

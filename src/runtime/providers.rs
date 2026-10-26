@@ -4,8 +4,8 @@ use crate::{
     protocol::{UserCredentials, kind_from_segment},
     provider::{
         MusicProvider, ProviderRegistry,
-        remote::{ServerClient, ServerProvider},
         deezer::DeezerProvider,
+        remote::{ServerClient, ServerProvider},
         soundcloud::SoundCloudProvider,
         spotify::SpotifyProvider,
         yandex::YandexProvider,
@@ -24,22 +24,38 @@ pub struct ProviderSetup {
 /// пользователя, а не под своими сохранёнными аккаунтами.
 pub fn collect_credentials(secrets: &SecretStore) -> UserCredentials {
     UserCredentials {
-        soundcloud_client_id: load_secret(secrets, SecretKey::SoundCloudClientIdOverride, &mut Vec::new())
-            .filter(|value| !value.trim().is_empty()),
-        soundcloud_oauth_token: load_secret(secrets, SecretKey::SoundCloudOAuthToken, &mut Vec::new())
-            .filter(|value| !value.trim().is_empty()),
+        soundcloud_client_id: load_secret(
+            secrets,
+            SecretKey::SoundCloudClientIdOverride,
+            &mut Vec::new(),
+        )
+        .filter(|value| !value.trim().is_empty()),
+        soundcloud_oauth_token: load_secret(
+            secrets,
+            SecretKey::SoundCloudOAuthToken,
+            &mut Vec::new(),
+        )
+        .filter(|value| !value.trim().is_empty()),
         yandex_token: load_secret(secrets, SecretKey::YandexToken, &mut Vec::new())
             .filter(|value| !value.trim().is_empty()),
         deezer_arl: load_secret(secrets, SecretKey::DeezerArl, &mut Vec::new())
             .filter(|value| !value.trim().is_empty()),
         spotify_sp_dc: load_secret(secrets, SecretKey::SpotifySpDc, &mut Vec::new())
             .filter(|value| !value.trim().is_empty()),
-        spotify_oauth_refresh: load_secret(secrets, SecretKey::SpotifyOAuthRefreshToken, &mut Vec::new())
-            .filter(|value| !value.trim().is_empty()),
+        spotify_oauth_refresh: load_secret(
+            secrets,
+            SecretKey::SpotifyOAuthRefreshToken,
+            &mut Vec::new(),
+        )
+        .filter(|value| !value.trim().is_empty()),
         youtube_cookie: load_secret(secrets, SecretKey::YouTubeCookie, &mut Vec::new())
             .filter(|value| !value.trim().is_empty()),
-        youtube_oauth_refresh: load_secret(secrets, SecretKey::YouTubeOAuthRefresh, &mut Vec::new())
-            .filter(|value| !value.trim().is_empty()),
+        youtube_oauth_refresh: load_secret(
+            secrets,
+            SecretKey::YouTubeOAuthRefresh,
+            &mut Vec::new(),
+        )
+        .filter(|value| !value.trim().is_empty()),
     }
 }
 
@@ -67,14 +83,19 @@ pub fn build_provider(
             creds.deezer_arl.as_deref(),
         )?),
         ProviderKind::Spotify => Box::new(SpotifyProvider::with_proxy(
-            creds.spotify_sp_dc.clone().ok_or_else(|| {
-                anyhow::anyhow!("Spotify: не передан sp_dc пользователя")
-            })?,
+            creds
+                .spotify_sp_dc
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Spotify: не передан sp_dc пользователя"))?,
             config.spotify_proxy.as_deref(),
         )?),
         ProviderKind::YouTubeMusic => {
             let mut provider = YouTubeMusicProvider::new()?;
-            if let Some(cookie) = creds.youtube_cookie.clone().filter(|v| !v.trim().is_empty()) {
+            if let Some(cookie) = creds
+                .youtube_cookie
+                .clone()
+                .filter(|v| !v.trim().is_empty())
+            {
                 provider.set_cookie(Some(cookie));
             }
             if let Some(refresh) = creds
@@ -93,7 +114,11 @@ pub fn build_provider(
     Ok(provider)
 }
 
-pub fn build_registry(config: &AppConfig, secrets: &SecretStore, allow_remote: bool) -> ProviderSetup {
+pub fn build_registry(
+    config: &AppConfig,
+    secrets: &SecretStore,
+    allow_remote: bool,
+) -> ProviderSetup {
     let mut registry = ProviderRegistry::default();
     let mut notices = Vec::new();
 
@@ -183,7 +208,9 @@ fn apply_provider_routing(
 ) {
     for (segment, target) in &config.provider_routing {
         let Some(kind) = kind_from_segment(segment) else {
-            notices.push(format!("Маршрут «{segment}»: неизвестный провайдер — игнорируем"));
+            notices.push(format!(
+                "Маршрут «{segment}»: неизвестный провайдер — игнорируем"
+            ));
             continue;
         };
         let is_enabled = match kind {
@@ -228,7 +255,12 @@ fn apply_provider_routing(
         };
         match ServerClient::with_secrets(server_url, &token, Some(secrets.clone())) {
             Ok(client) => {
-                crate::dlog!("[routing] {} -> ServerProvider ({} @ {})", kind.label(), server_id, server_url);
+                crate::dlog!(
+                    "[routing] {} -> ServerProvider ({} @ {})",
+                    kind.label(),
+                    server_id,
+                    server_url
+                );
                 registry.register(ServerProvider::new(kind, client));
             }
             Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),
@@ -340,7 +372,13 @@ mod tests {
 
         // allow_remote=false (режим самого Vessel Server) — remote не подключается
         let setup = build_registry(&config, &secrets, false);
-        assert!(!setup.registry.get(crate::model::ProviderKind::SoundCloud).unwrap().is_remote());
+        assert!(
+            !setup
+                .registry
+                .get(crate::model::ProviderKind::SoundCloud)
+                .unwrap()
+                .is_remote()
+        );
     }
 
     #[test]
@@ -384,33 +422,41 @@ mod tests {
             .provider_registry()
             .get(crate::model::ProviderKind::YouTubeMusic)
             .expect("YouTube Music должен быть зарегистрирован");
-        assert!(!initial_yt.is_remote(), "Изначально провайдер должен быть локальным");
+        assert!(
+            !initial_yt.is_remote(),
+            "Изначально провайдер должен быть локальным"
+        );
 
         // Переключаем YouTube Music на сервер
         let mut server_config = routing_config();
-        server_config.provider_routing.insert(
-            "youtube_music".to_string(),
-            "server:s1".to_string(),
-        );
+        server_config
+            .provider_routing
+            .insert("youtube_music".to_string(), "server:s1".to_string());
         runtime.sync_config(&server_config);
 
         let remote_yt = runtime
             .provider_registry()
             .get(crate::model::ProviderKind::YouTubeMusic)
             .expect("YouTube Music должен быть зарегистрирован после sync");
-        assert!(remote_yt.is_remote(), "После sync_config провайдер обязан стать удалённым (ServerProvider)");
+        assert!(
+            remote_yt.is_remote(),
+            "После sync_config провайдер обязан стать удалённым (ServerProvider)"
+        );
 
         // Переключаем обратно на local
         let mut local_config = AppConfig::default();
-        local_config.provider_routing.insert("youtube_music".to_string(), "local".to_string());
+        local_config
+            .provider_routing
+            .insert("youtube_music".to_string(), "local".to_string());
         runtime.sync_config(&local_config);
 
         let back_yt = runtime
             .provider_registry()
             .get(crate::model::ProviderKind::YouTubeMusic)
             .expect("YouTube Music должен быть зарегистрирован после возврата");
-        assert!(!back_yt.is_remote(), "После sync_config с local провайдер обязан снова стать локальным");
+        assert!(
+            !back_yt.is_remote(),
+            "После sync_config с local провайдер обязан снова стать локальным"
+        );
     }
 }
-
-

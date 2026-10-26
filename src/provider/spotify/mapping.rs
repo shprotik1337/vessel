@@ -29,7 +29,10 @@ pub fn jarray(value: &Value, path: &[&str]) -> Vec<Value> {
 }
 
 pub fn pf_bare_id(uri: &str) -> Option<String> {
-    uri.rsplit(':').next().filter(|s| !s.is_empty()).map(str::to_string)
+    uri.rsplit(':')
+        .next()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Выбирает URL изображения с максимальным разрешением (по width/height) из sources[] Spotify.
@@ -100,7 +103,9 @@ pub fn map_pf_track(item: &Value) -> Option<TrackRef> {
                 .and_then(Value::as_u64)
         });
     let album_data = item.get("albumOfTrack").or_else(|| item.get("album"));
-    let album_uri = album_data.and_then(|a| a.get("uri")).and_then(Value::as_str);
+    let album_uri = album_data
+        .and_then(|a| a.get("uri"))
+        .and_then(Value::as_str);
     let album_id = album_uri.and_then(pf_bare_id);
     let album_url =
         album_id.and_then(|alb_id| Url::parse(&format!("{WEB_URL}/album/{alb_id}")).ok());
@@ -195,7 +200,9 @@ pub fn map_album_track(track: &Value) -> Option<TrackRef> {
         .or_else(|| track.get("duration_ms"))
         .and_then(Value::as_u64);
     let album_data = track.get("albumOfTrack").or_else(|| track.get("album"));
-    let album_uri = album_data.and_then(|a| a.get("uri")).and_then(Value::as_str);
+    let album_uri = album_data
+        .and_then(|a| a.get("uri"))
+        .and_then(Value::as_str);
     let album_id = album_uri.and_then(pf_bare_id);
     let album_url =
         album_id.and_then(|alb_id| Url::parse(&format!("{WEB_URL}/album/{alb_id}")).ok());
@@ -204,13 +211,15 @@ pub fn map_album_track(track: &Value) -> Option<TrackRef> {
         .and_then(Value::as_str)
         .map(str::to_string);
 
-    let artwork_url = value_cover_art(track)
-        .or_else(|| album_data.and_then(value_cover_art));
+    let artwork_url = value_cover_art(track).or_else(|| album_data.and_then(value_cover_art));
     let explicit = track
         .pointer("/contentRating/label")
         .and_then(Value::as_str)
         .is_some_and(|l| l.eq_ignore_ascii_case("EXPLICIT"))
-        || track.get("explicit").and_then(Value::as_bool).unwrap_or(false);
+        || track
+            .get("explicit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
     let isrc = [track.get("isrc"), track.pointer("/externalIds/isrc")]
         .into_iter()
         .flatten()
@@ -489,11 +498,12 @@ pub fn parse_album_track_wrapper(wrapper: &Value) -> Option<TrackRef> {
             t.web_url = Url::parse(&format!("{WEB_URL}/track/{}", t.id)).ok()?;
         }
         if t.artwork_url.is_none() {
-            t.artwork_url = value_cover_art(wrapper)
-                .or_else(|| wrapper.get("track").and_then(value_cover_art));
+            t.artwork_url =
+                value_cover_art(wrapper).or_else(|| wrapper.get("track").and_then(value_cover_art));
         }
         if t.album_title.is_none() {
-            t.album_title = wrapper.pointer("/track/albumOfTrack/name")
+            t.album_title = wrapper
+                .pointer("/track/albumOfTrack/name")
                 .or_else(|| wrapper.pointer("/albumOfTrack/name"))
                 .or_else(|| payload.pointer("/albumOfTrack/name"))
                 .or_else(|| payload.pointer("/album/name"))
@@ -501,7 +511,8 @@ pub fn parse_album_track_wrapper(wrapper: &Value) -> Option<TrackRef> {
                 .map(str::to_string);
         }
         if t.album_url.is_none() {
-            let a_uri = wrapper.pointer("/track/albumOfTrack/uri")
+            let a_uri = wrapper
+                .pointer("/track/albumOfTrack/uri")
                 .or_else(|| wrapper.pointer("/albumOfTrack/uri"))
                 .or_else(|| payload.pointer("/albumOfTrack/uri"))
                 .or_else(|| payload.pointer("/album/uri"))
@@ -537,11 +548,14 @@ pub fn parse_album_track_wrapper(wrapper: &Value) -> Option<TrackRef> {
         .or_else(|| wrapper.get("duration_ms"))
         .and_then(Value::as_u64);
 
-    let album_data = payload.get("albumOfTrack")
+    let album_data = payload
+        .get("albumOfTrack")
         .or_else(|| payload.get("album"))
         .or_else(|| wrapper.get("albumOfTrack"))
         .or_else(|| wrapper.get("album"));
-    let album_uri = album_data.and_then(|a| a.get("uri")).and_then(Value::as_str);
+    let album_uri = album_data
+        .and_then(|a| a.get("uri"))
+        .and_then(Value::as_str);
     let album_id = album_uri.and_then(pf_bare_id);
     let album_url =
         album_id.and_then(|alb_id| Url::parse(&format!("{WEB_URL}/album/{alb_id}")).ok());
@@ -557,12 +571,18 @@ pub fn parse_album_track_wrapper(wrapper: &Value) -> Option<TrackRef> {
         .pointer("/contentRating/label")
         .and_then(Value::as_str)
         .is_some_and(|l| l.eq_ignore_ascii_case("EXPLICIT"))
-        || payload.get("explicit").and_then(Value::as_bool).unwrap_or(false)
+        || payload
+            .get("explicit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
         || wrapper
             .pointer("/contentRating/label")
             .and_then(Value::as_str)
             .is_some_and(|l| l.eq_ignore_ascii_case("EXPLICIT"))
-        || wrapper.get("explicit").and_then(Value::as_bool).unwrap_or(false);
+        || wrapper
+            .get("explicit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
     let isrc = [
         payload.get("isrc"),
@@ -690,11 +710,8 @@ pub fn extract_playlist_tracks(value: &Value) -> Vec<TrackRef> {
 /// Релизы без даты уходят в конец (пустой ключ).
 pub fn release_date_key(subtitle: &str) -> String {
     let date_part = subtitle.split(" · ").next().unwrap_or("").trim();
-    let starts_with_year = date_part
-        .chars()
-        .take(4)
-        .all(|c| c.is_ascii_digit())
-        && date_part.len() >= 4;
+    let starts_with_year =
+        date_part.chars().take(4).all(|c| c.is_ascii_digit()) && date_part.len() >= 4;
     if starts_with_year {
         date_part.to_string()
     } else {
@@ -710,10 +727,7 @@ pub fn sort_releases_by_date(releases: &mut [CollectionItem]) {
 
 /// Один release-объект Pathfinder (uri/name/coverArt/date/type/tracks) →
 /// CollectionItem. Общая логика для overview-групп и discography/all.
-pub fn pf_release_to_item(
-    item: &Value,
-    seen: &mut HashSet<String>,
-) -> Option<CollectionItem> {
+pub fn pf_release_to_item(item: &Value, seen: &mut HashSet<String>) -> Option<CollectionItem> {
     let id = jstr(item, &["uri"]).and_then(pf_bare_id)?;
     if !seen.insert(id.clone()) {
         return None;

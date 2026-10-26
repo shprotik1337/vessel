@@ -8,8 +8,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use vessel_core::model::{ProviderKind, TrackRef};
 
-use crate::GuiCore;
 use super::common::{lock, CoreState};
+use crate::GuiCore;
 
 fn resolve_download_dir(core: &GuiCore) -> String {
     if let Some(dir) = core
@@ -166,7 +166,10 @@ pub async fn get_storage_stats(core: CoreState<'_>) -> Result<StorageStats, Stri
 }
 
 #[tauri::command]
-pub async fn clear_storage_cache(core: CoreState<'_>, target: Option<String>) -> Result<StorageStats, String> {
+pub async fn clear_storage_cache(
+    core: CoreState<'_>,
+    target: Option<String>,
+) -> Result<StorageStats, String> {
     let target = target.as_deref().unwrap_or("all");
     let track_cache = {
         let core = lock(&core);
@@ -208,10 +211,7 @@ pub async fn clear_storage_cache(core: CoreState<'_>, target: Option<String>) ->
 }
 
 #[tauri::command]
-pub async fn download_track(
-    core: CoreState<'_>,
-    track: TrackRef,
-) -> Result<String, String> {
+pub async fn download_track(core: CoreState<'_>, track: TrackRef) -> Result<String, String> {
     // Spotify: скачиваем ТОТ ЖЕ аудио-кандидат из Deezer/YTM, что играет
     // (native-аудио Spotify не используется нигде).
     let (key_track, source) = if track.provider == ProviderKind::Spotify {
@@ -219,7 +219,10 @@ pub async fn download_track(
             let core = lock(&core);
             core.runtime.playback_resolver()
         };
-        resolver.playable_for(&track).await.map_err(|e| format!("{e:#}"))?
+        resolver
+            .playable_for(&track)
+            .await
+            .map_err(|e| format!("{e:#}"))?
     } else {
         let registry = {
             let core = lock(&core);
@@ -238,7 +241,7 @@ pub async fn download_track(
         let core = lock(&core);
         resolve_download_dir(&core)
     };
-    
+
     let is_relayed = source.url.path().starts_with("/api/v1/s/");
     let mut source = source;
     if is_relayed {
@@ -295,7 +298,10 @@ fn resolve_ffmpeg_path() -> Option<PathBuf> {
     if res_candidate.is_file() {
         return Some(res_candidate);
     }
-    if let Ok(output) = std::process::Command::new("ffmpeg").arg("-version").output() {
+    if let Ok(output) = std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+    {
         if output.status.success() {
             return Some(PathBuf::from("ffmpeg"));
         }

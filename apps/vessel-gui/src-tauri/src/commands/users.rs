@@ -1,16 +1,20 @@
 use std::path::PathBuf;
 
-use super::common::{lock, CoreState};
 pub use super::auth::official_client;
+use super::common::{lock, CoreState};
 
 #[tauri::command]
-pub async fn get_user_profile(core: CoreState<'_>) -> Result<Option<vessel_core::user::UserProfile>, String> {
+pub async fn get_user_profile(
+    core: CoreState<'_>,
+) -> Result<Option<vessel_core::user::UserProfile>, String> {
     let core = lock(&core);
     Ok(core.app.user_profile.clone())
 }
 
 #[tauri::command]
-pub async fn get_known_users(core: CoreState<'_>) -> Result<Vec<vessel_core::user::UserProfile>, String> {
+pub async fn get_known_users(
+    core: CoreState<'_>,
+) -> Result<Vec<vessel_core::user::UserProfile>, String> {
     let core = lock(&core);
     core.users.known_users().map_err(|e| e.to_string())
 }
@@ -37,7 +41,9 @@ pub async fn switch_user(core: CoreState<'_>, name: String) -> Result<(), String
     let queue = core.storage.load_queue().map_err(|e| e.to_string())?;
     core.app.queue = queue.tracks;
     core.app.queue_index = queue.current_index;
-    core.app.now_playing = queue.current_index.and_then(|i| core.app.queue.get(i).cloned());
+    core.app.now_playing = queue
+        .current_index
+        .and_then(|i| core.app.queue.get(i).cloned());
     core.app.home_tracks = core
         .storage
         .recent_history(24)
@@ -49,7 +55,10 @@ pub async fn switch_user(core: CoreState<'_>, name: String) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn create_user(core: CoreState<'_>, name: String) -> Result<vessel_core::user::UserProfile, String> {
+pub async fn create_user(
+    core: CoreState<'_>,
+    name: String,
+) -> Result<vessel_core::user::UserProfile, String> {
     let mut core = lock(&core);
     core.users.create_user(&name).map_err(|e| e.to_string())?;
     let storage = core.users.storage().clone();
@@ -72,7 +81,10 @@ pub async fn export_user(core: CoreState<'_>, destination: String) -> Result<Str
 }
 
 #[tauri::command]
-pub async fn import_user(core: CoreState<'_>, source: String) -> Result<vessel_core::user::UserProfile, String> {
+pub async fn import_user(
+    core: CoreState<'_>,
+    source: String,
+) -> Result<vessel_core::user::UserProfile, String> {
     let mut core = lock(&core);
     let src = PathBuf::from(&source);
     core.users.import_user(&src).map_err(|e| e.to_string())?;
@@ -87,7 +99,11 @@ pub async fn import_user(core: CoreState<'_>, source: String) -> Result<vessel_c
 #[tauri::command]
 pub async fn backup_user(core: CoreState<'_>) -> Result<String, String> {
     let core = lock(&core);
-    let path = core.users.active_user().backup().map_err(|e| e.to_string())?;
+    let path = core
+        .users
+        .active_user()
+        .backup()
+        .map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -105,7 +121,9 @@ pub async fn select_user(core: CoreState<'_>, name: String, remember: bool) -> R
     let queue = core.storage.load_queue().map_err(|e| e.to_string())?;
     core.app.queue = queue.tracks;
     core.app.queue_index = queue.current_index;
-    core.app.now_playing = queue.current_index.and_then(|i| core.app.queue.get(i).cloned());
+    core.app.now_playing = queue
+        .current_index
+        .and_then(|i| core.app.queue.get(i).cloned());
     core.app.home_tracks = core
         .storage
         .recent_history(24)
@@ -152,9 +170,6 @@ pub async fn delete_user(core: CoreState<'_>, name: String) -> Result<(), String
 
 #[tauri::command]
 pub fn get_users_dir(core: CoreState<'_>) -> Result<String, String> {
-    let dir = lock(&core)
-        .users
-        .users_dir()
-        .to_path_buf();
+    let dir = lock(&core).users.users_dir().to_path_buf();
     Ok(dir.to_string_lossy().into_owned())
 }

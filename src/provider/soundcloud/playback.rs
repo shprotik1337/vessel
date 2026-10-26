@@ -92,7 +92,10 @@ pub(super) async fn poluchit_istochnik(
     if let Some(err) = last_err {
         return Err(err).context("SoundCloud не разрешил поток для воспроизведения");
     }
-    Err(bail_no_stream(matches!(track.capability, PlaybackCapability::Preview { .. })))
+    Err(bail_no_stream(matches!(
+        track.capability,
+        PlaybackCapability::Preview { .. }
+    )))
 }
 
 fn ordered_transcodings<'a>(

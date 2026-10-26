@@ -15,13 +15,13 @@ use url::Url;
 use crate::{
     model::{PlaybackSource, ProviderKind, TrackRef},
     protocol::{
-        API_PREFIX, CREDENTIALS_HEADER, AuthResponse, CaptchaChallenge, CollectionsResponse,
-        DeletePlaylistRequest, GeniusArtistResponse, ImportPlaylistRequest, ImportedPlaylistResponse, LikedRequest,
-        LoginRequest, MigrateDataRequest, PageResponse, ProfileResponse, RegisterRequest,
-        RelatedRequest, ResolveSourceRequest, ResolveSourceResponse, SavePlaylistRequest,
-        ServerInfo, SessionResponse, ToggleLikeRequest, ToggleLikeResponse, TracksResponse,
-        UpdateProfileRequest, UserInfo, UserLibraryResponse, UserPlaylistsResponse,
-        collection_segment, kind_segment,
+        API_PREFIX, AuthResponse, CREDENTIALS_HEADER, CaptchaChallenge, CollectionsResponse,
+        DeletePlaylistRequest, GeniusArtistResponse, ImportPlaylistRequest,
+        ImportedPlaylistResponse, LikedRequest, LoginRequest, MigrateDataRequest, PageResponse,
+        ProfileResponse, RegisterRequest, RelatedRequest, ResolveSourceRequest,
+        ResolveSourceResponse, SavePlaylistRequest, ServerInfo, SessionResponse, ToggleLikeRequest,
+        ToggleLikeResponse, TracksResponse, UpdateProfileRequest, UserInfo, UserLibraryResponse,
+        UserPlaylistsResponse, collection_segment, kind_segment,
     },
     provider::{
         ArtistProfile, CollectionItem, CollectionKind, ImportedPlaylist, MusicProvider, SearchPage,
@@ -31,6 +31,37 @@ use crate::{
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Ошибки клиентского транспорта при работе с серверным Vault.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VaultTransportError {
+    Unauthorized,
+    Conflict,
+    ServiceUnavailable,
+    Network(String),
+    Server {
+        status: reqwest::StatusCode,
+        detail: String,
+    },
+    Decode(String),
+}
+
+impl std::fmt::Display for VaultTransportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unauthorized => write!(f, "Не авторизован: сессия недействительна (HTTP 401)"),
+            Self::Conflict => write!(f, "Конфликт версии учетных данных на сервере (HTTP 409)"),
+            Self::ServiceUnavailable => write!(f, "Серверное хранилище Vault недоступно (HTTP 503)"),
+            Self::Network(msg) => write!(f, "Сетевая ошибка при обращении к Vault: {msg}"),
+            Self::Server { status, detail } => {
+                write!(f, "Ошибка сервера Vault [{status}]: {detail}")
+            }
+            Self::Decode(msg) => write!(f, "Ошибка формата данных ответа Vault: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for VaultTransportError {}
 
 /// HTTP-клиент одного экземпляра Vessel Server. Потокобезопасен, клонируется
 /// дешёво (Arc внутри reqwest).
@@ -52,20 +83,22 @@ impl ServerClient {
 
     /// Тот же клиент, но с доступом к локальному SecretStore — запросы к
     /// серверу будут нести credentials пользователя (sp_dc/ARL/…).
-    pub fn with_secrets(
-        base: &str,
-        token: &str,
-        secrets: Option<SecretStore>,
-    ) -> Result<Self> {
+    pub fn with_secrets(base: &str, token: &str, secrets: Option<SecretStore>) -> Result<Self> {
         let base = base.trim().trim_end_matches('/').to_string();
-        let probe = Url::parse(&format!("{base}{API_PREFIX}/health")).context("некорректный адрес Vessel Server")?;
+        let probe = Url::parse(&format!("{base}{API_PREFIX}/health"))
+            .context("некорректный адрес Vessel Server")?;
         let _ = probe;
         let http = reqwest::Client::builder()
             .user_agent(concat!("vessel/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .context("не удалось создать HTTP-клиент Vessel Server")?;
-        Ok(Self { base, token: token.trim().to_string(), secrets, http })
+        Ok(Self {
+            base,
+            token: token.trim().to_string(),
+            secrets,
+            http,
+        })
     }
 
     pub fn base_url(&self) -> &str {
@@ -85,7 +118,10 @@ impl ServerClient {
         mut request: reqwest::RequestBuilder,
         session_token: Option<&str>,
     ) -> Result<reqwest::Response> {
-        request = request.header(reqwest::header::AUTHORIZATION, format!("Bearer {}", self.token));
+        request = request.header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", self.token),
+        );
         if let Some(session) = session_token {
             request = request.header(crate::protocol::USER_SESSION_HEADER, session);
         }
@@ -104,7 +140,11 @@ impl ServerClient {
         Ok(response)
     }
 
-    async fn get_json<T: DeserializeOwned>(&self, path: &str, query: &[(&str, String)]) -> Result<T> {
+    async fn get_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<T> {
         self.get_user_json(path, None, query).await
     }
 
@@ -122,7 +162,11 @@ impl ServerClient {
         Self::decode(response, path).await
     }
 
-    async fn post_json<B: serde::Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
+    async fn post_json<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
         self.post_user_json(path, None, body).await
     }
 
@@ -134,7 +178,10 @@ impl ServerClient {
     ) -> Result<T> {
         let response = self
             .send_with_user(
-                self.http.post(self.endpoint(path)).json(body).timeout(REQUEST_TIMEOUT),
+                self.http
+                    .post(self.endpoint(path))
+                    .json(body)
+                    .timeout(REQUEST_TIMEOUT),
                 session_token,
             )
             .await?;
@@ -189,7 +236,11 @@ impl ServerClient {
     pub async fn info(&self) -> Result<ServerInfo> {
         // через send(): обязательный Authorization: Bearer
         let response = self
-            .send(self.http.get(self.endpoint("/capabilities")).timeout(REQUEST_TIMEOUT))
+            .send(
+                self.http
+                    .get(self.endpoint("/capabilities"))
+                    .timeout(REQUEST_TIMEOUT),
+            )
             .await?;
         Self::decode(response, "/capabilities").await
     }
@@ -205,9 +256,15 @@ impl ServerClient {
             pairs.push(("cursor", cursor.to_string()));
         }
         let path = format!("/providers/{}/search", kind_segment(provider));
-        let response: PageResponse =
-            self.get_json(&path, &pairs.iter().map(|(k, v)| (*k, v.clone())).collect::<Vec<_>>())
-                .await?;
+        let response: PageResponse = self
+            .get_json(
+                &path,
+                &pairs
+                    .iter()
+                    .map(|(k, v)| (*k, v.clone()))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
         Ok(response.page)
     }
 
@@ -221,20 +278,35 @@ impl ServerClient {
         let response: CollectionsResponse = self
             .get_json(
                 &path,
-                &[("q", query.to_string()), ("type", collection_segment(kind).to_string())],
+                &[
+                    ("q", query.to_string()),
+                    ("type", collection_segment(kind).to_string()),
+                ],
             )
             .await?;
         Ok(response.items)
     }
 
     pub async fn artist_profile(&self, provider: ProviderKind, id: &str) -> Result<ArtistProfile> {
-        let path = format!("/providers/{}/artists/{}", kind_segment(provider), urlencoding(id));
+        let path = format!(
+            "/providers/{}/artists/{}",
+            kind_segment(provider),
+            urlencoding(id)
+        );
         let response: ProfileResponse = self.get_json(&path, &[]).await?;
         Ok(response.profile)
     }
 
-    pub async fn artist_all_tracks(&self, provider: ProviderKind, id: &str) -> Result<Vec<TrackRef>> {
-        let path = format!("/providers/{}/artists/{}/tracks", kind_segment(provider), urlencoding(id));
+    pub async fn artist_all_tracks(
+        &self,
+        provider: ProviderKind,
+        id: &str,
+    ) -> Result<Vec<TrackRef>> {
+        let path = format!(
+            "/providers/{}/artists/{}/tracks",
+            kind_segment(provider),
+            urlencoding(id)
+        );
         let response: TracksResponse = self.get_json(&path, &[]).await?;
         Ok(response.tracks)
     }
@@ -265,12 +337,21 @@ impl ServerClient {
     ) -> Result<ImportedPlaylist> {
         let path = format!("/providers/{}/playlists/import", kind_segment(provider));
         let response: ImportedPlaylistResponse = self
-            .post_json(&path, &ImportPlaylistRequest { url: url.to_string() })
+            .post_json(
+                &path,
+                &ImportPlaylistRequest {
+                    url: url.to_string(),
+                },
+            )
             .await?;
         Ok(response.playlist)
     }
 
-    pub async fn personal_wave(&self, provider: ProviderKind, limit: usize) -> Result<Vec<TrackRef>> {
+    pub async fn personal_wave(
+        &self,
+        provider: ProviderKind,
+        limit: usize,
+    ) -> Result<Vec<TrackRef>> {
         let path = format!("/providers/{}/wave", kind_segment(provider));
         let response: TracksResponse = self
             .get_json(&path, &[("limit", limit.to_string())])
@@ -285,24 +366,45 @@ impl ServerClient {
     ) -> Result<Vec<TrackRef>> {
         let path = format!("/providers/{}/liked", kind_segment(provider));
         let response: TracksResponse = self
-            .post_json(&path, &LikedRequest { profile_url: profile_url.map(str::to_string) })
+            .post_json(
+                &path,
+                &LikedRequest {
+                    profile_url: profile_url.map(str::to_string),
+                },
+            )
             .await?;
         Ok(response.tracks)
     }
 
     /// Разрешает источник воспроизведения. Если сервер выставил `relay_path`
     /// — подменяем URL на серверный релей и прокидываем Authorization.
-    pub async fn playback_source(&self, track: &TrackRef, prefer_relay: bool) -> Result<PlaybackSource> {
-        let path = format!("/providers/{}/playback/resolve", kind_segment(track.provider));
+    pub async fn playback_source(
+        &self,
+        track: &TrackRef,
+        prefer_relay: bool,
+    ) -> Result<PlaybackSource> {
+        let path = format!(
+            "/providers/{}/playback/resolve",
+            kind_segment(track.provider)
+        );
         let response: ResolveSourceResponse = self
-            .post_json(&path, &ResolveSourceRequest { track: track.clone(), prefer_relay })
+            .post_json(
+                &path,
+                &ResolveSourceRequest {
+                    track: track.clone(),
+                    prefer_relay,
+                },
+            )
             .await?;
         let mut source = response.source;
         if let Some(relay_path) = response.relay_path {
             let url = Url::parse(&format!("{}{}", self.base, relay_path))
                 .context("Vessel Server вернул некорректный relay_path")?;
             source.url = url;
-            source.headers.insert("Authorization".to_string(), format!("Bearer {}", self.token));
+            source.headers.insert(
+                "Authorization".to_string(),
+                format!("Bearer {}", self.token),
+            );
             source.supports_range = true;
         }
         Ok(source)
@@ -329,7 +431,8 @@ impl ServerClient {
     }
 
     pub async fn auth_logout(&self, token: &str) -> Result<()> {
-        self.post_user_empty::<()>("/auth/logout", Some(token), None).await
+        self.post_user_empty::<()>("/auth/logout", Some(token), None)
+            .await
     }
 
     // -----------------------------------------------------------------------
@@ -357,19 +460,18 @@ impl ServerClient {
         token: &str,
         req: &ToggleLikeRequest,
     ) -> Result<ToggleLikeResponse> {
-        self.post_user_json("/user/library/toggle", Some(token), req).await
+        self.post_user_json("/user/library/toggle", Some(token), req)
+            .await
     }
 
     pub async fn user_playlists(&self, token: &str) -> Result<UserPlaylistsResponse> {
-        self.get_user_json("/user/playlists", Some(token), &[]).await
+        self.get_user_json("/user/playlists", Some(token), &[])
+            .await
     }
 
-    pub async fn user_playlists_save(
-        &self,
-        token: &str,
-        req: &SavePlaylistRequest,
-    ) -> Result<()> {
-        self.post_user_empty("/user/playlists/save", Some(token), Some(req)).await
+    pub async fn user_playlists_save(&self, token: &str, req: &SavePlaylistRequest) -> Result<()> {
+        self.post_user_empty("/user/playlists/save", Some(token), Some(req))
+            .await
     }
 
     pub async fn user_playlists_delete(
@@ -377,19 +479,195 @@ impl ServerClient {
         token: &str,
         req: &DeletePlaylistRequest,
     ) -> Result<()> {
-        self.post_user_empty("/user/playlists/delete", Some(token), Some(req)).await
+        self.post_user_empty("/user/playlists/delete", Some(token), Some(req))
+            .await
     }
 
     pub async fn user_history(&self, token: &str) -> Result<UserLibraryResponse> {
         self.get_user_json("/user/history", Some(token), &[]).await
     }
 
-    pub async fn user_migrate(
+    pub async fn user_migrate(&self, token: &str, req: &MigrateDataRequest) -> Result<()> {
+        self.post_user_empty("/user/migrate", Some(token), Some(req))
+            .await
+    }
+
+    pub async fn user_settings(
         &self,
         token: &str,
-        req: &MigrateDataRequest,
+    ) -> Result<crate::protocol::UserSettingsResponse> {
+        self.get_user_json("/user/settings", Some(token), &[]).await
+    }
+
+    pub async fn user_settings_save(
+        &self,
+        token: &str,
+        req: &crate::protocol::SaveUserSettingsRequest,
+    ) -> Result<crate::protocol::SaveUserSettingsResponse> {
+        self.post_user_json("/user/settings", Some(token), req)
+            .await
+    }
+
+    pub async fn user_followed_artists(
+        &self,
+        token: &str,
+    ) -> Result<crate::protocol::UserFollowedArtistsResponse> {
+        self.get_user_json("/user/artists", Some(token), &[]).await
+    }
+
+    pub async fn user_follow_artist(
+        &self,
+        token: &str,
+        req: &crate::protocol::FollowArtistRequest,
     ) -> Result<()> {
-        self.post_user_empty("/user/migrate", Some(token), Some(req)).await
+        self.post_user_empty("/user/artists/follow", Some(token), Some(req))
+            .await
+    }
+
+    pub async fn user_unfollow_artist(
+        &self,
+        token: &str,
+        req: &crate::protocol::UnfollowArtistRequest,
+    ) -> Result<()> {
+        self.post_user_empty("/user/artists/unfollow", Some(token), Some(req))
+            .await
+    }
+
+    pub async fn user_sync_artists(
+        &self,
+        token: &str,
+        req: &crate::protocol::SyncArtistsRequest,
+    ) -> Result<crate::protocol::SyncArtistsResponse> {
+        self.post_user_json("/user/artists/sync", Some(token), req)
+            .await
+    }
+
+    // -----------------------------------------------------------------------
+    // Vault & User Provider Credentials (Этап 6.5.1.D)
+    // -----------------------------------------------------------------------
+
+    pub async fn user_credentials(
+        &self,
+        session_token: &str,
+    ) -> Result<crate::protocol::UserCredentialsResponse, VaultTransportError> {
+        let request = self
+            .http
+            .get(self.endpoint("/user/credentials"))
+            .timeout(REQUEST_TIMEOUT);
+        let response = self
+            .send_with_user(request, Some(session_token))
+            .await
+            .map_err(|e| VaultTransportError::Network(e.to_string()))?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(VaultTransportError::Unauthorized);
+        }
+        if status == reqwest::StatusCode::CONFLICT {
+            return Err(VaultTransportError::Conflict);
+        }
+        if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err(VaultTransportError::ServiceUnavailable);
+        }
+        if !status.is_success() {
+            let detail = response
+                .text()
+                .await
+                .unwrap_or_default()
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            return Err(VaultTransportError::Server { status, detail });
+        }
+        response
+            .json::<crate::protocol::UserCredentialsResponse>()
+            .await
+            .map_err(|e| VaultTransportError::Decode(e.to_string()))
+    }
+
+    pub async fn user_credentials_save(
+        &self,
+        session_token: &str,
+        req: &crate::protocol::SaveUserCredentialRequest,
+    ) -> Result<crate::protocol::SaveUserCredentialResponse, VaultTransportError> {
+        let request = self
+            .http
+            .put(self.endpoint("/user/credentials"))
+            .json(req)
+            .timeout(REQUEST_TIMEOUT);
+        let response = self
+            .send_with_user(request, Some(session_token))
+            .await
+            .map_err(|e| VaultTransportError::Network(e.to_string()))?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(VaultTransportError::Unauthorized);
+        }
+        if status == reqwest::StatusCode::CONFLICT {
+            return Err(VaultTransportError::Conflict);
+        }
+        if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err(VaultTransportError::ServiceUnavailable);
+        }
+        if !status.is_success() {
+            let detail = response
+                .text()
+                .await
+                .unwrap_or_default()
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            return Err(VaultTransportError::Server { status, detail });
+        }
+        response
+            .json::<crate::protocol::SaveUserCredentialResponse>()
+            .await
+            .map_err(|e| VaultTransportError::Decode(e.to_string()))
+    }
+
+    pub async fn user_credentials_delete(
+        &self,
+        session_token: &str,
+        provider: &str,
+    ) -> Result<crate::protocol::DeleteUserCredentialResponse, VaultTransportError> {
+        let path = format!("/user/credentials/{provider}");
+        let request = self
+            .http
+            .delete(self.endpoint(&path))
+            .timeout(REQUEST_TIMEOUT);
+        let response = self
+            .send_with_user(request, Some(session_token))
+            .await
+            .map_err(|e| VaultTransportError::Network(e.to_string()))?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(VaultTransportError::Unauthorized);
+        }
+        if status == reqwest::StatusCode::CONFLICT {
+            return Err(VaultTransportError::Conflict);
+        }
+        if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+            return Err(VaultTransportError::ServiceUnavailable);
+        }
+        if !status.is_success() {
+            let detail = response
+                .text()
+                .await
+                .unwrap_or_default()
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            return Err(VaultTransportError::Server { status, detail });
+        }
+        response
+            .json::<crate::protocol::DeleteUserCredentialResponse>()
+            .await
+            .map_err(|e| VaultTransportError::Decode(e.to_string()))
     }
 
     pub async fn genius_artist(&self, name: &str) -> Result<GeniusArtistResponse> {
@@ -511,7 +789,9 @@ impl MusicProvider for ServerProvider {
     }
 
     async fn import_playlist(&self, url: &Url) -> Result<ImportedPlaylist> {
-        self.client.import_playlist(self.kind, &url.to_string()).await
+        self.client
+            .import_playlist(self.kind, &url.to_string())
+            .await
     }
 
     async fn related(&self, track: &TrackRef, limit: usize) -> Result<Vec<TrackRef>> {

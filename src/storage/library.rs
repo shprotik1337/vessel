@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rusqlite::{Connection, params};
 
-use crate::model::TrackRef;
 use super::codec::{decode_track, encode_track, load_track_column};
+use crate::model::TrackRef;
 
 pub struct LibraryRepository;
 

@@ -14,8 +14,8 @@ use crate::{
     provider::ProviderRegistry,
     storage::Storage,
     wave::{
-        clean_artist_name, is_tracklike, is_valid_artist_name, track_semantic_key,
-        ArtistDiversityGuard, WaveTasteProfile,
+        ArtistDiversityGuard, WaveTasteProfile, clean_artist_name, is_tracklike,
+        is_valid_artist_name, track_semantic_key,
     },
 };
 
@@ -36,8 +36,8 @@ pub async fn generate_home_recommendations(
     provider_filter: Option<&str>,
     force_refresh: bool,
 ) -> Result<Vec<TrackRef>> {
-    let allowed_providers = parse_provider_filter(provider_filter)
-        .unwrap_or_else(|| providers.kinds().collect());
+    let allowed_providers =
+        parse_provider_filter(provider_filter).unwrap_or_else(|| providers.kinds().collect());
     if allowed_providers.is_empty() {
         return Ok(Vec::new());
     }
@@ -71,17 +71,13 @@ pub async fn generate_home_recommendations(
         Vec::new()
     };
 
-    let profile = WaveTasteProfile::build_from_storage(
-        storage,
-        &library,
-        true,
-        &[],
-        now_ms,
-    );
+    let profile = WaveTasteProfile::build_from_storage(storage, &library, true, &[], now_ms);
 
     // 2. Если пул кандидатов пуст или мал — собираем богатый пул (60-80 треков)
     if candidate_pool.len() < size.max(24) * 2 {
-        let mut rng = (now_ms as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let mut rng = (now_ms as u64)
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
 
         // Взвешенный отбор сидов: делим артистов на Tier 1 (Core), Tier 2 (Rotation), Tier 3 (Recent)
         let mut seed_tracks = Vec::new();
@@ -91,13 +87,18 @@ pub async fn generate_home_recommendations(
         let mut recent_candidates = Vec::new();
         for t in &profile.recent_tracks {
             let artist_key = clean_artist_name(&t.display_artist());
-            if !artist_key.is_empty() && is_valid_artist_name(&artist_key) && !seen_seed_artists.contains(&artist_key) {
+            if !artist_key.is_empty()
+                && is_valid_artist_name(&artist_key)
+                && !seen_seed_artists.contains(&artist_key)
+            {
                 recent_candidates.push((artist_key, t.clone()));
             }
         }
         let r_len = recent_candidates.len();
         for i in (1..r_len).rev() {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let j = ((rng >> 32) as usize) % (i + 1);
             recent_candidates.swap(i, j);
         }
@@ -108,27 +109,48 @@ pub async fn generate_home_recommendations(
         }
 
         // Tier 1: Топ-5 артистов фонотеки (Core favorites)
-        let mut tier1_artists: Vec<String> = profile.top_artists.iter().take(5).map(|(a, _)| a.clone()).collect();
+        let mut tier1_artists: Vec<String> = profile
+            .top_artists
+            .iter()
+            .take(5)
+            .map(|(a, _)| a.clone())
+            .collect();
         let t1_len = tier1_artists.len();
         for i in (1..t1_len).rev() {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let j = ((rng >> 32) as usize) % (i + 1);
             tier1_artists.swap(i, j);
         }
         for artist in tier1_artists.into_iter().take(4) {
             let a_key = clean_artist_name(&artist);
-            if !a_key.is_empty() && is_valid_artist_name(&a_key) && seen_seed_artists.insert(a_key.clone()) {
-                if let Some(t) = library.iter().find(|tr| clean_artist_name(&tr.display_artist()) == a_key) {
+            if !a_key.is_empty()
+                && is_valid_artist_name(&a_key)
+                && seen_seed_artists.insert(a_key.clone())
+            {
+                if let Some(t) = library
+                    .iter()
+                    .find(|tr| clean_artist_name(&tr.display_artist()) == a_key)
+                {
                     seed_tracks.push(t.clone());
                 }
             }
         }
 
         // Tier 2: Топ 6-15 артистов фонотеки (Rotation)
-        let mut tier2_artists: Vec<String> = profile.top_artists.iter().skip(5).take(10).map(|(a, _)| a.clone()).collect();
+        let mut tier2_artists: Vec<String> = profile
+            .top_artists
+            .iter()
+            .skip(5)
+            .take(10)
+            .map(|(a, _)| a.clone())
+            .collect();
         let t2_len = tier2_artists.len();
         for i in (1..t2_len).rev() {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let j = ((rng >> 32) as usize) % (i + 1);
             tier2_artists.swap(i, j);
         }
@@ -137,8 +159,14 @@ pub async fn generate_home_recommendations(
                 break;
             }
             let a_key = clean_artist_name(&artist);
-            if !a_key.is_empty() && is_valid_artist_name(&a_key) && seen_seed_artists.insert(a_key.clone()) {
-                if let Some(t) = library.iter().find(|tr| clean_artist_name(&tr.display_artist()) == a_key) {
+            if !a_key.is_empty()
+                && is_valid_artist_name(&a_key)
+                && seen_seed_artists.insert(a_key.clone())
+            {
+                if let Some(t) = library
+                    .iter()
+                    .find(|tr| clean_artist_name(&tr.display_artist()) == a_key)
+                {
                     seed_tracks.push(t.clone());
                 }
             }
@@ -148,7 +176,10 @@ pub async fn generate_home_recommendations(
         if seed_tracks.len() < 6 {
             for t in &library {
                 let a_key = clean_artist_name(&t.display_artist());
-                if !a_key.is_empty() && is_valid_artist_name(&a_key) && seen_seed_artists.insert(a_key) {
+                if !a_key.is_empty()
+                    && is_valid_artist_name(&a_key)
+                    && seen_seed_artists.insert(a_key)
+                {
                     seed_tracks.push(t.clone());
                     if seed_tracks.len() >= 8 {
                         break;
@@ -173,11 +204,14 @@ pub async fn generate_home_recommendations(
                     tasks.push(async move {
                         let _permit = sem.acquire().await;
                         if seed_clone.provider == prov_kind {
-                            timeout(Duration::from_millis(3000), provider.related(&seed_clone, 12))
-                                .await
-                                .ok()
-                                .and_then(|r| r.ok())
-                                .unwrap_or_default()
+                            timeout(
+                                Duration::from_millis(3000),
+                                provider.related(&seed_clone, 12),
+                            )
+                            .await
+                            .ok()
+                            .and_then(|r| r.ok())
+                            .unwrap_or_default()
                         } else if let Some(artist) = artist_clone {
                             timeout(Duration::from_millis(3000), provider.search(&artist, None))
                                 .await
@@ -218,12 +252,17 @@ pub async fn generate_home_recommendations(
                             let collab_clone = collab.clone();
                             collab_tasks.push(async move {
                                 let _permit = sem.acquire().await;
-                                timeout(Duration::from_millis(2500), provider.search(&collab_clone, None))
-                                    .await
-                                    .ok()
-                                    .and_then(|r| r.ok())
-                                    .map(|res| res.tracks.into_iter().take(4).collect::<Vec<TrackRef>>())
-                                    .unwrap_or_default()
+                                timeout(
+                                    Duration::from_millis(2500),
+                                    provider.search(&collab_clone, None),
+                                )
+                                .await
+                                .ok()
+                                .and_then(|r| r.ok())
+                                .map(|res| {
+                                    res.tracks.into_iter().take(4).collect::<Vec<TrackRef>>()
+                                })
+                                .unwrap_or_default()
                             });
                         }
                     }
@@ -262,7 +301,8 @@ pub async fn generate_home_recommendations(
                 origin: crate::model::TrackOrigin::Original,
                 album_url: None,
                 album_title: None,
-            }) > 0.0 {
+            }) > 0.0
+            {
                 "hip hop hits"
             } else {
                 "top hits 2026"
@@ -303,12 +343,17 @@ pub async fn generate_home_recommendations(
                             let provider_cloned = provider.clone();
                             topup_tasks.push(async move {
                                 let _permit = sem.acquire().await;
-                                timeout(Duration::from_millis(3000), provider_cloned.search(&artist_name, None))
-                                    .await
-                                    .ok()
-                                    .and_then(|r| r.ok())
-                                    .map(|res| res.tracks.into_iter().take(8).collect::<Vec<TrackRef>>())
-                                    .unwrap_or_default()
+                                timeout(
+                                    Duration::from_millis(3000),
+                                    provider_cloned.search(&artist_name, None),
+                                )
+                                .await
+                                .ok()
+                                .and_then(|r| r.ok())
+                                .map(|res| {
+                                    res.tracks.into_iter().take(8).collect::<Vec<TrackRef>>()
+                                })
+                                .unwrap_or_default()
                             });
                         }
                     }
@@ -335,7 +380,10 @@ pub async fn generate_home_recommendations(
         candidate_pool = new_candidates;
         // Сохраняем собранный пул кандидатов в SQLite (TTL 2 часа)
         if candidate_pool.len() >= 12 {
-            let _ = storage.set_cached_recommendation(&pool_cache_key, &serde_json::to_string(&candidate_pool)?);
+            let _ = storage.set_cached_recommendation(
+                &pool_cache_key,
+                &serde_json::to_string(&candidate_pool)?,
+            );
         }
     }
 
@@ -345,13 +393,16 @@ pub async fn generate_home_recommendations(
 
     // 3. Динамическое сэмплирование и ранжирование из пула кандидатов
     let recently_served = get_recently_served_recs();
-    let mut rng = (now_ms as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let mut rng = (now_ms as u64)
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
 
     let mut scored_candidates: Vec<(TrackRef, f64)> = candidate_pool
         .into_iter()
         .map(|t| {
             let sk = track_semantic_key(&t);
-            let sim = profile.genre_profile.similarity(&t) - profile.genre_profile.alien_penalty(&t);
+            let sim =
+                profile.genre_profile.similarity(&t) - profile.genre_profile.alien_penalty(&t);
             let mut score = sim;
 
             // Штраф за недавний показ (Impression Cooldown): треки, показанные в прошлый раз, уступают место другим
@@ -360,7 +411,9 @@ pub async fn generate_home_recommendations(
             }
 
             // Мягкий шум для ротации треков с близким скором (-0.06..+0.06)
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let noise = (((rng >> 32) % 1000) as f64 / 1000.0 - 0.5) * 0.12;
             score += noise;
 

@@ -219,8 +219,8 @@ pub fn collection_from_segment(segment: &str) -> Option<CollectionKind> {
 pub struct CaptchaItem {
     pub id: usize,
     pub symbol: String, // "cloud" | "diamond" | "note" | "crown" | "star" | "bolt"
-    pub x: f32, // процент 10..90
-    pub y: f32, // процент 15..85
+    pub x: f32,         // процент 10..90
+    pub y: f32,         // процент 15..85
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -348,6 +348,160 @@ pub struct DeletePlaylistRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Followed Artists Synchronization DTOs
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct UserFollowedArtistsResponse {
+    pub artists: Vec<crate::model::FollowedArtist>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct FollowArtistRequest {
+    pub artist: crate::model::FollowedArtist,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct UnfollowArtistRequest {
+    pub provider: crate::model::ProviderKind,
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct SyncArtistsRequest {
+    pub artists: Vec<crate::model::FollowedArtist>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct SyncArtistsResponse {
+    pub artists: Vec<crate::model::FollowedArtist>,
+}
+
+// ---------------------------------------------------------------------------
+// User Settings Synchronization DTOs
+// ---------------------------------------------------------------------------
+
+fn default_settings_schema_version() -> u32 {
+    1
+}
+
+/// Синхронизируемые между устройствами пользовательские предпочтения.
+/// Содержит ТОЛЬКО подтверждённые кросс-платформенные настройки.
+/// Не содержит путей, привязок оборудования, секретов или локальной маршрутизации.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct SyncedUserSettings {
+    #[serde(default = "default_settings_schema_version")]
+    pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub customization: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_presets: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommendation_providers: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_playlists_in_recommendations: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excluded_recommendation_playlist_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_similar: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_agc: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autoplay_last: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crossfade_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crossfade_sec: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_limit: Option<usize>,
+}
+
+impl Default for SyncedUserSettings {
+    fn default() -> Self {
+        Self {
+            schema_version: default_settings_schema_version(),
+            language: None,
+            theme: None,
+            customization: None,
+            user_presets: None,
+            font: None,
+            recommendation_providers: None,
+            include_playlists_in_recommendations: None,
+            excluded_recommendation_playlist_ids: None,
+            auto_similar: None,
+            audio_agc: None,
+            autoplay_last: None,
+            crossfade_enabled: None,
+            crossfade_sec: None,
+            history_limit: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct UserSettingsResponse {
+    pub settings: Option<SyncedUserSettings>,
+    pub version: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct SaveUserSettingsRequest {
+    pub settings: SyncedUserSettings,
+    pub expected_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct SaveUserSettingsResponse {
+    pub version: i64,
+    pub updated_at_ms: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Vault & User Provider Credentials DTOs
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct SaveUserCredentialRequest {
+    pub provider_kind: String,
+    pub payload: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_version: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct SaveUserCredentialResponse {
+    pub provider_kind: String,
+    pub version: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct UserProviderCredentialItem {
+    pub provider_kind: String,
+    pub payload: serde_json::Value,
+    pub version: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct UserCredentialsResponse {
+    pub credentials: Vec<UserProviderCredentialItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct DeleteUserCredentialResponse {
+    pub provider_kind: String,
+    pub deleted: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Genius & Rich Artist Enrichment DTOs
 // ---------------------------------------------------------------------------
 
@@ -391,12 +545,30 @@ mod tests {
 
     #[test]
     fn collection_from_segment_plural() {
-        assert_eq!(collection_from_segment("playlist"), Some(CollectionKind::Playlist));
-        assert_eq!(collection_from_segment("playlists"), Some(CollectionKind::Playlist));
-        assert_eq!(collection_from_segment("album"), Some(CollectionKind::Album));
-        assert_eq!(collection_from_segment("albums"), Some(CollectionKind::Album));
-        assert_eq!(collection_from_segment("artist"), Some(CollectionKind::Artist));
-        assert_eq!(collection_from_segment("artists"), Some(CollectionKind::Artist));
+        assert_eq!(
+            collection_from_segment("playlist"),
+            Some(CollectionKind::Playlist)
+        );
+        assert_eq!(
+            collection_from_segment("playlists"),
+            Some(CollectionKind::Playlist)
+        );
+        assert_eq!(
+            collection_from_segment("album"),
+            Some(CollectionKind::Album)
+        );
+        assert_eq!(
+            collection_from_segment("albums"),
+            Some(CollectionKind::Album)
+        );
+        assert_eq!(
+            collection_from_segment("artist"),
+            Some(CollectionKind::Artist)
+        );
+        assert_eq!(
+            collection_from_segment("artists"),
+            Some(CollectionKind::Artist)
+        );
         assert_eq!(collection_from_segment("other"), None);
     }
 
@@ -429,7 +601,8 @@ mod tests {
         assert!(info.capabilities.playback_relay);
         assert_eq!(info.providers.len(), 2);
         // минимальный ответ (без capabilities/providers) валиден
-        let min: ServerInfo = serde_json::from_str(r#"{"name":"x","version":"1","api_version":"v1"}"#).unwrap();
+        let min: ServerInfo =
+            serde_json::from_str(r#"{"name":"x","version":"1","api_version":"v1"}"#).unwrap();
         assert!(!min.capabilities.processing);
         assert!(min.providers.is_empty());
     }
@@ -463,4 +636,3 @@ mod tests {
         assert_eq!(parsed.target_provider, Some(ProviderKind::Spotify));
     }
 }
-
