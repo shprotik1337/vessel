@@ -12,7 +12,17 @@ type SortMode = "custom" | "title" | "artist" | "added";
 type SortDir = "asc" | "desc";
 
 export function Favorites() {
-  const { state, playTracks, showToast, navigateTo, refresh, goBack, lang, cacheProgress } = useApp();
+  const {
+    state,
+    playTracks,
+    smartShuffle,
+    showToast,
+    navigateTo,
+    refresh,
+    goBack,
+    lang,
+    cacheProgress,
+  } = useApp();
   const dragRef = useRef<{ from: number } | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [sort, setSort] = useState<SortMode>("custom");
@@ -68,23 +78,27 @@ export function Favorites() {
 
   const playOne = (track: TrackRef) => {
     const idx = visible.findIndex((t) => trackKey(t) === trackKey(track));
-    void playTracks(visible, idx < 0 ? 0 : idx);
+    void playTracks(visible, idx < 0 ? 0 : idx, false);
   };
 
   const playAll = async () => {
     if (visible.length === 0) return;
     try {
-      await api.playTracks(visible, 0);
+      void playTracks(visible, 0, true);
     } catch (error) {
       showToast(String(error), true);
     }
   };
 
   const shufflePlay = async () => {
-    const tracks = [...favTracks].sort(() => Math.random() - 0.5);
-    if (tracks.length === 0) return;
+    if (!state?.player.shuffle && !smartShuffle) {
+      try {
+        await api.setShuffle(true);
+      } catch {}
+    }
+    if (visible.length === 0) return;
     try {
-      await api.playTracks(tracks, 0);
+      void playTracks(visible, Math.floor(Math.random() * visible.length), true);
     } catch (error) {
       showToast(String(error), true);
     }

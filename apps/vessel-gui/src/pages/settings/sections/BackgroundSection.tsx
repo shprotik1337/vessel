@@ -437,80 +437,158 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
           </div>
           <div className="sett-card-desc">
             {lang === "ru"
-              ? "Регулировка фона под всеми строками треков для идеальной читаемости на ярких или детальных обоях (0% — полностью прозрачно)"
-              : "Adjust row background for optimal readability on bright wallpapers (0% — transparent)"}
+              ? "Регулировка стиля и плотности фона под всеми строками треков"
+              : "Adjust row style and background density for track rows"}
           </div>
         </div>
 
         {/* Normal Track Row Preview */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            height: 52,
-            padding: "0 16px",
-            borderRadius: 8,
-            background: (config.theme?.trackRowOpacity ?? 0) > 0
-              ? hexToRgba(config.theme?.cardBgColor || "#000000", (config.theme?.trackRowOpacity ?? 0) * 0.95)
-              : "transparent",
-            border: (config.theme?.trackRowOpacity ?? 0) > 0
-              ? `1px solid rgba(255, 255, 255, ${(config.theme?.trackRowOpacity ?? 0) * 0.08})`
-              : "1px solid transparent",
-            backdropFilter: (config.theme?.trackRowOpacity ?? 0) > 0 ? "blur(12px)" : "none",
-            WebkitBackdropFilter: (config.theme?.trackRowOpacity ?? 0) > 0 ? "blur(12px)" : "none",
-            boxShadow: (config.theme?.trackRowOpacity ?? 0) > 0.1 ? "0 4px 16px rgba(0,0,0,0.2)" : "none",
-            transition: "all 0.15s ease",
-            marginBottom: 16,
-          }}
-        >
-          <span style={{ width: 20, fontSize: 13, color: "var(--text3)", fontVariantNumeric: "tabular-nums" }}>
-            1
-          </span>
-          <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: 6,
-            background: "rgba(255, 255, 255, 0.06)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 14,
-            color: "var(--text3)",
-            flexShrink: 0,
-          }}>
-            <IconDisc size={18} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              FE!N (feat. Playboi Carti)
-            </div>
-            <div style={{ fontSize: 11.5, color: "var(--text3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              Travis Scott — {lang === "ru" ? "Обычная строка трека" : "Normal track row"}
-            </div>
-          </div>
-          <span style={{ fontSize: 11.5, color: "var(--text3)", fontVariantNumeric: "tabular-nums" }}>
-            3:11
-          </span>
-        </div>
+        {(() => {
+          const rowStyle = config.theme?.trackRowStyle ?? ((config.theme?.trackRowOpacity ?? 0) > 0 ? "glass" : "none");
+          const isRowNone = rowStyle === "none";
+          const rowOpacity = isRowNone ? 0 : (config.theme?.trackRowOpacity ?? 0.08);
 
-        {/* Slider directly below normal preview */}
+          return (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                height: 52,
+                padding: "0 16px",
+                borderRadius: 8,
+                background: !isRowNone && rowOpacity > 0
+                  ? hexToRgba(config.theme?.cardBgColor || "#000000", rowOpacity * 0.95)
+                  : "transparent",
+                border: !isRowNone && rowOpacity > 0
+                  ? `1px solid rgba(255, 255, 255, ${Math.max(0.04, rowOpacity * 0.08)})`
+                  : "none",
+                backdropFilter: !isRowNone && rowOpacity > 0 ? "blur(12px)" : "none",
+                WebkitBackdropFilter: !isRowNone && rowOpacity > 0 ? "blur(12px)" : "none",
+                boxShadow: !isRowNone && rowOpacity > 0.1 ? "0 4px 16px rgba(0,0,0,0.2)" : "none",
+                transition: "all 0.15s ease",
+                marginBottom: 16,
+              }}
+            >
+              <span style={{ width: 20, fontSize: 13, color: "var(--text3)", fontVariantNumeric: "tabular-nums" }}>
+                1
+              </span>
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: 6,
+                background: "rgba(255, 255, 255, 0.06)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                color: "var(--text3)",
+                flexShrink: 0,
+              }}>
+                <IconDisc size={18} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  FE!N (feat. Playboi Carti)
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--text3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  Travis Scott — {lang === "ru" ? (isRowNone ? "Без подложки (нулевая обводка)" : "Обычная строка трека") : "Normal track row"}
+                </div>
+              </div>
+              <span style={{ fontSize: 11.5, color: "var(--text3)", fontVariantNumeric: "tabular-nums" }}>
+                3:11
+              </span>
+            </div>
+          );
+        })()}
+
+        {/* Buttons: Без подложки vs С подложкой */}
         <div style={{ paddingTop: 10, borderTop: "1px solid rgba(255, 255, 255, 0.06)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <span className="sett-card-title">{lang === "ru" ? "Плотность фона обычной строки" : "Normal Row Background Density"}</span>
-            <span style={{ fontWeight: 700, color: "var(--accent)", minWidth: 36, textAlign: "right" }}>
-                {Math.round((config.theme?.trackRowOpacity ?? 0) * 100)}%
-            </span>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
+              {lang === "ru" ? "Стиль подложки" : "Background Style"}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+              {[
+                {
+                  id: "none",
+                  label: lang === "ru" ? "Без подложки" : "No Background",
+                  desc: lang === "ru" ? "Чистые строки без фона и без обводки (нулевая рамка)" : "Clean rows without background or border outline",
+                },
+                {
+                  id: "glass",
+                  label: lang === "ru" ? "С подложкой" : "With Background",
+                  desc: lang === "ru" ? "Полупрозрачное дымчатое стекло с регулировкой" : "Translucent glass plate with adjustable opacity",
+                },
+              ].map((opt) => {
+                const currentStyle = config.theme?.trackRowStyle ?? ((config.theme?.trackRowOpacity ?? 0) > 0 ? "glass" : "none");
+                const isSel = currentStyle === opt.id;
+
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      if (opt.id === "none") {
+                        updateThemeDirectly({ trackRowStyle: "none", trackRowOpacity: 0 });
+                      } else {
+                        const nextOpacity = (config.theme?.trackRowOpacity ?? 0) > 0 ? config.theme!.trackRowOpacity! : 0.08;
+                        updateThemeDirectly({ trackRowStyle: "glass", trackRowOpacity: nextOpacity });
+                      }
+                    }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      textAlign: "left",
+                      gap: 4,
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: isSel ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                      background: isSel ? "var(--elev2, rgba(255, 255, 255, 0.08))" : "var(--elev, rgba(255, 255, 255, 0.03))",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+                      <span style={{ fontSize: 13, fontWeight: isSel ? 700 : 600, color: isSel ? "var(--accent)" : "var(--text)" }}>
+                        {opt.label}
+                      </span>
+                      {isSel && (
+                        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--accent)", fontWeight: 700 }}>
+                          ✓
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.3 }}>
+                      {opt.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={Math.round((config.theme?.trackRowOpacity ?? 0) * 100)}
-            onChange={(e) => updateThemeDirectly({ trackRowOpacity: Number(e.target.value) / 100 })}
-            className="sett-range-input sett-slider-input"
-            style={{ width: "100%", accentColor: "var(--accent)" }}
-          />
+
+          {/* Density slider only when "С подложкой" is selected */}
+          {(config.theme?.trackRowStyle ?? ((config.theme?.trackRowOpacity ?? 0) > 0 ? "glass" : "none")) === "glass" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span className="sett-card-title">{lang === "ru" ? "Плотность фона обычной строки" : "Normal Row Background Density"}</span>
+                <span style={{ fontWeight: 700, color: "var(--accent)", minWidth: 36, textAlign: "right" }}>
+                  {Math.round((config.theme?.trackRowOpacity ?? 0.08) * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={Math.round((config.theme?.trackRowOpacity ?? 0.08) * 100)}
+                onChange={(e) => updateThemeDirectly({ trackRowOpacity: Number(e.target.value) / 100, trackRowStyle: "glass" })}
+                className="sett-range-input sett-slider-input"
+                style={{ width: "100%", accentColor: "var(--accent)" }}
+              />
+            </div>
+          )}
         </div>
       </div>
 

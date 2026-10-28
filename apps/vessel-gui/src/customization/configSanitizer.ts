@@ -82,6 +82,11 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     ? raw.player.fullscreenLyricsPosition
     : "right";
 
+  const validLyricsProviders = ["Vessel", "Musixmatch", "Cadence", "LRCLIB"] as const;
+  const defaultLyricsProvider = validLyricsProviders.includes(raw.player?.defaultLyricsProvider)
+    ? raw.player.defaultLyricsProvider
+    : "Vessel";
+
   const validMiniPlayerBgs = ["solid", "theme", "artwork", "dominant", "dense_glass"] as const;
   const rawMiniPlayerBg = raw.player?.miniPlayerBg;
   const miniPlayerBg = (rawMiniPlayerBg === "blur" || !rawMiniPlayerBg || !validMiniPlayerBgs.includes(rawMiniPlayerBg))
@@ -184,6 +189,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     glassMode: raw.theme?.glassMode !== undefined ? Boolean(raw.theme.glassMode) : true,
     glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.5,
     trackRowOpacity: typeof raw.theme?.trackRowOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowOpacity)) : 0,
+    trackRowStyle: raw.theme?.trackRowStyle === "glass" ? "glass" : "none",
     trackRowActiveOpacity: typeof raw.theme?.trackRowActiveOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowActiveOpacity)) : 0.08,
     trackRowActiveStyle: (raw.theme?.trackRowActiveStyle === "accent" || raw.theme?.trackRowActiveStyle === "dark")
       ? raw.theme.trackRowActiveStyle
@@ -267,6 +273,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       fullscreenMode,
       fullscreenFollowTrack,
       fullscreenLyricsPosition,
+      defaultLyricsProvider,
       miniPlayerPreset,
       miniPlayerBg,
       miniPlayerShape,

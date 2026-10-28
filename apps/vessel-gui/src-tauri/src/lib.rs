@@ -518,6 +518,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::get_cache_dir,
             commands::set_cache_dir,
             commands::play_tracks,
+            commands::play_queue_index,
             commands::toggle_playback,
             commands::next,
             commands::previous,

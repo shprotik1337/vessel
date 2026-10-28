@@ -7,6 +7,8 @@ import {
   FullscreenHeader,
   FullscreenControls,
   FullscreenLyrics,
+  useFullscreenLyrics,
+  KawarpBackground,
 } from "./fullscreen";
 
 export function FullscreenPlayer() {
@@ -23,7 +25,7 @@ export function FullscreenPlayer() {
     playNextTrack,
   } = useApp();
   const progress = usePlaybackProgress();
-  const { config, setFullscreenMode, setFullscreenFollowTrack } = useCustomization();
+  const { config } = useCustomization();
 
   const [isRendered, setIsRendered] = useState(fullscreenOpen);
   const [isClosing, setIsClosing] = useState(false);
@@ -45,8 +47,6 @@ export function FullscreenPlayer() {
     }
   };
 
-  const [lyricsSource, setLyricsSource] = useState<string>("cadence");
-
   const fullscreenMode = config.player?.fullscreenMode || "both";
   const followTrack = config.player?.fullscreenFollowTrack !== false;
   const lyricsPosition = config.player?.fullscreenLyricsPosition || "right";
@@ -58,6 +58,19 @@ export function FullscreenPlayer() {
   const durationMs = progress.duration_ms || player?.duration_ms || track?.duration_ms || 0;
   const positionMs = progress.position_ms ?? player?.position_ms ?? 0;
 
+  const lyrics = useFullscreenLyrics({
+    track,
+    playerStatus: player?.status,
+    playerPositionMs: player?.position_ms,
+    playerDurationMs: player?.duration_ms,
+    progressPositionMs: progress.position_ms,
+    progressDurationMs: progress.duration_ms,
+    followTrack,
+    refresh,
+    showToast,
+    lang,
+    defaultProvider: config.player?.defaultLyricsProvider,
+  });
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -152,15 +165,8 @@ export function FullscreenPlayer() {
     <FullscreenLyrics
       track={track}
       playerStatus={player.status}
-      playerPositionMs={player.position_ms}
-      playerDurationMs={player.duration_ms}
-      progressPositionMs={progress.position_ms}
-      progressDurationMs={progress.duration_ms}
-      followTrack={followTrack}
-      lyricsSource={lyricsSource}
       lang={lang}
-      refresh={refresh}
-      showToast={showToast}
+      lyrics={lyrics}
     />
   );
 
@@ -170,25 +176,19 @@ export function FullscreenPlayer() {
       className={`fs-overlay ${isClosing ? "is-closing" : ""}`}
       onAnimationEnd={handleAnimationEnd}
     >
-      {/* Dynamic blurred ambient background from artwork */}
-      <div
-        className="fs-backdrop"
-        style={{
-          backgroundImage: track.artwork_url ? `url("${track.artwork_url}")` : "none",
-        }}
-      />
+      {/* Living fluid animated background from album artwork */}
+      <KawarpBackground coverUrl={track?.artwork_url} />
       <div className="fs-backdrop-scrim" />
 
       {/* Top Header Bar */}
       <FullscreenHeader
-        fullscreenMode={fullscreenMode}
-        followTrack={followTrack}
-        lyricsSource={lyricsSource}
-        onSetFullscreenMode={setFullscreenMode}
-        onSetFullscreenFollowTrack={setFullscreenFollowTrack}
-        onSetLyricsSource={setLyricsSource}
         onClose={() => setFullscreenOpen(false)}
         lang={lang}
+        availableProviders={lyrics.availableProviders}
+        activeProvider={lyrics.activeProvider}
+        onSelectProvider={lyrics.selectProvider}
+        onNextProvider={lyrics.nextProvider}
+        onPrevProvider={lyrics.prevProvider}
       />
 
       {/* Main Content Layout based on fullscreenMode */}

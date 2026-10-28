@@ -22,13 +22,15 @@ pub fn shuffle_slice<T>(slice: &mut [T]) {
     seed.copy_from_slice(u.as_bytes());
     let mut state = u128::from_le_bytes(seed);
     if state == 0 {
-        state = 0x853c49e6748fea9b;
+        state = 0x853c49e6748fea9b517cc1b727220a95;
     }
     for i in (1..slice.len()).rev() {
-        state ^= state << 23;
-        state ^= state >> 17;
-        state ^= state ^ (state >> 26);
-        let j = (state as usize) % (i + 1);
+        state = state.wrapping_add(0x9e3779b97f4a7c15f39cc0605cedc835);
+        let mut z = (state ^ (state >> 64)) as u64;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+        let rand_val = z ^ (z >> 31);
+        let j = (rand_val as usize) % (i + 1);
         slice.swap(i, j);
     }
 }
@@ -550,6 +552,24 @@ impl App {
             self.queue_index = Some(index);
         }
         let track = self.queue[self.queue_index.unwrap()].clone();
+        self.playback_generation = self.playback_generation.wrapping_add(1);
+        self.failed_cache_fallbacks.clear();
+        self.now_playing = Some(track.clone());
+        self.player.position_ms = 0;
+        self.player.buffered_ms = 0;
+        self.player.duration_ms = track.duration_ms.unwrap_or_default();
+        self.player.status = PlaybackStatus::Buffering;
+        self.queue_dirty = true;
+        self.effects.push(AppEffect::Play(Box::new(track)));
+        true
+    }
+
+    pub fn gui_play_queue_index(&mut self, index: usize) -> bool {
+        if self.queue.is_empty() || index >= self.queue.len() {
+            return false;
+        }
+        self.queue_index = Some(index);
+        let track = self.queue[index].clone();
         self.playback_generation = self.playback_generation.wrapping_add(1);
         self.failed_cache_fallbacks.clear();
         self.now_playing = Some(track.clone());

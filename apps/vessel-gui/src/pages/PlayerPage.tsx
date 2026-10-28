@@ -19,7 +19,6 @@ export function PlayerPage() {
     state,
     refresh,
     showToast,
-    playTracks,
     navigateTo,
     lang,
     fullscreenOpen,
@@ -134,7 +133,7 @@ export function PlayerPage() {
 
   const handlePlayFromQueue = (index: number) => {
     if (queue.length === 0) return;
-    void playTracks(queue, index);
+    void api.playQueueIndex(index).then(refresh).catch((e) => showToast(String(e), true));
   };
 
   // Context Menu State & Actions

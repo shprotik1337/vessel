@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../../../store";
+import { useCustomization } from "../../../customization";
 import { PlatformIcon } from "../../../components/PlatformIcon";
 import {
   IconDevice,
@@ -24,6 +25,13 @@ import * as api from "../../../api/commands";
 interface ServicesSectionProps {
   activeTab: SettingsTab;
 }
+
+const LYRICS_FEATURES = [
+  { id: "vessel", label: "Автовыбор Vessel", icon: <IconSparkles size={16} /> },
+  { id: "musixmatch", label: "Musixmatch Richsync", icon: <IconPlay size={16} /> },
+  { id: "cadence", label: "Cadence Синхронизация", icon: <IconDisc size={16} /> },
+  { id: "lrclib", label: "LRCLIB Синхронизация", icon: <IconSearch size={16} /> },
+];
 
 const SERVICE_FEATURES = [
   { id: "token", label: "Проверка токена", icon: <IconKey size={16} /> },
@@ -148,6 +156,7 @@ function SpotifyPlaybackSourceSection() {
 
 export function ServicesSection({ activeTab }: ServicesSectionProps) {
   const { state, refresh, showToast, lang } = useApp();
+  const { config, setDefaultLyricsProvider } = useCustomization();
 
   const [routes, setRoutes] = useState<Record<string, string>>({});
   const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({});
@@ -231,8 +240,142 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
     }
   };
 
-  return (
-    <div>
+  if (serviceKey === "lyrics") {
+    const isServer = route !== "local";
+    return (
+      <div>
+        <div className="sett-page-header">
+          <h1 className="sett-page-title" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <PlatformIcon kind="lyrics" size={28} />
+            <span>{lang === "ru" ? "Тексты песен" : "Lyrics"}</span>
+          </h1>
+          <p className="sett-page-sub">
+            {lang === "ru"
+              ? "Синхронизированные и пословные тексты песен (караоке)"
+              : "Synchronized and word-level karaoke lyrics"}
+          </p>
+        </div>
+
+        <div className="sett-service-grid">
+          {/* Left Column: Sources & Status */}
+          <div className="sett-service-card">
+            <div className="sett-service-status-banner">
+              <div className="sett-status-icon-circle connected">
+                ✓
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+                  {lang === "ru" ? "Подключено (3 источника)" : "Connected (3 sources)"}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text2)", marginTop: 2 }}>
+                  Musixmatch, Cadence, LRCLIB
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.5, margin: "16px 0 12px" }}>
+              {meta.hint}
+            </div>
+
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text)", marginBottom: 4 }}>
+                {lang === "ru" ? "Сервис по умолчанию" : "Default lyrics service"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 12, lineHeight: 1.4 }}>
+                {lang === "ru"
+                  ? "Приоритетный источник при воспроизведении трека. Если текст не найден, Vessel автоматически переключится на доступные альтернативы."
+                  : "Preferred source when playing tracks. If missing, Vessel falls back to available alternatives."}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {["Vessel", "Musixmatch", "Cadence", "LRCLIB"].map((p) => {
+                  const currentDefault = config.player?.defaultLyricsProvider || "Vessel";
+                  const isSelected = currentDefault === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setDefaultLyricsProvider(p)}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: 8,
+                        border: isSelected ? "1px solid var(--accent)" : "1px solid var(--border)",
+                        background: isSelected ? "var(--accent)" : "var(--card-bg)",
+                        color: isSelected ? "var(--accent-contrast-text, #fff)" : "var(--text)",
+                        cursor: "pointer",
+                        fontWeight: isSelected ? 700 : 500,
+                        fontSize: 13,
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Execution Mode & Capabilities */}
+          <div className="sett-service-card">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="sett-section-title" style={{ margin: 0 }}>
+                {lang === "ru" ? "РЕЖИМ ВЫПОЛНЕНИЯ" : "EXECUTION MODE"}
+              </span>
+              <div
+                className={`sett-route-pill ${isServer ? "server" : ""}`}
+                onClick={() => toggleRoute("lyrics")}
+                title={lang === "ru" ? "Нажмите для переключения Локально / Сервер" : "Click to toggle Local / Server"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+              >
+                {!isServer ? (
+                  <>
+                    <IconDevice size={14} />
+                    <span>{lang === "ru" ? "Локально" : "Local"}</span>
+                  </>
+                ) : (
+                  <>
+                    <IconServer size={14} />
+                    <span>{lang === "ru" ? "Сервер" : "Server"}</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="sett-capabilities-list">
+              {LYRICS_FEATURES.map((feat) => {
+                const featServerOnly = feat.id === "vessel";
+                const isItemServer = isServer || featServerOnly;
+                return (
+                  <div key={feat.id} className="sett-capability-row">
+                    <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span>{feat.icon}</span>
+                      <span>
+                        {feat.label}
+                        {featServerOnly && !isServer && (
+                          <span style={{ fontSize: 10, color: "var(--text3)", marginLeft: 6 }}>
+                            ({lang === "ru" ? "только на сервере" : "server only"})
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                    <span
+                      className={`sett-route-pill ${isItemServer ? "server" : ""}`}
+                      onClick={() => toggleRoute("lyrics")}
+                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                    >
+                      {!isItemServer ? <IconDevice size={13} /> : <IconServer size={13} />}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (    <div>
       <div className="sett-page-header">
         <h1 className="sett-page-title" style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <PlatformIcon kind={serviceKey as any} size={28} />

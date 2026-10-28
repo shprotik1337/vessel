@@ -7,7 +7,7 @@ import { IconSparkle, IconInfinity, IconWaveStream } from "./Icons";
 import { PlatformIcon } from "./PlatformIcon";
 import { formatDuration, filterValidArtists, isFavorite, trackKey, providerLabel } from "../lib/utils";
 import type { TrackRef } from "../api/types";
-import { fetchLyrics, type LyricsData } from "../lib/lyrics";
+import { fetchLyricsMulti, parseCandidateToLyricsData, type LyricsData } from "../lib/lyrics";
 import * as api from "../api/commands";
 import { PlayerContextMenu, type ContextMenuState } from "../pages/player";
 
@@ -18,6 +18,7 @@ interface CompactLyricsProps {
 }
 
 function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
+  const { config } = useCustomization();
   const progress = usePlaybackProgress();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,10 +58,19 @@ function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
     setUserScrolled(false);
     const artists = filterValidArtists(track.artists).join(", ");
     const durSecs = track.duration_ms ? track.duration_ms / 1000 : undefined;
-    fetchLyrics(track.title, artists, durSecs)
-      .then((data) => {
+    fetchLyricsMulti(track.title, artists, durSecs, track.album_title || undefined)
+      .then((res) => {
         if (!cancelled) {
-          setLyrics(data);
+          if (res.candidates && res.candidates.length > 0) {
+            const preferred = config.player?.defaultLyricsProvider || "Vessel";
+            const candidate =
+              res.candidates.find((c) => c.provider === preferred || (preferred === "Vessel" && c.isMeta)) ||
+              res.candidates[0];
+            const parsed = parseCandidateToLyricsData(candidate, durSecs);
+            setLyrics(parsed);
+          } else {
+            setLyrics(res.initialLyrics);
+          }
           setLoading(false);
         }
       })
@@ -176,16 +186,12 @@ function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
       <div className="queue-drawer-lyrics-list">
         {lyrics.lines.map((line, idx) => {
           const isActive = lyrics.synced && idx === activeIndex;
-          const nextTime = lyrics.lines[idx + 1]?.time ?? (line.time + 4);
-          const duration = Math.max(0.5, nextTime - line.time);
-          const elapsed = Math.max(0, curSeconds - line.time);
-          const lineProgress = isActive ? Math.min(1, Math.max(0, elapsed / duration)) : 0;
-
+          const isPast = lyrics.synced && activeIndex >= 0 && idx < activeIndex;
           return (
             <div
               key={`${line.time}-${idx}`}
               ref={isActive ? activeLineRef : null}
-              className={`queue-drawer-lyric-line ${isActive ? "active" : ""}`}
+              className={`queue-drawer-lyric-line ${isActive ? "active" : isPast ? "past" : ""}`}
               onClick={() => lyrics.synced && void seekToLine(line.time)}
             >
               {isActive && line.words && line.words.length > 0 ? (
@@ -219,17 +225,6 @@ function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
                       </span>
                     );
                   })}
-                </span>
-              ) : isActive ? (
-                <span
-                  className="fs-lyric-line-fill"
-                  style={
-                    {
-                      "--line-progress": `${(lineProgress * 100).toFixed(1)}%`,
-                    } as React.CSSProperties
-                  }
-                >
-                  {line.text}
                 </span>
               ) : (
                 <span className="queue-lyric-text">{line.text}</span>
@@ -405,7 +400,7 @@ export function QueueDrawer() {
       });
 
       try {
-        await api.playTracks(queue, index);
+        await api.playQueueIndex(index);
       } catch (e) {
         showToast(String(e), true);
       }
@@ -418,7 +413,7 @@ export function QueueDrawer() {
       }, 320);
     } else {
       try {
-        await api.playTracks(queue, index);
+        await api.playQueueIndex(index);
         await refresh();
       } catch (e) {
         showToast(String(e), true);
@@ -433,7 +428,7 @@ export function QueueDrawer() {
       void triggerFlightPlay(index, targetEl, targetTrack);
     } else {
       try {
-        await api.playTracks(queue, index);
+        await api.playQueueIndex(index);
         await refresh();
       } catch (e) {
         showToast(String(e), true);

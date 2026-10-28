@@ -20,6 +20,7 @@ export type SettingsTab =
   | "service_spotify"
   | "service_yandex"
   | "service_deezer"
+  | "service_lyrics"
   | "proxy"
   | "discord"
   | "vpn";
@@ -57,6 +58,12 @@ export const SERVICE_META: Record<string, { key: string; hint: string; bg: strin
     hint: "Значение cookie arl из браузера Deezer (arl=...).",
     bg: "#A238FF",
     brandColor: "#A238FF",
+  },
+  lyrics: {
+    key: "lyrics",
+    hint: "Синхронизированные и пословные тексты песен (караоке) из Musixmatch, Cadence и LRCLIB.",
+    bg: "var(--accent)",
+    brandColor: "var(--accent)",
   },
 };
 

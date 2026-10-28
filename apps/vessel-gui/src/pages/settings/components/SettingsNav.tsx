@@ -1,4 +1,4 @@
-import type { SettingsCategory, SettingsTab } from "../types";
+﻿import type { SettingsCategory, SettingsTab } from "../types";
 import {
   IconUser,
   IconGeneral,
@@ -30,6 +30,7 @@ const SERVICE_TABS = [
   { id: "service_youtube_music" as const, name: "YouTube", kind: "youtube_music" as const, brandColor: "#FF0000" },
   { id: "service_soundcloud" as const, name: "SoundCloud", kind: "soundcloud" as const, brandColor: "#FF5500" },
   { id: "service_deezer" as const, name: "Deezer", kind: "deezer" as const, brandColor: "#A238FF" },
+  { id: "service_lyrics" as const, name: "Тексты", kind: "lyrics" as const, brandColor: "var(--accent)" },
 ];
 
 export function SettingsNav({

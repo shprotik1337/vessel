@@ -281,6 +281,13 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const setDefaultLyricsProvider = (provider: string) => {
+    persistOrDraft((prev) => ({
+      ...prev,
+      player: { ...prev.player, defaultLyricsProvider: provider },
+    }));
+  };
+
   const setMiniPlayerPreset = (preset: "default" | "compact" | "minimal" | "expanded") => {
     persistOrDraft((prev) => ({
       ...prev,
@@ -933,6 +940,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         setFullscreenMode,
         setFullscreenFollowTrack,
         setFullscreenLyricsPosition,
+        setDefaultLyricsProvider,
         setMiniPlayerPreset,
         setMiniPlayerBg,
         setMiniPlayerShape,

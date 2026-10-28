@@ -1,8 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { TrackRef } from "../../api/types";
 import { filterValidArtists } from "../../lib/utils";
-import { fetchLyrics, type LyricsData } from "../../lib/lyrics";
+import {
+  fetchLyricsMulti,
+  parseCandidateToLyricsData,
+  type LyricsData,
+  type LyricsCandidateOption,
+} from "../../lib/lyrics";
 import * as api from "../../api/commands";
+
+import type { Lang } from "../../i18n";
 
 export interface UseFullscreenLyricsOptions {
   track: TrackRef | null | undefined;
@@ -12,9 +19,10 @@ export interface UseFullscreenLyricsOptions {
   progressPositionMs: number | undefined;
   progressDurationMs: number | undefined;
   followTrack: boolean;
-  lyricsSource?: string;
   refresh: () => Promise<void>;
   showToast: (msg: string, isError?: boolean) => void;
+  lang?: Lang;
+  defaultProvider?: string;
 }
 
 export function useFullscreenLyrics({
@@ -25,10 +33,13 @@ export function useFullscreenLyrics({
   progressPositionMs,
   progressDurationMs,
   followTrack,
-  lyricsSource = "cadence",
   refresh,
   showToast,
+  lang = "ru",
+  defaultProvider,
 }: UseFullscreenLyricsOptions) {
+  const [candidates, setCandidates] = useState<LyricsCandidateOption[]>([]);
+  const [activeProvider, setActiveProvider] = useState<string>("");
   const [lyricsData, setLyricsData] = useState<LyricsData | null>(null);
   const [loadingLyrics, setLoadingLyrics] = useState(false);
   const [userScrolled, setUserScrolled] = useState(false);
@@ -66,28 +77,26 @@ export function useFullscreenLyrics({
     return () => cancelAnimationFrame(animId);
   }, [playerStatus, effectiveDuration]);
 
-  // Track the actively requested fetch key to prevent race conditions and cancellation stalls
+  // Track the actively requested fetch key to prevent race conditions
   const activeReqRef = useRef<string>("");
 
-  // Fetch lyrics when track or source changes
   useEffect(() => {
     if (!track) {
       setLyricsData(null);
+      setCandidates([]);
+      setActiveProvider("");
       setLoadingLyrics(false);
       loadedTrackKeyRef.current = "";
       activeReqRef.current = "";
       return;
     }
 
-    const currentSource = lyricsSource || "cadence";
-    const cacheFetchKey = `${currentTrackKey}:${currentSource}`;
-
-    if (loadedTrackKeyRef.current === cacheFetchKey) {
+    if (loadedTrackKeyRef.current === currentTrackKey) {
       return;
     }
 
-    loadedTrackKeyRef.current = cacheFetchKey;
-    activeReqRef.current = cacheFetchKey;
+    loadedTrackKeyRef.current = currentTrackKey;
+    activeReqRef.current = currentTrackKey;
     setLoadingLyrics(true);
     setUserScrolled(false);
     setScrolledTop(false);
@@ -100,20 +109,75 @@ export function useFullscreenLyrics({
       ? playerDurationMs / 1000
       : undefined;
 
-    fetchLyrics(track.title, primaryArtist, durSecs, undefined, currentSource)
-      .then((data) => {
-        if (activeReqRef.current === cacheFetchKey) {
-          setLyricsData(data);
+    fetchLyricsMulti(track.title, primaryArtist, durSecs, track.album_title || undefined)
+      .then((res) => {
+        if (activeReqRef.current === currentTrackKey) {
+          setCandidates(res.candidates);
+          let chosenProvider = res.activeProvider;
+          let chosenLyrics = res.initialLyrics;
+          if (defaultProvider && defaultProvider !== "Vessel" && res.candidates.length > 0) {
+            const found = res.candidates.find((c) => c.provider === defaultProvider);
+            if (found) {
+              chosenProvider = found.provider;
+              chosenLyrics = parseCandidateToLyricsData(found, durSecs);
+            }
+          }
+          setActiveProvider(chosenProvider);
+          setLyricsData(chosenLyrics);
           setLoadingLyrics(false);
         }
       })
       .catch(() => {
-        if (activeReqRef.current === cacheFetchKey) {
+        if (activeReqRef.current === currentTrackKey) {
+          setCandidates([]);
+          setActiveProvider("");
           setLyricsData(null);
           setLoadingLyrics(false);
         }
       });
-  }, [currentTrackKey, track?.id, track?.title, lyricsSource]);
+  }, [currentTrackKey, track?.id, track?.title, track?.album_title, playerDurationMs]);
+
+  const durSecs = track?.duration_ms
+    ? track.duration_ms / 1000
+    : playerDurationMs
+    ? playerDurationMs / 1000
+    : undefined;
+
+  const selectProvider = useCallback(
+    (providerName: string) => {
+      if (providerName === activeProvider) return;
+      const found = candidates.find(
+        (c) => c.provider === providerName || (providerName === "Vessel" && c.isMeta)
+      );
+      if (found) {
+        setActiveProvider(found.provider);
+        const parsed = parseCandidateToLyricsData(found, durSecs);
+        setLyricsData(parsed);
+        setUserScrolled(false);
+      } else {
+        showToast?.(
+          lang === "ru"
+            ? `В базе ${providerName} текст для этого трека не найден`
+            : `No lyrics found in ${providerName} for this track`
+        );
+      }
+    },
+    [activeProvider, candidates, durSecs, showToast, lang]
+  );
+
+  const nextProvider = useCallback(() => {
+    if (candidates.length <= 1) return;
+    const curIdx = Math.max(0, candidates.findIndex((c) => c.provider === activeProvider));
+    const nextIdx = (curIdx + 1) % candidates.length;
+    selectProvider(candidates[nextIdx].provider);
+  }, [candidates, activeProvider, selectProvider]);
+
+  const prevProvider = useCallback(() => {
+    if (candidates.length <= 1) return;
+    const curIdx = Math.max(0, candidates.findIndex((c) => c.provider === activeProvider));
+    const prevIdx = (curIdx - 1 + candidates.length) % candidates.length;
+    selectProvider(candidates[prevIdx].provider);
+  }, [candidates, activeProvider, selectProvider]);
 
   // Determine current effective time and active lyric line index
   const curSeconds = posMs / 1000;
@@ -211,5 +275,10 @@ export function useFullscreenLyrics({
     handleSeekToLyric,
     lineProgress,
     curSeconds,
+    availableProviders: candidates,
+    activeProvider,
+    selectProvider,
+    nextProvider,
+    prevProvider,
   };
 }

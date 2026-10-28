@@ -1,106 +1,80 @@
+import React from "react";
 import type { TrackRef } from "../../api/types";
-import { LYRICS_SOURCES } from "../../lib/lyrics";
 import { t, type Lang } from "../../i18n";
-import { useFullscreenLyrics } from "./useFullscreenLyrics";
+import { type useFullscreenLyrics } from "./useFullscreenLyrics";
+import { BraccatoLyricsView } from "./BraccatoLyricsView";
 
 export interface FullscreenLyricsProps {
   track: TrackRef | null | undefined;
   playerStatus: string | undefined;
-  playerPositionMs: number | undefined;
-  playerDurationMs: number | undefined;
-  progressPositionMs: number | undefined;
-  progressDurationMs: number | undefined;
-  followTrack: boolean;
-  lyricsSource?: string;
   lang: Lang;
-  refresh: () => Promise<void>;
-  showToast: (msg: string, isError?: boolean) => void;
+  lyrics: ReturnType<typeof useFullscreenLyrics>;
 }
 
 export function FullscreenLyrics({
   track,
   playerStatus,
-  playerPositionMs,
-  playerDurationMs,
-  progressPositionMs,
-  progressDurationMs,
-  followTrack,
-  lyricsSource = "cadence",
   lang,
-  refresh,
-  showToast,
+  lyrics,
 }: FullscreenLyricsProps) {
   const {
     lyricsData,
     loadingLyrics,
-    userScrolled,
     scrolledTop,
     activeIndex,
     activeLineRef,
     lyricsContainerRef,
-    scrollToActive,
-    setUserScrolled,
     handleUserScrollInteraction,
     handleContainerScroll,
     handleSeekToLyric,
     lineProgress,
     curSeconds,
-  } = useFullscreenLyrics({
-    track,
-    playerStatus,
-    playerPositionMs,
-    playerDurationMs,
-    progressPositionMs,
-    progressDurationMs,
-    followTrack,
-    lyricsSource,
-    refresh,
-    showToast,
-  });
-
-  const activeSource = LYRICS_SOURCES.find((s) => s.id === lyricsSource) || LYRICS_SOURCES[0];
+    activeProvider,
+  } = lyrics;
 
   return (
     <div className="fs-right">
-      {userScrolled && lyricsData?.synced && (
-        <div className="fs-resume-scroll-wrapper">
-          <button
-            type="button"
-            className="fs-resume-scroll-pill"
-            onClick={() => {
-              setUserScrolled(false);
-              scrollToActive();
-            }}
-          >
-            {lang === "ru" ? "К текущей строке" : "To current line"}
-          </button>
-        </div>
-      )}
-
-      {/* Main lyrics scroll area */}
-      <div
-        ref={lyricsContainerRef}
-        className={`fs-lyrics-container ${scrolledTop ? "scrolled" : ""}`}
-        onWheel={handleUserScrollInteraction}
-        onTouchMove={handleUserScrollInteraction}
-        onScroll={handleContainerScroll}
-      >
-        {loadingLyrics ? (
+      {loadingLyrics ? (
+        <div className="fs-lyrics-container">
           <div className="fs-lyrics-status">
             <div className="fs-lyrics-spinner" />
             <p className="fs-status-main">{lang === "ru" ? "Загрузка текста…" : "Loading lyrics…"}</p>
           </div>
-        ) : lyricsData?.instrumental ? (
+        </div>
+      ) : lyricsData?.instrumental ? (
+        <div className="fs-lyrics-container">
           <div className="fs-lyrics-status">
             <div className="fs-lyrics-icon">♪</div>
             <p className="fs-status-main">{t(lang, "fullscreen.instrumental")}</p>
-            <p className="fs-status-sub">{lang === "ru" ? "Слова для этого трека не предусмотрены" : "No words for this track"}</p>
+            <p className="fs-status-sub">
+              {lang === "ru" ? "Слова для этого трека не предусмотрены" : "No words for this track"}
+            </p>
           </div>
-        ) : lyricsData?.plain && (!lyricsData.lines || lyricsData.lines.length === 0) ? (
+        </div>
+      ) : lyricsData?.plain && (!lyricsData.lines || lyricsData.lines.length === 0) ? (
+        <div className="fs-lyrics-container">
           <div className="fs-plain-lyrics">
             <pre className="fs-plain-text">{lyricsData.plain}</pre>
           </div>
-        ) : lyricsData && lyricsData.lines && lyricsData.lines.length > 0 ? (
+        </div>
+      ) : lyricsData && lyricsData.braccatoLyrics && lyricsData.braccatoLyrics.length > 0 ? (
+        <BraccatoLyricsView
+          lyrics={lyricsData.braccatoLyrics}
+          curSeconds={curSeconds}
+          isPlaying={playerStatus === "playing"}
+          onSeek={(timeS) => void handleSeekToLyric(timeS)}
+          onUserScrollInteraction={handleUserScrollInteraction}
+          onContainerScroll={handleContainerScroll}
+          scrolledTop={scrolledTop}
+        />
+      ) : lyricsData && lyricsData.lines && lyricsData.lines.length > 0 ? (
+        <div
+          ref={lyricsContainerRef}
+          className={`fs-lyrics-container ${scrolledTop ? "scrolled-top" : ""}`}
+          onWheel={handleUserScrollInteraction}
+          onTouchMove={handleUserScrollInteraction}
+          onScroll={handleContainerScroll}
+        >
           <div className="fs-lyrics-list">
             {lyricsData.lines.map((line, idx) => {
               const isActive = lyricsData.synced && idx === activeIndex;
@@ -164,18 +138,24 @@ export function FullscreenLyrics({
               );
             })}
           </div>
-        ) : (
+        </div>
+      ) : (
+        <div className="fs-lyrics-container">
           <div className="fs-lyrics-status">
             <div className="fs-lyrics-icon">♪</div>
             <p className="fs-status-main">{t(lang, "fullscreen.noLyrics")}</p>
             <p className="fs-status-sub">
               {lang === "ru"
-                ? `Для трека «${track?.title}» текст пока отсутствует в базе ${activeSource.name}`
-                : `No lyrics found for "${track?.title}" in ${activeSource.name}`}
+                ? `Для трека «${track?.title}» текст пока не найден${
+                    activeProvider ? ` (${activeProvider})` : ""
+                  }`
+                : `No lyrics found for "${track?.title}"${
+                    activeProvider ? ` (${activeProvider})` : ""
+                  }`}
             </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

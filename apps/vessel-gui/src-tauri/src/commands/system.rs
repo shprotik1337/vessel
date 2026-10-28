@@ -386,7 +386,7 @@ pub fn vessel_route_set(
     provider: String,
     target: String,
 ) -> Result<(), String> {
-    if vessel_core::protocol::kind_from_segment(&provider).is_none() {
+    if vessel_core::protocol::kind_from_segment(&provider).is_none() && provider != "lyrics" {
         return Err(format!("неизвестный провайдер «{provider}»"));
     }
     let mut core = lock(&core);

@@ -11,7 +11,7 @@ import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
 export function Queue() {
-  const { state, playTracks, showToast, refresh, lang, smartTrackKeys } = useApp();
+  const { state, showToast, refresh, lang, smartTrackKeys } = useApp();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragStartRef = useRef<{ index: number; startY: number; isDragging: boolean } | null>(null);
@@ -58,7 +58,8 @@ export function Queue() {
 
   const playOne = (track: TrackRef) => {
     const idx = state.queue.findIndex((t) => trackKey(t) === trackKey(track));
-    void playTracks(state.queue, idx < 0 ? 0 : idx);
+    const targetIdx = idx < 0 ? 0 : idx;
+    void api.playQueueIndex(targetIdx).then(refresh).catch((error) => showToast(String(error), true));
   };
 
   const removeAt = async (index: number) => {

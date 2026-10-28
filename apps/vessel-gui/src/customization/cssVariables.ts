@@ -18,12 +18,19 @@ export function applyThemeVariables(activeConfig: CustomizationConfig): void {
   root.style.setProperty("--text3", hexToRgba(theme.textColor, 0.45));
   root.style.setProperty("--wp-blur", `${theme.wallpaperBlur}px`);
   root.style.setProperty("--wp-dim", `${theme.wallpaperDim / 100}`);
-  const trowAlpha = typeof theme.trackRowOpacity === "number" ? Math.max(0, Math.min(1, theme.trackRowOpacity)) : 0;
+  const isRowDisabled = theme.trackRowStyle === "none" || (theme.trackRowStyle === undefined && (theme.trackRowOpacity ?? 0) === 0);
+  const trowAlpha = isRowDisabled
+    ? 0
+    : (typeof theme.trackRowOpacity === "number" ? Math.max(0, Math.min(1, theme.trackRowOpacity)) : 0.08);
+
   root.style.setProperty("--trow-bg-opacity", `${trowAlpha}`);
-  const trowBg = trowAlpha > 0 ? hexToRgba(theme.cardBgColor, trowAlpha * 0.95) : "transparent";
-  const trowBorder = trowAlpha > 0 ? `rgba(255, 255, 255, ${trowAlpha * 0.08})` : "transparent";
+  const trowBg = !isRowDisabled && trowAlpha > 0 ? hexToRgba(theme.cardBgColor, trowAlpha * 0.95) : "transparent";
+  const trowBorder = !isRowDisabled && trowAlpha > 0 ? `1px solid rgba(255, 255, 255, ${Math.max(0.04, trowAlpha * 0.08)})` : "none";
+  const trowFilter = !isRowDisabled && trowAlpha > 0 ? "blur(10px)" : "none";
+
   root.style.setProperty("--trow-bg", trowBg);
   root.style.setProperty("--trow-border", trowBorder);
+  root.style.setProperty("--trow-filter", trowFilter);
   const trowActiveAlpha = typeof theme.trackRowActiveOpacity === "number" ? Math.max(0, Math.min(1, theme.trackRowActiveOpacity)) : 0.08;
   root.style.setProperty("--trow-active-opacity", `${trowActiveAlpha}`);
 

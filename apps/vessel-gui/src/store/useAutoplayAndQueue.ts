@@ -26,7 +26,26 @@ export function useAutoplayAndQueue({
   const [activeMixContext, setActiveMixContext] = useState<MixContext | null>(null);
   const [externalPlaylist, setExternalPlaylist] = useState<Playlist | null>(null);
   const [smartTrackKeys, setSmartTrackKeys] = useState<Set<string>>(() => new Set());
-  const [smartShuffle, setSmartShuffle] = useState<boolean>(false);
+  const [smartShuffle, setSmartShuffleState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("vessel_smart_shuffle") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const setSmartShuffle = useCallback((val: boolean) => {
+    setSmartShuffleState(val);
+    try {
+      if (val) {
+        localStorage.setItem("vessel_smart_shuffle", "true");
+      } else {
+        localStorage.removeItem("vessel_smart_shuffle");
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const expandingQueueRef = useRef(false);
   const lastExpandedIndexRef = useRef<number | null>(null);
@@ -139,19 +158,15 @@ export function useAutoplayAndQueue({
     const isInfiniteMode = isWaveActive || !!activeMixContext || isAutoSimilarEnabled;
 
     if (qIndex >= qLen - 1) {
-      // Очередь закончилась: умное перемешивание завершает работу внутри этой очереди
-      if (smartShuffle) {
-        setSmartShuffle(false);
-        setSmartTrackKeys(new Set());
-      }
-
-      if (isInfiniteMode) {
+      if (isInfiniteMode || smartShuffle) {
         showToast(
           isWaveActive
             ? (lang === "ru" ? "Генерация волны..." : "Generating wave...")
             : activeMixContext
               ? (lang === "ru" ? "Продолжение микса..." : "Continuing mix...")
-              : (lang === "ru" ? "Автопродолжение очереди..." : "Autoplaying next tracks..."),
+              : smartShuffle
+                ? (lang === "ru" ? "Подбор треков (Smart Shuffle)..." : "Generating Smart Shuffle tracks...")
+                : (lang === "ru" ? "Автопродолжение очереди..." : "Autoplaying next tracks..."),
           false,
           2000
         );
@@ -275,14 +290,17 @@ export function useAutoplayAndQueue({
       }
     } else {
       // Включаем умное перемешивание для текущей очереди
-      const fresh = await api.getState().catch(() => state);
-      const currentQueue = fresh?.queue ?? state.queue ?? [];
-      const currentIndex = fresh?.queue_index ?? state.queue_index ?? 0;
-      if (currentQueue.length === 0) {
-        showToast(lang === "ru" ? "Очередь пуста" : "Queue is empty");
-        return;
-      }
       try {
+        if (!state.player.shuffle) {
+          await api.setShuffle(true);
+        }
+        const fresh = await api.getState().catch(() => state);
+        const currentQueue = fresh?.queue ?? state.queue ?? [];
+        const currentIndex = fresh?.queue_index ?? state.queue_index ?? 0;
+        if (currentQueue.length === 0) {
+          showToast(lang === "ru" ? "Очередь пуста" : "Queue is empty");
+          return;
+        }
         showToast(lang === "ru" ? "Умное перемешивание очереди…" : "Applying Smart Shuffle…", false, 1500);
         const rawProviders = await api.getRecommendationProviders().catch(() => "all");
         const res = await api.applySmartShuffle(currentQueue, currentIndex, rawProviders);
@@ -295,7 +313,7 @@ export function useAutoplayAndQueue({
         showToast(String(e), true);
       }
     }
-  }, [state, smartShuffle, smartTrackKeys, lang, refresh, showToast]);
+  }, [state, smartShuffle, smartTrackKeys, lang, refresh, showToast, setSmartShuffle]);
 
   const cycleShuffleMode = useCallback(async () => {
     if (!state) return;
@@ -308,13 +326,16 @@ export function useAutoplayAndQueue({
       try {
         await api.setShuffle(true);
         await refresh();
+        showToast(lang === "ru" ? "Случайный порядок" : "Shuffle on");
       } catch (e) {
         showToast(String(e), true);
       }
     } else if (isStandardShuffle) {
-      // 2. Standard Shuffle -> Smart Shuffle (организует только текущую очередь)
+      // 2. Standard Shuffle -> Smart Shuffle (очередь остаётся перемешанной + добавляются рекомендации)
       try {
-        await api.setShuffle(false);
+        if (!state.player.shuffle) {
+          await api.setShuffle(true);
+        }
         const fresh = await api.getState().catch(() => state);
         const currentQueue = fresh?.queue ?? state.queue ?? [];
         const currentIndex = fresh?.queue_index ?? state.queue_index ?? 0;
@@ -322,7 +343,7 @@ export function useAutoplayAndQueue({
           showToast(lang === "ru" ? "Очередь пуста" : "Queue is empty");
           return;
         }
-        showToast(lang === "ru" ? "Умное перемешивание очереди…" : "Applying Smart Shuffle…", false, 1500);
+        showToast(lang === "ru" ? "Умное перемешивание…" : "Applying Smart Shuffle…", false, 1500);
         const rawProviders = await api.getRecommendationProviders().catch(() => "all");
         const res = await api.applySmartShuffle(currentQueue, currentIndex, rawProviders);
         if (res && res.interleaved_queue.length > 0) {
@@ -352,19 +373,75 @@ export function useAutoplayAndQueue({
         }
         setSmartTrackKeys(new Set());
         await refresh();
+        showToast(lang === "ru" ? "Случайный порядок выключен" : "Shuffle off");
       } catch (e) {
         showToast(String(e), true);
       }
     }
-  }, [state, smartShuffle, smartTrackKeys, lang, refresh, showToast]);
+  }, [state, smartShuffle, smartTrackKeys, lang, refresh, showToast, setSmartShuffle]);
 
   const playTracks = useCallback(
-    async (tracks: TrackRef[], start = 0) => {
+    async (tracks: TrackRef[], start = 0, forceNewQueue = false) => {
       setHasEverPlayed(true);
-      if (smartShuffle) {
-        setSmartShuffle(false);
-        setSmartTrackKeys(new Set());
+
+      const targetTrack = tracks[start];
+
+      // If the clicked track is already present in the active queue and matches current playlist context,
+      // smoothly jump directly to that index without re-shuffling or re-generating recommendations!
+      if (!forceNewQueue && targetTrack && state?.queue && state.queue.length > 0) {
+        const existingIdx = state.queue.findIndex((t) => trackKey(t) === trackKey(targetTrack));
+        const isCurrentQueueFromList = state.queue.some((t) =>
+          tracks.some((orig) => trackKey(orig) === trackKey(t))
+        );
+        if (existingIdx >= 0 && isCurrentQueueFromList) {
+          try {
+            await api.playQueueIndex(existingIdx);
+            await refresh();
+            return;
+          } catch (e) {
+            console.warn("playQueueIndex error, falling back to full playTracks:", e);
+          }
+        }
       }
+
+      if (smartShuffle) {
+        // Умное перемешивание остаётся включённым!
+        try {
+          // 1. Формируем перемешанный базовый плейлист с выбранным стартовым треком на первой позиции
+          const pool = [...tracks];
+          const selected = pool.splice(start, 1)[0] || tracks[0];
+          // Честный Fisher-Yates shuffle для оставшихся треков
+          for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+          }
+          const baseShuffledQueue = [selected, ...pool];
+
+          // 2. ДО старта воспроизведения запрашиваем рекомендации и интерливим очередь
+          const rawProviders = await api.getRecommendationProviders().catch(() => "all");
+          const res = await api.applySmartShuffle(baseShuffledQueue, 0, rawProviders).catch(() => null);
+
+          const finalQueue = res && res.interleaved_queue && res.interleaved_queue.length > 0
+            ? res.interleaved_queue
+            : baseShuffledQueue;
+
+          if (res && res.injected_track_keys) {
+            setSmartTrackKeys(new Set(res.injected_track_keys));
+          }
+
+          // 3. Запускаем уже готовую собранную очередь сразу с рекомендациями
+          if (state?.player?.shuffle) {
+            await api.setShuffle(false);
+          }
+          await api.playTracks(finalQueue, 0);
+          await refresh();
+          return;
+        } catch (error) {
+          console.warn("Smart shuffle playTracks error:", error);
+        }
+      }
+
+      // Обычный запуск (без Smart Shuffle)
       try {
         await api.playTracks(tracks, start);
         await refresh();
@@ -372,7 +449,7 @@ export function useAutoplayAndQueue({
         showToast(String(error), true);
       }
     },
-    [refresh, showToast, smartShuffle, setHasEverPlayed],
+    [refresh, showToast, smartShuffle, state?.player?.shuffle, state?.queue, setHasEverPlayed],
   );
 
   return {

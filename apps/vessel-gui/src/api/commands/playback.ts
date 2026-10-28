@@ -9,6 +9,10 @@ export async function playTracks(tracks: TrackRef[], start: number): Promise<voi
   return invoke("play_tracks", { tracks, start });
 }
 
+export async function playQueueIndex(index: number): Promise<void> {
+  return invoke("play_queue_index", { index });
+}
+
 export async function togglePlayback(): Promise<void> {
   return invoke("toggle_playback");
 }

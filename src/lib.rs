@@ -5,6 +5,7 @@ pub mod config;
 pub mod credentials;
 pub mod effect;
 pub mod importer;
+pub mod lyrics;
 pub mod model;
 pub mod onboarding;
 pub mod protocol;

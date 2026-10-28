@@ -18,7 +18,18 @@ type SortMode = "custom" | "title" | "artist" | "added";
 type SortDir = "asc" | "desc";
 
 export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
-  const { state, playTracks, showToast, refresh, navigateTo, goBack, lang, cacheProgress, externalPlaylist } = useApp();
+  const {
+    state,
+    playTracks,
+    smartShuffle,
+    showToast,
+    refresh,
+    navigateTo,
+    goBack,
+    lang,
+    cacheProgress,
+    externalPlaylist,
+  } = useApp();
   const [sort, setSort] = useState<SortMode>("custom");
   const [dir, setDir] = useState<SortDir>("desc");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
@@ -112,13 +123,13 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
 
   const playOne = (track: TrackRef) => {
     const idx = visible.findIndex((t) => trackKey(t) === trackKey(track));
-    void playTracks(visible, idx < 0 ? 0 : idx);
+    void playTracks(visible, idx < 0 ? 0 : idx, false);
   };
 
   const playAll = async () => {
     if (visible.length === 0) return;
     try {
-      await api.playTracks(visible, 0);
+      void playTracks(visible, 0, true);
     } catch (error) {
       showToast(String(error), true);
     }
@@ -126,9 +137,13 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
 
   const shufflePlay = async () => {
     if (visible.length === 0) return;
-    const arr = [...visible].sort(() => Math.random() - 0.5);
+    if (!state?.player.shuffle && !smartShuffle) {
+      try {
+        await api.setShuffle(true);
+      } catch {}
+    }
     try {
-      await api.playTracks(arr, 0);
+      void playTracks(visible, Math.floor(Math.random() * visible.length), true);
     } catch (error) {
       showToast(String(error), true);
     }

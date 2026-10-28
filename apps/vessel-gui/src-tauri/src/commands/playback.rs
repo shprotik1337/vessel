@@ -31,6 +31,18 @@ pub async fn play_tracks(
 }
 
 #[tauri::command]
+pub async fn play_queue_index(
+    core: CoreState<'_>,
+    index: usize,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    if !core.app.gui_play_queue_index(index) {
+        return Err("Не удалось переключить трек в очереди".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn toggle_playback(core: CoreState<'_>) -> Result<(), String> {
     let mut core = lock(&core);
     core.app.control_toggle()
@@ -195,6 +207,7 @@ pub async fn set_audio_agc(core: CoreState<'_>, enabled: bool) -> Result<(), Str
 
 #[tauri::command]
 pub async fn fetch_server_lyrics(
+    core: CoreState<'_>,
     track_name: Option<String>,
     artist_name: Option<String>,
     album_name: Option<String>,
@@ -202,16 +215,60 @@ pub async fn fetch_server_lyrics(
     q: Option<String>,
     search: Option<bool>,
 ) -> Result<serde_json::Value, String> {
-    let client = super::auth::official_client()?;
-    client
-        .lyrics(
-            track_name.as_deref(),
-            artist_name.as_deref(),
-            album_name.as_deref(),
-            duration,
-            q.as_deref(),
-            search,
-        )
-        .await
-        .map_err(|e| e.to_string())
+    let route = {
+        let c = lock(&core);
+        c.config
+            .provider_routing
+            .get("lyrics")
+            .cloned()
+            .unwrap_or_else(|| "server:official".to_string())
+    };
+
+    if route != "local" {
+        // Query through vessel-server (meta-provider "Vessel" included)
+        if let Ok(client) = super::auth::official_client() {
+            if let Ok(res) = client
+                .lyrics(
+                    track_name.as_deref(),
+                    artist_name.as_deref(),
+                    album_name.as_deref(),
+                    duration,
+                    q.as_deref(),
+                    search,
+                )
+                .await
+            {
+                return Ok(res);
+            }
+        }
+    }
+
+    // Local execution (directly from client device, NO meta-provider "Vessel")
+    let title = track_name.as_deref().unwrap_or("").trim();
+    let artist = artist_name.as_deref().unwrap_or("").trim();
+    let (t, a) = if title.is_empty() && artist.is_empty() {
+        if let Some(ref query) = q {
+            let parts: Vec<&str> = query.splitn(2, " - ").collect();
+            if parts.len() == 2 {
+                (parts[1].trim(), parts[0].trim())
+            } else {
+                (query.trim(), "")
+            }
+        } else {
+            ("", "")
+        }
+    } else {
+        (title, artist)
+    };
+
+    let multi = vessel_core::lyrics::resolve_multi_default(
+        t,
+        a,
+        album_name.as_deref(),
+        duration,
+        false, // NO "Vessel" meta-provider in local mode!
+    )
+    .await;
+
+    serde_json::to_value(multi).map_err(|e| e.to_string())
 }

@@ -12,6 +12,7 @@ export interface ThemeColors {
   glassMode: boolean;
   glassOpacity: number; // 0.1..0.95
   trackRowOpacity?: number; // 0..1
+  trackRowStyle?: "none" | "glass";
   trackRowActiveOpacity?: number; // 0..1
   trackRowActiveStyle?: "glass" | "accent" | "dark";
   ambientMode?: "dynamic" | "theme" | "off";
@@ -66,6 +67,7 @@ export interface CustomizationConfig {
     fullscreenMode?: "both" | "lyrics" | "cover";
     fullscreenFollowTrack?: boolean;
     fullscreenLyricsPosition?: "right" | "left";
+    defaultLyricsProvider?: string;
     miniPlayerPreset?: "default" | "compact" | "minimal" | "expanded";
     miniPlayerBg?: "blur" | "solid" | "theme" | "artwork" | "dominant" | "dense_glass";
     miniPlayerShape?: "default" | "capsule";
@@ -161,6 +163,7 @@ export interface CustomizationContextType {
   setFullscreenMode: (mode: "both" | "lyrics" | "cover") => void;
   setFullscreenFollowTrack: (follow: boolean) => void;
   setFullscreenLyricsPosition: (pos: "right" | "left") => void;
+  setDefaultLyricsProvider: (provider: string) => void;
   setMiniPlayerPreset: (preset: "default" | "compact" | "minimal" | "expanded") => void;
   setMiniPlayerBg: (bg: "blur" | "solid" | "theme" | "artwork" | "dominant" | "dense_glass") => void;
   setMiniPlayerShape: (shape: "default" | "capsule") => void;

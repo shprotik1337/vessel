@@ -99,7 +99,7 @@ export interface AppStore {
   setIsSettingsOpen: (open: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
-  playTracks: (tracks: TrackRef[], start?: number) => Promise<void>;
+  playTracks: (tracks: TrackRef[], start?: number, forceNewQueue?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   hasEverPlayed: boolean;
   setHasEverPlayed: React.Dispatch<React.SetStateAction<boolean>>;

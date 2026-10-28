@@ -1,8 +1,7 @@
 import type { TrackRef, PlayerState } from "../../api/types";
-import { formatTime, providerLabel, filterValidArtists } from "../../lib/utils";
+import { formatTime, filterValidArtists } from "../../lib/utils";
 import { t, type Lang } from "../../i18n";
 import { Artwork } from "../Artwork";
-import { PlatformIcon } from "../PlatformIcon";
 import { IconSparkle } from "../Icons";
 import {
   HEART_SVG,
@@ -14,7 +13,6 @@ import {
   REPEAT_SVG,
   VOLUME_SVG,
   MUTE_SVG,
-  getPlatformColor,
 } from "../../pages/player/playerIcons";
 import { usePlayerVolume } from "../../pages/player/usePlayerVolume";
 import { usePlayerProgress } from "../../pages/player/usePlayerProgress";
@@ -95,19 +93,6 @@ export function FullscreenControls({
       </div>
 
       <div className="fs-track-info">
-        <div className="fs-platform-row" style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-          <PlatformIcon kind={track.provider as any} size={14} />
-          <span style={{
-            color: getPlatformColor(track.provider),
-            fontSize: 11,
-            fontWeight: 800,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-          }}>
-            {providerLabel(track.provider)}
-          </span>
-        </div>
-
         <div className="fs-track-title-row">
           <div className="fs-track-title" title={track.title}>
             {track.title}
