@@ -35,6 +35,7 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
   const {
     resetToDefaults,
     imageLibrary,
+    addToImageLibrary,
     setCustomTrackArt,
     setWallpaperData,
   } = useCustomization();
@@ -269,6 +270,8 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
         pickerTarget={pickerTarget}
         onClose={() => setPickerTarget(null)}
         imageLibrary={imageLibrary}
+        onAddToLibrary={addToImageLibrary}
+        lang={lang}
         onSelectTrackArt={(url) => {
           setCustomTrackArt(url);
           showToast(lang === "ru" ? "Обложка трека установлена!" : "Track artwork set!");

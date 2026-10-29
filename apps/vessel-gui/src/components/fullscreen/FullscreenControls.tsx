@@ -2,6 +2,7 @@ import type { TrackRef, PlayerState } from "../../api/types";
 import { formatTime, filterValidArtists } from "../../lib/utils";
 import { t, type Lang } from "../../i18n";
 import { Artwork } from "../Artwork";
+import { PlatformSwitchMenu } from "../PlatformSwitchMenu";
 import { IconSparkle } from "../Icons";
 import {
   HEART_SVG,
@@ -198,6 +199,13 @@ export function FullscreenControls({
 
       {/* Volume Control */}
       <div className="fs-vol-wrap">
+        <PlatformSwitchMenu
+          track={track}
+          positionMs={shownMs}
+          size={48}
+          iconSize={28}
+          transparent={true}
+        />
         <button
           className="fs-vol-btn"
           onClick={handleMute}

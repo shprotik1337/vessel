@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useApp } from "../../../store";
 import { useCustomization, hexToRgba } from "../../../customization";
 import {
@@ -7,6 +7,7 @@ import {
   IconSolid,
   IconDisc,
   IconPlay,
+  IconBackground,
 } from "../../../components/Icons";
 
 interface BackgroundSectionProps {
@@ -28,6 +29,120 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
 
   const [libraryUrlInput, setLibraryUrlInput] = useState("");
   const [activeImageMenuId, setActiveImageMenuId] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const processImageFile = async (file: File): Promise<{ url: string; name: string } | null> => {
+    if (!file || !file.type.startsWith("image/")) {
+      return null;
+    }
+
+    const name = file.name || `Изображение ${Date.now()}`;
+
+    // Для GIF-анимаций сохраняем оригинальный DataURL без canvas, чтобы не терять кадры анимации
+    if (file.type === "image/gif") {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to read GIF"));
+        reader.readAsDataURL(file);
+      });
+      return { url: dataUrl, name };
+    }
+
+    // Для статичных изображений: если разрешение слишком большое (>2560px), масштабируем для экономии памяти
+    return new Promise<{ url: string; name: string }>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const maxDim = 2560;
+          if (width > maxDim || height > maxDim) {
+            const ratio = Math.min(maxDim / width, maxDim / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve({ url: reader.result as string, name });
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          try {
+            const webp = canvas.toDataURL("image/webp", 0.88);
+            if (webp.startsWith("data:image/webp")) {
+              resolve({ url: webp, name });
+              return;
+            }
+          } catch {}
+          try {
+            const jpeg = canvas.toDataURL("image/jpeg", 0.88);
+            resolve({ url: jpeg, name });
+          } catch {
+            resolve({ url: reader.result as string, name });
+          }
+        };
+        img.onerror = () => resolve({ url: reader.result as string, name });
+        img.src = reader.result as string;
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFilesSelect = async (files: FileList | File[]) => {
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (list.length === 0) {
+      showToast(lang === "ru" ? "Пожалуйста, выберите файл(ы) изображения" : "Please select image file(s)", true);
+      return;
+    }
+
+    let addedCount = 0;
+    for (const file of list) {
+      try {
+        const item = await processImageFile(file);
+        if (item) {
+          addToImageLibrary(item);
+          addedCount++;
+        }
+      } catch (err) {
+        console.error("Failed to add image from file:", file.name, err);
+      }
+    }
+
+    if (addedCount > 0) {
+      showToast(
+        lang === "ru"
+          ? (addedCount === 1 ? "Изображение добавлено в библиотеку!" : `Добавлено изображений: ${addedCount}`)
+          : (addedCount === 1 ? "Image added to library!" : `Added images: ${addedCount}`)
+      );
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      void handleFilesSelect(e.dataTransfer.files);
+    }
+  };
 
   return (
     <div>
@@ -228,33 +343,98 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
       </div>
 
       {/* Блок Библиотека изображений */}
-      <div className="sett-card" style={{ marginBottom: 20 }}>
+      <div
+        className="sett-card"
+        style={{
+          marginBottom: 20,
+          border: isDragOver ? "1.5px dashed var(--accent, #3b82f6)" : "1px solid var(--border)",
+          transition: "border-color 0.15s ease",
+        }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
           <div>
             <div className="sett-card-title">{lang === "ru" ? "Библиотека изображений" : "Image Library"}</div>
             <div className="sett-card-desc">
-              {lang === "ru" ? "Сохранённые обложки и фоны для быстрого переключения" : "Saved artwork and backgrounds for fast switching"}
+              {lang === "ru"
+                ? "Сохранённые обложки и фоны для быстрого переключения (можно перетащить файл сюда)"
+                : "Saved artwork and backgrounds for fast switching (or drag and drop files here)"}
             </div>
           </div>
         </div>
 
-        {/* Input для добавления по URL */}
+        {/* Скрытый инпут для выбора файлов с диска */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              void handleFilesSelect(e.target.files);
+            }
+            e.target.value = "";
+          }}
+        />
+
+        {/* Input для добавления по URL + кнопка выбора файла с ПК */}
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <input
-            type="text"
-            className="sett-token-input"
-            style={{ flex: 1 }}
-            placeholder={lang === "ru" ? "Вставьте прямую ссылку на изображение (jpg, png, webp, gif)..." : "Paste direct image URL (jpg, png, webp, gif)..."}
-            value={libraryUrlInput}
-            onChange={(e) => setLibraryUrlInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && libraryUrlInput.trim()) {
-                addToImageLibrary({ url: libraryUrlInput.trim(), name: `Картинка ${imageLibrary.length + 1}` });
-                setLibraryUrlInput("");
-                showToast(lang === "ru" ? "Изображение добавлено в библиотеку!" : "Image added to library!");
+          <div style={{ position: "relative", flex: 1, display: "flex", alignItems: "center" }}>
+            <input
+              type="text"
+              className="sett-token-input"
+              style={{ width: "100%", paddingRight: 38 }}
+              placeholder={
+                lang === "ru"
+                  ? "Вставьте прямую ссылку на изображение или выберите файл с ПК..."
+                  : "Paste direct image URL or choose file from PC..."
               }
-            }}
-          />
+              value={libraryUrlInput}
+              onChange={(e) => setLibraryUrlInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && libraryUrlInput.trim()) {
+                  addToImageLibrary({ url: libraryUrlInput.trim(), name: `Картинка ${imageLibrary.length + 1}` });
+                  setLibraryUrlInput("");
+                  showToast(lang === "ru" ? "Изображение добавлено в библиотеку!" : "Image added to library!");
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title={lang === "ru" ? "Выбрать изображение с компьютера" : "Choose image from computer"}
+              style={{
+                position: "absolute",
+                right: 6,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "transparent",
+                border: "none",
+                color: "var(--text3)",
+                cursor: "pointer",
+                padding: 6,
+                borderRadius: 6,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "color 0.15s ease, background 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--text)";
+                e.currentTarget.style.background = "var(--elev)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text3)";
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <IconBackground size={16} />
+            </button>
+          </div>
+
           <button
             type="button"
             className="sett-token-action-btn submit"
@@ -268,6 +448,23 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
             }}
           >
             {lang === "ru" ? "Добавить" : "Add"}
+          </button>
+
+          <button
+            type="button"
+            className="sett-token-action-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title={lang === "ru" ? "Выбрать изображения с компьютера" : "Choose images from computer"}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+            }}
+          >
+            <IconBackground size={15} />
+            <span>{lang === "ru" ? "С компьютера" : "From PC"}</span>
           </button>
         </div>
 

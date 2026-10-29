@@ -3,6 +3,7 @@ import { formatTime, providerLabel, filterValidArtists } from "../../lib/utils";
 import { t, type Lang } from "../../i18n";
 import { Artwork } from "../../components/Artwork";
 import { PlatformIcon } from "../../components/PlatformIcon";
+import { PlatformSwitchMenu } from "../../components/PlatformSwitchMenu";
 import { IconSparkle } from "../../components/Icons";
 import {
   HEART_SVG,
@@ -343,8 +344,15 @@ export function PlayerNowPlayingCard({
                 </button>
               </div>
 
-              {/* Like, Expand & Volume slider */}
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              {/* Platform Switch, Like, Expand & Volume slider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                {/* Platform Switch Menu (BEFORE Like) */}
+                <PlatformSwitchMenu
+                  track={track}
+                  positionMs={shownMs}
+                  size={42}
+                />
+
                 {/* Like button */}
                 <button
                   onClick={onFav}

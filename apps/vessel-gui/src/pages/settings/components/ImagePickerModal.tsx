@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import type { ImageLibraryItem } from "../../../customization";
+import { IconBackground } from "../../../components/Icons";
 
 interface ImagePickerModalProps {
   pickerTarget: "trackArt" | "wallpaper" | null;
@@ -6,6 +8,8 @@ interface ImagePickerModalProps {
   imageLibrary: ImageLibraryItem[];
   onSelectTrackArt: (url: string) => void;
   onSelectWallpaper: (url: string) => void;
+  onAddToLibrary?: (item: { url: string; name: string }) => void;
+  lang?: string;
 }
 
 export function ImagePickerModal({
@@ -14,8 +18,86 @@ export function ImagePickerModal({
   imageLibrary,
   onSelectTrackArt,
   onSelectWallpaper,
+  onAddToLibrary,
+  lang = "ru",
 }: ImagePickerModalProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   if (pickerTarget === null) return null;
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+
+    const name = file.name || `Изображение ${Date.now()}`;
+
+    try {
+      let dataUrl: string;
+
+      if (file.type === "image/gif") {
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("Failed to read GIF"));
+          reader.readAsDataURL(file);
+        });
+      } else {
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+              let { width, height } = img;
+              const maxDim = 2560;
+              if (width > maxDim || height > maxDim) {
+                const ratio = Math.min(maxDim / width, maxDim / height);
+                width = Math.round(width * ratio);
+                height = Math.round(height * ratio);
+              }
+              const canvas = document.createElement("canvas");
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) {
+                resolve(reader.result as string);
+                return;
+              }
+              ctx.drawImage(img, 0, 0, width, height);
+              try {
+                const webp = canvas.toDataURL("image/webp", 0.88);
+                if (webp.startsWith("data:image/webp")) {
+                  resolve(webp);
+                  return;
+                }
+              } catch {}
+              try {
+                resolve(canvas.toDataURL("image/jpeg", 0.88));
+              } catch {
+                resolve(reader.result as string);
+              }
+            };
+            img.onerror = () => resolve(reader.result as string);
+            img.src = reader.result as string;
+          };
+          reader.onerror = () => reject(new Error("Failed to read file"));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      onAddToLibrary?.({ url: dataUrl, name });
+
+      if (pickerTarget === "trackArt") {
+        onSelectTrackArt(dataUrl);
+      } else {
+        onSelectWallpaper(dataUrl);
+      }
+      onClose();
+    } catch (err) {
+      console.error("Failed to process picked image file:", err);
+    } finally {
+      e.target.value = "";
+    }
+  };
 
   return (
     <div
@@ -31,6 +113,13 @@ export function ImagePickerModal({
       }}
       onClick={onClose}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+      />
       <div
         style={{
           width: "100%",
@@ -48,7 +137,7 @@ export function ImagePickerModal({
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text)" }}>
-            {pickerTarget === "trackArt" ? "Выбрать обложку трека" : "Выбрать фон приложения"}
+            {pickerTarget === "trackArt" ? (lang === "ru" ? "Выбрать обложку трека" : "Choose track artwork") : (lang === "ru" ? "Выбрать фон приложения" : "Choose application background")}
           </div>
           <button
             type="button"
@@ -74,7 +163,9 @@ export function ImagePickerModal({
         <div style={{ flex: 1, overflowY: "auto", minHeight: 180, marginBottom: 16 }}>
           {imageLibrary.length === 0 ? (
             <div style={{ textAlign: "center", color: "var(--text3)", padding: "40px 10px", fontSize: 13 }}>
-              В библиотеке пока нет сохранённых картинок. Сначала добавьте их в блоке «Библиотека изображений».
+              {lang === "ru"
+                ? "В библиотеке пока нет сохранённых картинок. Можно загрузить с компьютера кнопкой ниже."
+                : "No saved images in the library. You can upload from computer using the button below."}
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
@@ -118,13 +209,23 @@ export function ImagePickerModal({
           )}
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <button
+            type="button"
+            className="sett-token-action-btn"
+            onClick={() => fileInputRef.current?.click()}
+            style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+            title={lang === "ru" ? "Выбрать файл изображения с компьютера" : "Choose image file from computer"}
+          >
+            <IconBackground size={15} />
+            <span>{lang === "ru" ? "С компьютера" : "From computer"}</span>
+          </button>
           <button
             type="button"
             className="sett-token-action-btn"
             onClick={onClose}
           >
-            Закрыть
+            {lang === "ru" ? "Закрыть" : "Close"}
           </button>
         </div>
       </div>
