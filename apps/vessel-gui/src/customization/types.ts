@@ -64,7 +64,6 @@ export interface CustomizationConfig {
     showMiniPlayer?: boolean;
     hideDetails?: boolean;
     queuePosition?: "right" | "left" | "bottom";
-    fullscreenMode?: "both" | "lyrics" | "cover";
     fullscreenFollowTrack?: boolean;
     fullscreenLyricsPosition?: "right" | "left";
     defaultLyricsProvider?: string;
@@ -160,7 +159,6 @@ export interface CustomizationContextType {
   toggleQueue: () => void;
   setShowMiniPlayer: (show: boolean) => void;
   setQueuePosition: (pos: "right" | "left" | "bottom") => void;
-  setFullscreenMode: (mode: "both" | "lyrics" | "cover") => void;
   setFullscreenFollowTrack: (follow: boolean) => void;
   setFullscreenLyricsPosition: (pos: "right" | "left") => void;
   setDefaultLyricsProvider: (provider: string) => void;

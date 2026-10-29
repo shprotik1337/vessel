@@ -24,7 +24,6 @@ export const DEFAULT_CUSTOMIZATION: CustomizationConfig = {
     hideDetails: false,
     showMiniPlayer: true,
     queuePosition: "right",
-    fullscreenMode: "both",
     fullscreenFollowTrack: true,
     fullscreenLyricsPosition: "right",
     defaultLyricsProvider: "Vessel",

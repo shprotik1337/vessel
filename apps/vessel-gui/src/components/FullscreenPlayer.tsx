@@ -47,7 +47,6 @@ export function FullscreenPlayer() {
     }
   };
 
-  const fullscreenMode = config.player?.fullscreenMode || "both";
   const followTrack = config.player?.fullscreenFollowTrack !== false;
   const lyricsPosition = config.player?.fullscreenLyricsPosition || "right";
 
@@ -191,23 +190,13 @@ export function FullscreenPlayer() {
         onPrevProvider={lyrics.prevProvider}
       />
 
-      {/* Main Content Layout based on fullscreenMode */}
-      <div className={`fs-container mode-${fullscreenMode} ${lyricsPosition === "left" ? "lyrics-left" : ""}`}>
-        {fullscreenMode === "cover" ? (
-          <div className="fs-cover-centered">
-            {renderControls()}
-          </div>
-        ) : fullscreenMode === "lyrics" ? (
-          <div className="fs-lyrics-centered">
-            {renderLyrics()}
-          </div>
-        ) : (
-          <div className="fs-split-view">
-            {lyricsPosition === "left" && renderLyrics()}
-            {renderControls()}
-            {lyricsPosition === "right" && renderLyrics()}
-          </div>
-        )}
+      {/* Main Content Layout (Split View: Controls + Lyrics) */}
+      <div className={`fs-container ${lyricsPosition === "left" ? "lyrics-left" : ""}`}>
+        <div className="fs-split-view">
+          {lyricsPosition === "left" && renderLyrics()}
+          {renderControls()}
+          {lyricsPosition === "right" && renderLyrics()}
+        </div>
       </div>
     </div>
   );

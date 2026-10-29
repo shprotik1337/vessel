@@ -71,10 +71,6 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     : "default";
 
   const showMiniPlayer = raw.player?.showMiniPlayer !== false;
-  const validFsModes = ["both", "lyrics", "cover"] as const;
-  const fullscreenMode = validFsModes.includes(raw.player?.fullscreenMode)
-    ? raw.player.fullscreenMode
-    : "both";
   const fullscreenFollowTrack = raw.player?.fullscreenFollowTrack !== false;
 
   const validFsLyricsPositions = ["right", "left"] as const;
@@ -270,7 +266,6 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       hideDetails: playerHideDetails,
       showMiniPlayer,
       queuePosition,
-      fullscreenMode,
       fullscreenFollowTrack,
       fullscreenLyricsPosition,
       defaultLyricsProvider,

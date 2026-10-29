@@ -260,13 +260,6 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const setFullscreenMode = (mode: "both" | "lyrics" | "cover") => {
-    persistOrDraft((prev) => ({
-      ...prev,
-      player: { ...prev.player, fullscreenMode: mode },
-    }));
-  };
-
   const setFullscreenFollowTrack = (follow: boolean) => {
     persistOrDraft((prev) => ({
       ...prev,
@@ -937,7 +930,6 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         setPlayerOptions,
         setQueuePosition,
         setShowMiniPlayer,
-        setFullscreenMode,
         setFullscreenFollowTrack,
         setFullscreenLyricsPosition,
         setDefaultLyricsProvider,
