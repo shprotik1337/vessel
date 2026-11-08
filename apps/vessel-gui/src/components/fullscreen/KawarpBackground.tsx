@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { resolveArtworkUrl } from "../../lib/utils";
+import { invoke } from "@tauri-apps/api/core";
 
 const VERTEX_SHADER = `
   attribute vec2 a_position;
@@ -288,16 +288,52 @@ class KawarpEngine {
     const seq = ++this.loadSequenceId;
     let imgBitmap: ImageBitmap | HTMLImageElement | null = null;
 
-    try {
-      const resp = await fetch(url, { mode: "cors" });
-      if (resp.ok) {
-        const blob = await resp.blob();
-        imgBitmap = await createImageBitmap(blob);
+    // 1. Прямая загрузка для data: или blob: URI (без сети)
+    if (url.startsWith("data:") || url.startsWith("blob:")) {
+      try {
+        imgBitmap = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("Image load error"));
+          img.src = url;
+        });
+      } catch {
+        // fallback
       }
-    } catch {
-      // Fallback to standard Image
     }
 
+    // 2. Запрос через нативное Rust-ядро Vessel IPC (мгновенно из RAM-кэша, 100% CORS-чистый data URL)
+    if (!imgBitmap) {
+      try {
+        const art = await invoke<{ mime: string; base64: string }>("get_artwork_data", { url });
+        if (art?.base64) {
+          const dataUrl = `data:${art.mime || "image/jpeg"};base64,${art.base64}`;
+          imgBitmap = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error("Image load error"));
+            img.src = dataUrl;
+          });
+        }
+      } catch {
+        // fallback to browser fetch
+      }
+    }
+
+    // 3. Фолбэк на fetch с mode: cors
+    if (!imgBitmap) {
+      try {
+        const resp = await fetch(url, { mode: "cors" });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          imgBitmap = await createImageBitmap(blob);
+        }
+      } catch {
+        // Fallback to standard Image
+      }
+    }
+
+    // 4. Фолбэк на стандартный new Image() с crossOrigin
     if (!imgBitmap) {
       try {
         imgBitmap = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -653,9 +689,9 @@ export function KawarpBackground({ coverUrl, className = "" }: KawarpBackgroundP
   }, []);
 
   useEffect(() => {
-    const resolved = resolveArtworkUrl(coverUrl);
-    if (resolved && engineRef.current) {
-      void engineRef.current.loadImage(resolved);
+    const targetUrl = coverUrl;
+    if (targetUrl && engineRef.current) {
+      void engineRef.current.loadImage(targetUrl);
     }
   }, [coverUrl]);
 

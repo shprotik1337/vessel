@@ -176,7 +176,7 @@ export function FullscreenPlayer() {
       onAnimationEnd={handleAnimationEnd}
     >
       {/* Living fluid animated background from album artwork */}
-      <KawarpBackground coverUrl={track?.artwork_url} />
+      <KawarpBackground coverUrl={config.theme?.customTrackArt || track?.artwork_url} />
       <div className="fs-backdrop-scrim" />
 
       {/* Top Header Bar */}

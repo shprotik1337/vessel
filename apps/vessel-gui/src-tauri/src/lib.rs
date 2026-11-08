@@ -480,6 +480,114 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
     })
 }
 
+#[derive(serde::Serialize)]
+pub struct ArtworkData {
+    pub mime: String,
+    pub base64: String,
+}
+
+pub static IMAGE_CACHE: std::sync::OnceLock<
+    std::sync::RwLock<std::collections::HashMap<String, (String, Vec<u8>)>>,
+> = std::sync::OnceLock::new();
+
+pub fn get_image_cache() -> &'static std::sync::RwLock<std::collections::HashMap<String, (String, Vec<u8>)>> {
+    IMAGE_CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
+}
+
+pub async fn fetch_image_bytes(target_url: &str) -> Option<(String, Vec<u8>)> {
+    let cache = get_image_cache();
+    if let Ok(guard) = cache.read() {
+        if let Some(entry) = guard.get(target_url) {
+            return Some(entry.clone());
+        }
+    }
+
+    let client = vessel_core::provider::download::shared_download_client();
+    let encoded_target: String =
+        url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
+    let proxy_url = format!(
+        "{}/api/v1/image?url={}",
+        vessel_core::config::OFFICIAL_SERVER_URL,
+        encoded_target
+    );
+
+    // 1. Сначала пробуем через серверный прокси (IP-шлюз РФ -> Польша)
+    let mut resp_opt = client
+        .get(&proxy_url)
+        .header(
+            "Authorization",
+            format!("Bearer {}", vessel_core::config::OFFICIAL_SERVER_TOKEN),
+        )
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+        .ok();
+
+    // 2. Если прокси не ответил успехом, пробуем напрямую
+    if resp_opt.as_ref().map(|r| !r.status().is_success()).unwrap_or(true) {
+        resp_opt = client
+            .get(target_url)
+            .timeout(std::time::Duration::from_secs(6))
+            .send()
+            .await
+            .ok();
+    }
+
+    if let Some(resp) = resp_opt {
+        if resp.status().is_success() {
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("image/jpeg")
+                .to_string();
+
+            if let Ok(bytes) = resp.bytes().await {
+                let bytes_vec = bytes.to_vec();
+                if let Ok(mut guard) = cache.write() {
+                    guard.insert(target_url.to_string(), (content_type.clone(), bytes_vec.clone()));
+                }
+                return Some((content_type, bytes_vec));
+            }
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+async fn get_artwork_data(url: String) -> Result<ArtworkData, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("Пустой URL".to_string());
+    }
+
+    let clean_url = if let Some(stripped) = trimmed.strip_prefix("http://vessel-img.localhost/?url=") {
+        url::form_urlencoded::parse(format!("url={stripped}").as_bytes())
+            .find(|(k, _)| k == "url")
+            .map(|(_, v)| v.into_owned())
+            .unwrap_or_else(|| stripped.to_string())
+    } else if let Some(stripped) = trimmed.strip_prefix("vessel-img://?url=") {
+        url::form_urlencoded::parse(format!("url={stripped}").as_bytes())
+            .find(|(k, _)| k == "url")
+            .map(|(_, v)| v.into_owned())
+            .unwrap_or_else(|| stripped.to_string())
+    } else {
+        trimmed.to_string()
+    };
+
+    if let Some((mime, bytes)) = fetch_image_bytes(&clean_url).await {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(ArtworkData {
+            mime,
+            base64: b64,
+        })
+    } else {
+        Err("Не удалось загрузить обложку".to_string())
+    }
+}
+
 #[tauri::command]
 async fn get_state(state: State<'_, Arc<Mutex<GuiCore>>>) -> Result<FullState, String> {
     let core = state
@@ -509,10 +617,7 @@ pub fn run() -> anyhow::Result<()> {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .register_asynchronous_uri_scheme_protocol("vessel-img", |_ctx, request, responder| {
-            static IMAGE_CACHE: std::sync::OnceLock<
-                std::sync::RwLock<std::collections::HashMap<String, (String, Vec<u8>)>>,
-            > = std::sync::OnceLock::new();
-            let cache = IMAGE_CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()));
+            let cache = get_image_cache();
 
             if request.method() == "OPTIONS" {
                 let response = tauri::http::Response::builder()
@@ -578,68 +683,19 @@ pub fn run() -> anyhow::Result<()> {
             }
 
             tauri::async_runtime::spawn(async move {
-                let client = vessel_core::provider::download::shared_download_client();
-                let encoded_target: String =
-                    url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
-                let proxy_url = format!(
-                    "{}/api/v1/image?url={}",
-                    vessel_core::config::OFFICIAL_SERVER_URL,
-                    encoded_target
-                );
-
-                // 1. Сначала пробуем через серверный прокси (IP-шлюз РФ -> Польша)
-                let mut resp_opt = client
-                    .get(&proxy_url)
-                    .header(
-                        "Authorization",
-                        format!("Bearer {}", vessel_core::config::OFFICIAL_SERVER_TOKEN),
-                    )
-                    .timeout(std::time::Duration::from_secs(8))
-                    .send()
-                    .await
-                    .ok();
-
-                // 2. Если прокси не ответил успехом, пробуем напрямую
-                if resp_opt.as_ref().map(|r| !r.status().is_success()).unwrap_or(true) {
-                    resp_opt = client
-                        .get(&target_url)
-                        .timeout(std::time::Duration::from_secs(6))
-                        .send()
-                        .await
-                        .ok();
-                }
-
-                if let Some(resp) = resp_opt {
-                    if resp.status().is_success() {
-                        let content_type = resp
-                            .headers()
-                            .get("content-type")
-                            .and_then(|v| v.to_str().ok())
-                            .unwrap_or("image/jpeg")
-                            .to_string();
-
-                        if let Ok(bytes) = resp.bytes().await {
-                            let bytes_vec = bytes.to_vec();
-
-                            // Сохраняем в кэш
-                            if let Ok(mut guard) = cache.write() {
-                                guard.insert(target_url.clone(), (content_type.clone(), bytes_vec.clone()));
-                            }
-
-                            let response = tauri::http::Response::builder()
-                                .status(200)
-                                .header("Content-Type", content_type)
-                                .header("Content-Length", bytes_vec.len().to_string())
-                                .header("Access-Control-Allow-Origin", "*")
-                                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-                                .header("Access-Control-Allow-Headers", "*")
-                                .header("Cache-Control", "public, max-age=2592000, immutable")
-                                .body(bytes_vec)
-                                .unwrap();
-                            responder.respond(response);
-                            return;
-                        }
-                    }
+                if let Some((content_type, bytes_vec)) = fetch_image_bytes(&target_url).await {
+                    let response = tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", content_type)
+                        .header("Content-Length", bytes_vec.len().to_string())
+                        .header("Access-Control-Allow-Origin", "*")
+                        .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                        .header("Access-Control-Allow-Headers", "*")
+                        .header("Cache-Control", "public, max-age=2592000, immutable")
+                        .body(bytes_vec)
+                        .unwrap();
+                    responder.respond(response);
+                    return;
                 }
 
                 let response = tauri::http::Response::builder()
@@ -655,6 +711,7 @@ pub fn run() -> anyhow::Result<()> {
         .manage(core)
         .invoke_handler(tauri::generate_handler![
             get_state,
+            get_artwork_data,
             commands::search,
             commands::search_collections,
             commands::artist_profile,
