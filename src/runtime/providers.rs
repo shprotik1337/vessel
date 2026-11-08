@@ -261,7 +261,12 @@ fn apply_provider_routing(
                     server_id,
                     server_url
                 );
-                registry.register(ServerProvider::new(kind, client));
+                let preferred = if kind == ProviderKind::Spotify {
+                    config.spotify_playback_source.clone()
+                } else {
+                    None
+                };
+                registry.register(ServerProvider::with_preferred_source(kind, client, preferred));
             }
             Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),
         }

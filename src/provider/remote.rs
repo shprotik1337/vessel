@@ -90,6 +90,7 @@ impl ServerClient {
         let _ = probe;
         let http = reqwest::Client::builder()
             .user_agent(concat!("vessel/", env!("CARGO_PKG_VERSION")))
+            .danger_accept_invalid_certs(true)
             .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .context("не удалось создать HTTP-клиент Vessel Server")?;
@@ -383,6 +384,17 @@ impl ServerClient {
         track: &TrackRef,
         prefer_relay: bool,
     ) -> Result<PlaybackSource> {
+        self.playback_source_with_preferred(track, prefer_relay, None).await
+    }
+
+    /// Разрешает источник воспроизведения с явным указанием желаемого источника
+    /// звука для метаданных (`"auto"` | `"youtube_music"` | `"deezer"`).
+    pub async fn playback_source_with_preferred(
+        &self,
+        track: &TrackRef,
+        prefer_relay: bool,
+        preferred_source: Option<String>,
+    ) -> Result<PlaybackSource> {
         let path = format!(
             "/providers/{}/playback/resolve",
             kind_segment(track.provider)
@@ -393,6 +405,7 @@ impl ServerClient {
                 &ResolveSourceRequest {
                     track: track.clone(),
                     prefer_relay,
+                    preferred_source,
                 },
             )
             .await?;
@@ -735,15 +748,36 @@ fn provider_site(kind: ProviderKind) -> Url {
 pub struct ServerProvider {
     kind: ProviderKind,
     client: ServerClient,
+    preferred_source: Option<String>,
 }
 
 impl ServerProvider {
     pub fn new(kind: ProviderKind, client: ServerClient) -> Self {
-        Self { kind, client }
+        Self {
+            kind,
+            client,
+            preferred_source: None,
+        }
+    }
+
+    pub fn with_preferred_source(
+        kind: ProviderKind,
+        client: ServerClient,
+        preferred_source: Option<String>,
+    ) -> Self {
+        Self {
+            kind,
+            client,
+            preferred_source,
+        }
     }
 
     pub fn client(&self) -> &ServerClient {
         &self.client
+    }
+
+    pub fn set_preferred_source(&mut self, preferred: Option<String>) {
+        self.preferred_source = preferred;
     }
 }
 
@@ -807,19 +841,12 @@ impl MusicProvider for ServerProvider {
     }
 
     async fn playback_source(&self, track: &TrackRef) -> Result<PlaybackSource> {
-        // Принцип Vessel: Spotify — провайдер метаданных, аудио берётся из
-        // Deezer/YouTube Music цепочкой. Сервер никогда не отдаёт сырой
-        // spotify-файл под чужой premium-сессией.
-        if self.kind == ProviderKind::Spotify && track.provider == ProviderKind::Spotify {
-            bail!(
-                "Spotify играет через Deezer/YouTube Music — сервер не отдаёт \
-                 собственные аудио-источники Spotify"
-            );
-        }
         // Офлайн и повторные прослушивания: локальный кэш важнее сервера
         if let Some(cached) = crate::provider::cache::cached_source(track) {
             return Ok(cached);
         }
-        self.client.playback_source(track, true).await
+        self.client
+            .playback_source_with_preferred(track, true, self.preferred_source.clone())
+            .await
     }
 }

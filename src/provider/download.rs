@@ -59,10 +59,11 @@ pub fn track_file_name(track: &TrackRef, source: &PlaybackSource) -> String {
 }
 
 /// Глобальный HTTP-клиент для скачивания с пулом соединений и keep-alive.
-fn shared_download_client() -> &'static reqwest::Client {
+pub fn shared_download_client() -> &'static reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
             .connect_timeout(std::time::Duration::from_secs(15))
             .read_timeout(std::time::Duration::from_secs(20))
             .pool_idle_timeout(std::time::Duration::from_secs(90))

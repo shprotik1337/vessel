@@ -59,6 +59,7 @@ impl HttpRangeSource {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .user_agent(ua)
+            .danger_accept_invalid_certs(true)
             .build()?;
         let headers = normalize_headers(headers)?;
         let mut source = Self {

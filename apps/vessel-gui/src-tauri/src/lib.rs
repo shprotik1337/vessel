@@ -210,12 +210,15 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
         if let Some(server) = server {
             if !routed_providers.is_empty() {
                 let secret_name = format!("vessel-server:{}", server.id);
-                let token = core
+                let mut token = core
                     .runtime
                     .get_named_secret(&secret_name)
                     .ok()
                     .flatten()
                     .unwrap_or_default();
+                if token.is_empty() && server.id == vessel_core::config::OFFICIAL_SERVER_ID {
+                    token = vessel_core::config::OFFICIAL_SERVER_TOKEN.to_string();
+                }
                 Some(ImageProxyConfig {
                     server_url: server.url.trim_end_matches('/').to_string(),
                     token,
@@ -442,7 +445,8 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
 
     // Ensure official server token is present in secrets
     let official_secret = format!("vessel-server:{}", vessel_core::config::OFFICIAL_SERVER_ID);
-    if secrets.get_named(&official_secret).ok().flatten().is_none() {
+    let existing_token = secrets.get_named(&official_secret).ok().flatten();
+    if existing_token.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true) {
         let _ = secrets.set_named(&official_secret, vessel_core::config::OFFICIAL_SERVER_TOKEN);
     }
 
@@ -504,6 +508,150 @@ pub fn run() -> anyhow::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .register_asynchronous_uri_scheme_protocol("vessel-img", |_ctx, request, responder| {
+            static IMAGE_CACHE: std::sync::OnceLock<
+                std::sync::RwLock<std::collections::HashMap<String, (String, Vec<u8>)>>,
+            > = std::sync::OnceLock::new();
+            let cache = IMAGE_CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()));
+
+            if request.method() == "OPTIONS" {
+                let response = tauri::http::Response::builder()
+                    .status(204)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                    .header("Access-Control-Allow-Headers", "*")
+                    .header("Access-Control-Max-Age", "86400")
+                    .body(Vec::new())
+                    .unwrap();
+                responder.respond(response);
+                return;
+            }
+
+            let uri = request.uri();
+            let query = uri.query().unwrap_or_default().to_string();
+            let mut target_url = url::form_urlencoded::parse(query.as_bytes())
+                .find(|(k, _)| k == "url")
+                .map(|(_, v)| v.into_owned());
+
+            if target_url.is_none() {
+                let path = uri.path();
+                if path.starts_with("/http://") || path.starts_with("/https://") {
+                    target_url = Some(path[1..].to_string());
+                } else if path.len() > 1 {
+                    let raw_path = &path[1..];
+                    let decoded: String = url::form_urlencoded::parse(format!("url={raw_path}").as_bytes())
+                        .find(|(k, _)| k == "url")
+                        .map(|(_, v)| v.into_owned())
+                        .unwrap_or_default();
+                    if decoded.starts_with("http://") || decoded.starts_with("https://") {
+                        target_url = Some(decoded);
+                    }
+                }
+            }
+
+            let Some(target_url) = target_url else {
+                let res = tauri::http::Response::builder()
+                    .status(400)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(Vec::new())
+                    .unwrap();
+                responder.respond(res);
+                return;
+            };
+
+            // Проверяем кэш в оперативной памяти (0.05 мс)
+            if let Ok(guard) = cache.read() {
+                if let Some((mime, bytes)) = guard.get(&target_url) {
+                    let response = tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", mime)
+                        .header("Content-Length", bytes.len().to_string())
+                        .header("Access-Control-Allow-Origin", "*")
+                        .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                        .header("Access-Control-Allow-Headers", "*")
+                        .header("Cache-Control", "public, max-age=2592000, immutable")
+                        .body(bytes.clone())
+                        .unwrap();
+                    responder.respond(response);
+                    return;
+                }
+            }
+
+            tauri::async_runtime::spawn(async move {
+                let client = vessel_core::provider::download::shared_download_client();
+                let encoded_target: String =
+                    url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
+                let proxy_url = format!(
+                    "{}/api/v1/image?url={}",
+                    vessel_core::config::OFFICIAL_SERVER_URL,
+                    encoded_target
+                );
+
+                // 1. Сначала пробуем через серверный прокси (IP-шлюз РФ -> Польша)
+                let mut resp_opt = client
+                    .get(&proxy_url)
+                    .header(
+                        "Authorization",
+                        format!("Bearer {}", vessel_core::config::OFFICIAL_SERVER_TOKEN),
+                    )
+                    .timeout(std::time::Duration::from_secs(8))
+                    .send()
+                    .await
+                    .ok();
+
+                // 2. Если прокси не ответил успехом, пробуем напрямую
+                if resp_opt.as_ref().map(|r| !r.status().is_success()).unwrap_or(true) {
+                    resp_opt = client
+                        .get(&target_url)
+                        .timeout(std::time::Duration::from_secs(6))
+                        .send()
+                        .await
+                        .ok();
+                }
+
+                if let Some(resp) = resp_opt {
+                    if resp.status().is_success() {
+                        let content_type = resp
+                            .headers()
+                            .get("content-type")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("image/jpeg")
+                            .to_string();
+
+                        if let Ok(bytes) = resp.bytes().await {
+                            let bytes_vec = bytes.to_vec();
+
+                            // Сохраняем в кэш
+                            if let Ok(mut guard) = cache.write() {
+                                guard.insert(target_url.clone(), (content_type.clone(), bytes_vec.clone()));
+                            }
+
+                            let response = tauri::http::Response::builder()
+                                .status(200)
+                                .header("Content-Type", content_type)
+                                .header("Content-Length", bytes_vec.len().to_string())
+                                .header("Access-Control-Allow-Origin", "*")
+                                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                                .header("Access-Control-Allow-Headers", "*")
+                                .header("Cache-Control", "public, max-age=2592000, immutable")
+                                .body(bytes_vec)
+                                .unwrap();
+                            responder.respond(response);
+                            return;
+                        }
+                    }
+                }
+
+                let response = tauri::http::Response::builder()
+                    .status(404)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                    .header("Access-Control-Allow-Headers", "*")
+                    .body(Vec::new())
+                    .unwrap();
+                responder.respond(response);
+            });
+        })
         .manage(core)
         .invoke_handler(tauri::generate_handler![
             get_state,

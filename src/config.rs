@@ -65,7 +65,7 @@ pub struct HotkeyBindings {
 
 pub const OFFICIAL_SERVER_ID: &str = "official";
 pub const OFFICIAL_SERVER_NAME: &str = "Vessel Server";
-pub const OFFICIAL_SERVER_URL: &str = "https://cold-heart-469d.iseedeadpeople133712.workers.dev";
+pub const OFFICIAL_SERVER_URL: &str = "https://85.208.85.254:7700";
 pub const OFFICIAL_SERVER_TOKEN: &str = "vessel-95-k7f2d9";
 
 /// Экземпляр Vessel Server (не тип! тип всегда Vessel Server, это конфиг
@@ -267,10 +267,7 @@ impl AppConfig {
             .iter_mut()
             .find(|s| s.id == OFFICIAL_SERVER_ID)
         {
-            if official.url.trim().is_empty()
-                || official.url.contains("sslip.io")
-                || official.url.contains("chickenkiller.com")
-            {
+            if official.url != OFFICIAL_SERVER_URL {
                 official.url = OFFICIAL_SERVER_URL.to_string();
             }
             official.name = OFFICIAL_SERVER_NAME.to_string();

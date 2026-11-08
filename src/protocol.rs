@@ -173,11 +173,14 @@ pub struct LikedRequest {
 
 /// Разрешение источника воспроизведения. `prefer_relay=true` — сервер обязан
 /// вернуть транзитный путь, даже если URL не IP-привязанный (гео-клиент).
+/// `preferred_source` — желаемый источник звука для метаданных ("auto" | "youtube_music" | "deezer").
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResolveSourceRequest {
     pub track: TrackRef,
     #[serde(default)]
     pub prefer_relay: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_source: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

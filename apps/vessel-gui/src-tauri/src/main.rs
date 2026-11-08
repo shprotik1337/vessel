@@ -71,6 +71,20 @@ fn startup_log_path() -> std::path::PathBuf {
 
 fn main() {
     #[cfg(windows)]
+    {
+        // Разрешаем WebView2 загружать изображения и ресурсы через внутренний IP-шлюз с самоподписанным SSL
+        let current = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
+        if !current.contains("--ignore-certificate-errors") {
+            let new_args = if current.is_empty() {
+                "--ignore-certificate-errors".to_string()
+            } else {
+                format!("{current} --ignore-certificate-errors")
+            };
+            std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", new_args);
+        }
+    }
+
+    #[cfg(windows)]
     let _instance_guard = match single_instance::acquire() {
         Some(guard) => guard,
         None => {

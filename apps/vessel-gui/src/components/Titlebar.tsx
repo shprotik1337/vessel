@@ -3,7 +3,7 @@ import { useApp } from "../store";
 import { t } from "../i18n";
 import * as api from "../api/commands";
 
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.5.1";
 
 interface TitlebarProps {
   hasUpdate?: boolean;

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { resolveArtworkUrl } from "../../lib/utils";
 
 const VERTEX_SHADER = `
   attribute vec2 a_position;
@@ -652,8 +653,9 @@ export function KawarpBackground({ coverUrl, className = "" }: KawarpBackgroundP
   }, []);
 
   useEffect(() => {
-    if (coverUrl && engineRef.current) {
-      void engineRef.current.loadImage(coverUrl);
+    const resolved = resolveArtworkUrl(coverUrl);
+    if (resolved && engineRef.current) {
+      void engineRef.current.loadImage(resolved);
     }
   }, [coverUrl]);
 

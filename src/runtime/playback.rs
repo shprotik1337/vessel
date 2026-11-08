@@ -88,6 +88,7 @@ impl Runtime {
     pub fn set_spotify_playback_source(&mut self, source: PlaybackSourceKind) {
         self.playback_resolver.set_source(source);
         self.config.spotify_playback_source = Some(source.as_str().to_string());
+        self.reload_providers();
     }
 
     pub fn set_audio_crossfade(&self, duration_ms: u32) {
@@ -159,6 +160,24 @@ impl Runtime {
                         video_only_notice: None,
                     });
                 }));
+                return;
+            }
+
+            // Если Spotify переключен на «Сервер», сервер сам сопоставляет метаданные
+            // и возвращает готовый стрим за 1 сетевой вызов через ServerProvider.
+            let is_remote_spotify = self
+                .providers
+                .get(ProviderKind::Spotify)
+                .map_or(false, |p| p.is_remote());
+            if is_remote_spotify {
+                crate::dlog!(
+                    "[Playback][{session}] Spotify в режиме «Сервер» — отдаём резолв серверу"
+                );
+                let Some(provider) = self.providers.get(ProviderKind::Spotify) else {
+                    actions.push(Action::PlaybackFailed("Spotify не настроен".to_string()));
+                    return;
+                };
+                self.start_native_playback(provider, track, actions);
                 return;
             }
 

@@ -155,6 +155,10 @@ impl ProviderRegistry {
         self.providers.insert(provider.kind(), Arc::new(provider));
     }
 
+    pub fn register_arc(&mut self, provider: Arc<dyn MusicProvider>) {
+        self.providers.insert(provider.kind(), provider);
+    }
+
     pub fn get(&self, kind: ProviderKind) -> Option<Arc<dyn MusicProvider>> {
         self.providers.get(&kind).cloned()
     }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { resolveArtworkUrl } from "../lib/utils";
 
 const TONES = [
@@ -41,6 +41,7 @@ export function Artwork({
   isPlaying = false,
 }: ArtworkProps) {
   const [hover, setHover] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const showOverlay = onPlayClick && hover;
 
   const style: React.CSSProperties = {
@@ -53,12 +54,17 @@ export function Artwork({
 
   const resolvedUrl = resolveArtworkUrl(url);
 
-  const img = resolvedUrl ? (
+  useEffect(() => {
+    setLoadError(false);
+  }, [resolvedUrl]);
+
+  const img = resolvedUrl && !loadError ? (
     <img
       src={resolvedUrl}
       alt={alt}
       loading="lazy"
       decoding="async"
+      onError={() => setLoadError(true)}
       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
     />
   ) : null;
@@ -79,7 +85,7 @@ export function Artwork({
       onMouseEnter={() => onPlayClick && setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {resolvedUrl ? (
+      {img ? (
         <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>{img}</div>
       ) : square ? null : (
         <span

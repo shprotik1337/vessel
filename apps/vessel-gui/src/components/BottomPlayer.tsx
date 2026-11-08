@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from "react";
 
 import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
-import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
+import { formatTime, providerLabel, isFavorite, filterValidArtists, resolveArtworkUrl } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import { IconSparkle } from "./Icons";
@@ -413,7 +413,7 @@ export function BottomPlayer() {
       {config.player?.miniPlayerBg === "artwork" && track?.artwork_url && (
         <div
           className="player-artwork-backdrop"
-          style={{ backgroundImage: `url("${track.artwork_url}")` }}
+          style={{ backgroundImage: `url("${resolveArtworkUrl(track.artwork_url) ?? track.artwork_url}")` }}
         />
       )}
 

@@ -10,7 +10,7 @@ export function getActiveImageProxy(): ImageProxyConfig | null {
   return activeImageProxy;
 }
 
-function inferProviderFromUrl(url: string): string | null {
+export function inferProviderFromUrl(url: string): string | null {
   const lower = url.toLowerCase();
   if (lower.includes(".scdn.co") || lower.includes("spotifycdn.com")) {
     return "spotify";
@@ -60,7 +60,9 @@ export function resolveArtworkUrl(url: string | null | undefined): string | unde
     trimmed.startsWith("/") ||
     trimmed.startsWith("asset://") ||
     trimmed.startsWith("http://localhost") ||
-    trimmed.startsWith("http://127.0.0.1")
+    trimmed.startsWith("http://127.0.0.1") ||
+    trimmed.startsWith("http://vessel-img.localhost") ||
+    trimmed.startsWith("vessel-img://")
   ) {
     return trimmed;
   }
@@ -70,26 +72,9 @@ export function resolveArtworkUrl(url: string | null | undefined): string | unde
     return trimmed;
   }
 
-  // VPS используется ТОЛЬКО если активен сервер и данный провайдер переключен на «Сервер».
-  // В локальном режиме всё обрабатывается строго локально, VPS никак не взаимодействует.
-  if (activeImageProxy?.server_url && activeImageProxy.routed_providers?.length > 0) {
-    const prov = inferProviderFromUrl(trimmed);
-    if (prov && !activeImageProxy.routed_providers.includes(prov)) {
-      // Провайдер стоит на «Локально» — грузим напрямую
-      return trimmed;
-    }
-
-    const base = activeImageProxy.server_url.replace(/\/+$/, "");
-    const params = new URLSearchParams();
-    params.set("url", trimmed);
-    if (activeImageProxy.token) {
-      params.set("token", activeImageProxy.token);
-    }
-    return `${base}/api/v1/image?${params.toString()}`;
-  }
-
-  // Чисто локальный режим — напрямую, без обращения к серверу
-  return trimmed;
+  // В десктопном приложении Tauri все внешние обложки загружаются через локальный протокол
+  // vessel-img, который безопасно проксирует их через Rust-ядро и Ingress-шлюз с кэшированием в RAM
+  return `http://vessel-img.localhost/?url=${encodeURIComponent(trimmed)}`;
 }
 
 export function formatTime(ms: number | null | undefined): string {
