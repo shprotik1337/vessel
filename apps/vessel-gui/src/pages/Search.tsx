@@ -1,3 +1,4 @@
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
@@ -174,12 +175,7 @@ export function Search() {
   return (
     <div className={`view search-page ${hasActiveQuery ? "mode-top" : "mode-hero"}`}>
       <div className="page-panel">
-        {searchGlowArt && (
-          <div
-            className="page-ambient-glow"
-            style={{ backgroundImage: `url("${searchGlowArt}")` }}
-          />
-        )}
+        <PageAmbientBackdrop url={searchGlowArt} />
 
         <SearchBar
           query={query}

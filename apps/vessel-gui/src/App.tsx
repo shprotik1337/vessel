@@ -333,6 +333,8 @@ function AppContent() {
           }}
         />
       )}
+      {/* Root Ambient Glow Layer: Portaled from active page */}
+      <div id="vessel-glow-root" className="vessel-glow-root" />
       {/* Seamless Ambient Backdrop starting from the very top of window (Y = 0) */}
       {config.theme?.ambientMode !== "off" && (
         view === "player" ? (

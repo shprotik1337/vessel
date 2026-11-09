@@ -1,3 +1,4 @@
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { useState, useRef, useEffect } from "react";
 
 import { useApp } from "../store";
@@ -327,16 +328,7 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
         </button>
       </div>
       <div className="page-panel">
-        {playlist.cover_url || playlist.tracks[0]?.artwork_url ? (
-          <div
-            className="page-ambient-glow"
-            style={{
-              backgroundImage: `url("${playlist.cover_url || playlist.tracks[0]?.artwork_url}")`,
-            }}
-          />
-        ) : (
-          <div className="page-ambient-glow-fallback" />
-        )}
+        <PageAmbientBackdrop url={playlist.cover_url || playlist.tracks[0]?.artwork_url} />
         <div className="page-panel-header">
           <div className="hero-ref">
             <div className="hero-ref-cover">

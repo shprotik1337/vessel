@@ -115,7 +115,7 @@ button{font-family:inherit}
 }
 
 /* Titlebar (Custom Frameless Window Topbar) */
-.titlebar{display:flex;align-items:center;height:34px;background:transparent !important;border:none !important;border-bottom:none !important;box-shadow:none !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;user-select:none;z-index:999;position:relative;flex-shrink:0;-webkit-app-region:drag;cursor:default;padding:0 0 0 16px;transition:background .2s ease,border-color .2s ease}
+.titlebar{display:flex;align-items:center;height:34px;background:transparent !important;border:none !important;border-bottom:none !important;box-shadow:none !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;user-select:none;z-index:1000;position:absolute;top:0;left:0;right:0;flex-shrink:0;-webkit-app-region:drag;cursor:default;padding:0 0 0 16px;transition:background .2s ease,border-color .2s ease}
 .titlebar-brand{display:flex;align-items:baseline;gap:6px;color:var(--text);-webkit-app-region:drag;pointer-events:none;flex-shrink:0}
 .titlebar-app-name{font-size:12.5px;font-weight:600;letter-spacing:0.2px;color:var(--text)}
 .titlebar-app-version{font-size:11px;font-weight:400;color:var(--text3);font-variant-numeric:tabular-nums}
@@ -126,32 +126,9 @@ button{font-family:inherit}
 .titlebar-btn.close:hover{background:#e81123!important;color:#ffffff!important}
 .titlebar-btn.close:active{background:#bf101d!important}
 
-/* Seamless Artist, Playlist, Favorites, Recent, Player, Wave and Home Hero Banner & Ambient Glow flowing under Titlebar */
-.app-shell.view-home .titlebar,
-.app-shell.view-artist .titlebar,
-.app-shell.view-playlist .titlebar,
-.app-shell.view-favorites .titlebar,
-.app-shell.view-recent .titlebar,
-.app-shell.view-player .titlebar,
-.app-shell.view-wave .titlebar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 999;
+/* Seamless Ambient Glow & Art flowing under Titlebar with native layout flow */
+.titlebar {
   background: transparent !important;
-}
-.app-shell.view-artist .content {
-  overflow-y: overlay;
-  padding-top: 0 !important;
-}
-.app-shell.view-home .content,
-.app-shell.view-playlist .content,
-.app-shell.view-favorites .content,
-.app-shell.view-recent .content,
-.app-shell.view-player .content,
-.app-shell.view-wave .content {
-  padding-top: 38px;
 }
 
 /* Titlebar Update Button (Pill Capsule per Reference 1) */
@@ -834,9 +811,9 @@ button{font-family:inherit}
   text-decoration: underline;
 }
 
-.sidebar{width:232px;height:100%;flex-shrink:0;background:var(--sidebar-bg, var(--panel));border-right:1px solid var(--border);display:flex;flex-direction:column;gap:16px;padding:14px 10px;overflow-y:auto;overflow-x:hidden;transition:width .2s cubic-bezier(0.4,0,0.2,1),padding .2s ease,background .2s}
+.sidebar{position:relative !important;z-index:50 !important;width:232px;height:calc(100% - 38px) !important;margin-top:38px !important;flex-shrink:0;background:var(--sidebar-bg, var(--panel));border-right:1px solid var(--border);display:flex;flex-direction:column;gap:16px;padding:14px 10px;overflow-y:auto;overflow-x:hidden;transition:width .2s cubic-bezier(0.4,0,0.2,1),padding .2s ease,background .2s}
 .sidebar.collapsed,
-.sidebar.rail-sidebar{width:76px !important;min-width:76px !important;max-width:76px !important;padding:18px 10px;gap:8px;align-items:center}
+.sidebar.rail-sidebar{width:68px !important;min-width:68px !important;max-width:68px !important;padding:14px 6px;gap:7px;align-items:center}
 .sidebar-header{display:flex;align-items:center;gap:6px;width:100%}
 .sidebar-header.collapsed{flex-direction:column;gap:8px;width:100%;align-items:center}
 .sidebar-header .ssearch{flex:1;min-width:0;height:32px;padding:0 8px;display:flex;align-items:center;gap:7px;border-radius:4px;background:var(--elev);border:1px solid var(--border);color:var(--text3);font-size:13px;cursor:pointer;transition:border-color .12s}
@@ -854,8 +831,8 @@ button{font-family:inherit}
 .nav-item-icon{display:flex;align-items:center;justify-content:center;width:18px;height:18px;flex-shrink:0;color:var(--text3);transition:color .12s}
 .nav-item:hover .nav-item-icon,.nav-item.active .nav-item-icon{color:var(--text)}
 .nav-item-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nav-item.icon-only{width:46px;height:46px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:12px;margin:0 auto;box-shadow:none;transition:all .12s ease;color:var(--text3)}
-.nav-item.icon-only .nav-item-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center}
+.nav-item.icon-only{width:44px;height:44px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:12px;margin:0 auto;box-shadow:none;transition:all .12s ease;color:var(--text3)}
+.nav-item.icon-only .nav-item-icon{width:22px;height:22px;display:flex;align-items:center;justify-content:center}
 .nav-item.icon-only:hover{background:rgba(255,255,255,0.08);color:#ffffff}
 .nav-item.icon-only:hover .nav-item-icon{color:#ffffff}
 .nav-item.icon-only.active{background:rgba(255,255,255,0.14) !important;color:#ffffff !important;border-radius:12px;box-shadow:none}
@@ -886,7 +863,7 @@ button{font-family:inherit}
 .src-dot{width:6px;height:6px;border-radius:3px;flex-shrink:0}
 .src-soon{font-size:11px;color:var(--disabled)}
 
-.content{flex:1;overflow-y:auto;min-width:0;min-height:0;padding-bottom:var(--safe-area-bottom, 180px);display:flex;flex-direction:column;position:relative;z-index:1;background:transparent}
+.content{flex:1;overflow-y:auto;min-width:0;min-height:0;padding-top:40px;padding-bottom:var(--safe-area-bottom, 180px);display:flex;flex-direction:column;position:relative;z-index:2;background:transparent;mask-image:linear-gradient(to bottom, transparent 0px, transparent 6px, rgba(0,0,0,0.4) 22px, #000 42px);-webkit-mask-image:linear-gradient(to bottom, transparent 0px, transparent 6px, rgba(0,0,0,0.4) 22px, #000 42px)}
 .content.no-player-bottom{padding-bottom:24px !important}
 .content.player-dock-top{padding-top:110px !important;padding-bottom:24px !important}
 .content.player-dock-left,
@@ -3674,9 +3651,12 @@ body.vessel-block-dragging .section-slot-wrapper {
 }
 
 .sidebar.dock-left.style-dock {
-  margin: 8px 0 8px 8px !important;
-  height: calc(100% - 16px) !important;
+  margin: 40px 0 8px 8px !important;
+  height: calc(100% - 48px) !important;
   border: 1px solid var(--border) !important;
+  background: var(--sidebar-bg, rgba(14, 16, 20, 0.72)) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
 }
 
 .sidebar.dock-right.style-dock {
@@ -3705,10 +3685,13 @@ body.vessel-block-dragging .section-slot-wrapper {
 
 .sidebar.dock-left.style-round,
 .sidebar.dock-right.style-round {
-  margin: 8px !important;
-  height: calc(100% - 16px) !important;
+  margin: 40px 8px 8px 8px !important;
+  height: calc(100% - 48px) !important;
   border-radius: 36px !important;
   border: 1px solid var(--border) !important;
+  background: var(--sidebar-bg, rgba(14, 16, 20, 0.72)) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
 }
 
 .sidebar.style-floating {
@@ -7225,51 +7208,70 @@ body.vessel-block-dragging .section-slot-wrapper {
   position: relative;
 }
 
-/* Ambient glow backdrop filling behind the transparent header and titlebar */
-.page-ambient-glow {
+/* Root Ambient Glow Layer: Spans 100vw x 100vh behind transparent titlebar and sidebar */
+.vessel-glow-root {
   position: absolute;
-  top: -84px;
-  left: -30px;
-  width: 700px;
-  height: 560px;
-  border-radius: 50%;
-  background-size: cover;
-  background-position: center;
-  filter: blur(100px) saturate(2) brightness(0.48);
-  opacity: 0.55;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
+  overflow: hidden;
   z-index: 0;
-  transform: translateZ(0);
+}
+
+/* Cover Ambient Glow: Restored original rich diffuse bloom, centered near the cover, scrolls with page */
+.page-ambient-glow {
+  position: absolute !important;
+  top: -84px !important;
+  left: -30px !important;
+  width: 700px !important;
+  height: 560px !important;
+  border-radius: 50% !important;
+  background-size: cover !important;
+  background-position: center !important;
+  filter: blur(100px) saturate(2) brightness(0.48) !important;
+  opacity: 0.55;
+  pointer-events: none !important;
+  will-change: transform, opacity;
 }
 
 .page-ambient-glow-fallback {
-  position: absolute;
-  top: -84px;
-  left: -30px;
-  width: 700px;
-  height: 560px;
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--accent-glow, rgba(140, 140, 245, 0.25)) 0%, transparent 70%);
-  filter: blur(80px);
+  position: absolute !important;
+  top: -84px !important;
+  left: -30px !important;
+  width: 700px !important;
+  height: 560px !important;
+  border-radius: 50% !important;
+  background: radial-gradient(circle, var(--accent-glow, rgba(140, 140, 245, 0.25)) 0%, transparent 70%) !important;
+  filter: blur(80px) !important;
   opacity: 0.5;
-  pointer-events: none;
-  z-index: 0;
+  pointer-events: none !important;
+  will-change: transform, opacity;
 }
 
-/* Ambient glow originating specifically from the Favorites card itself */
 .page-ambient-glow-fav {
-  position: absolute;
-  top: -84px;
-  left: -30px;
-  width: 700px;
-  height: 560px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.035) 40%, transparent 70%);
-  filter: blur(80px);
-  opacity: 0.65;
-  pointer-events: none;
-  z-index: 0;
-  transform: translateZ(0);
+  position: absolute !important;
+  top: -84px !important;
+  left: -30px !important;
+  width: 700px !important;
+  height: 560px !important;
+  border-radius: 50% !important;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.04) 40%, transparent 70%) !important;
+  filter: blur(80px) !important;
+  opacity: 0.6;
+  pointer-events: none !important;
+  will-change: transform, opacity;
+}
+
+/* Hide global player backdrop when page-specific glow is active */
+.app-shell.view-artist .app-ambient-backdrop-top,
+.app-shell.view-playlist .app-ambient-backdrop-top,
+.app-shell.view-favorites .app-ambient-backdrop-top,
+.app-shell.view-recent .app-ambient-backdrop-top {
+  display: none !important;
 }
 
 .page-panel-header {
@@ -7471,6 +7473,56 @@ body.vessel-block-dragging .section-slot-wrapper {
 .app-shell.glass-active .artist-view .trow.now {
   background: var(--trow-now-bg, rgba(255, 255, 255, 0.08)) !important;
   border-color: var(--trow-now-border, transparent) !important;
+}
+
+/* Artist Full-Window Canvas and Text Visibility */
+.app-shell.view-artist .vessel-wallpaper-layer {
+  display: none !important;
+}
+.app-shell.view-artist {
+  background: #0b0e14 !important;
+}
+.app-shell.view-artist .sidebar {
+  position: relative !important;
+  z-index: 50 !important;
+}
+.app-shell.view-artist .sidebar.rail-sidebar {
+  position: relative !important;
+  z-index: 50 !important;
+}
+.app-shell.view-artist .island-dock-wrap {
+  z-index: 9999 !important;
+}
+.artist-view {
+  background: transparent !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+.artist-view .artist-content {
+  position: relative !important;
+  z-index: 2 !important;
+}
+.artist-view .sec-title {
+  color: #ffffff !important;
+}
+.artist-view .sec-link {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.artist-view .trow {
+  position: relative !important;
+  z-index: 2 !important;
+}
+.artist-view .trow .ttl {
+  color: #ffffff !important;
+}
+.artist-view .trow .sub {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+.artist-view .trow .c-idx {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+.artist-view .trow .platform-name {
+  color: rgba(255, 255, 255, 0.65) !important;
 }
 
 /* Home Library Section Transparency */

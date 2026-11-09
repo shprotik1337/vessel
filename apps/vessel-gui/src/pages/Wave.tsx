@@ -1,3 +1,4 @@
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { useEffect, useState } from "react";
 
 import { useApp } from "../store";
@@ -165,14 +166,7 @@ export function WavePage() {
       </div>
 
       <div className="page-panel">
-        {glowArt ? (
-          <div
-            className="page-ambient-glow"
-            style={{ backgroundImage: `url("${glowArt}")` }}
-          />
-        ) : (
-          <div className="page-ambient-glow-fallback" />
-        )}
+        <PageAmbientBackdrop url={glowArt} />
 
         <div className="page-panel-header" style={{ borderBottom: "none", paddingBottom: 0 }}>
           <div className="wave-hero-card">

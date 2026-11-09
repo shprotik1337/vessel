@@ -1,3 +1,4 @@
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { useEffect, useRef, useState } from "react";
 
 import { useApp } from "../store";
@@ -191,7 +192,7 @@ export function Favorites() {
       </div>
 
       <div className="page-panel">
-        <div className="page-ambient-glow-fav" />
+        <PageAmbientBackdrop fallbackClass="page-ambient-glow-fav" />
         <div className="page-panel-header">
           <div className="hero-ref">
             <div className="fav-cover-large" title={t(lang, "favorites.title")}>

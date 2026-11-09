@@ -1,3 +1,4 @@
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { useApp } from "../store";
 import { TrackRow } from "../components/TrackRow";
 import { PlaylistCover } from "../components/PlaylistCover";
@@ -55,28 +56,7 @@ export function Recent() {
       </div>
 
       <div className="page-panel">
-        {glowArt ? (
-          <div
-            className="page-ambient-glow"
-            style={{
-              backgroundImage: `url("${glowArt}")`,
-              top: "-84px",
-              left: "-30px",
-              width: "700px",
-              height: "560px",
-            }}
-          />
-        ) : (
-          <div
-            className="page-ambient-glow-fallback"
-            style={{
-              top: "-84px",
-              left: "-30px",
-              width: "700px",
-              height: "560px",
-            }}
-          />
-        )}
+        <PageAmbientBackdrop url={glowArt} />
 
         <div className="page-panel-header">
           <div className="hero-ref">

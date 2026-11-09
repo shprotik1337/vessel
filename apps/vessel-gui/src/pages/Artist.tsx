@@ -1,3 +1,4 @@
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useApp } from "../store";
@@ -67,46 +68,20 @@ function ArtistHeroSkeleton({
 }) {
   return (
     <div className="artist-skeleton-view" style={{ width: "100%", animation: "fade .15s ease" }}>
-      {/* 420px Hero Banner Skeleton */}
+      {/* Top Bar with Back Button */}
       <div
-        className="artist-hero-banner"
         style={{
           position: "relative",
-          width: "100%",
-          minHeight: "420px",
-          borderRadius: 0,
-          overflow: "hidden",
-          marginBottom: 0,
+          zIndex: 2,
+          padding: "16px 36px 16px 36px",
           display: "flex",
-          flexDirection: "column",
-          justifyContent: "flex-end",
-          padding: "48px 32px 32px",
-          border: "none",
-          boxShadow: "none",
-          background: "linear-gradient(180deg, var(--elev, rgba(255,255,255,0.05)) 0%, rgba(0,0,0,0.5) 75%, rgba(0,0,0,0.92) 100%)",
+          alignItems: "center",
         }}
       >
-        {/* Shimmer overlay */}
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "linear-gradient(90deg, transparent 0%, var(--hover, rgba(255,255,255,0.06)) 50%, transparent 100%)",
-            backgroundSize: "200% 100%",
-            animation: "skel 1.8s infinite ease-in-out",
-            pointerEvents: "none",
-          }}
-        />
-
-        {/* Floating Back Button - functional immediately */}
         <button
           onClick={goBack}
           title={t(lang, "common.back")}
           style={{
-            position: "absolute",
-            top: "48px",
-            left: "32px",
-            zIndex: 10,
             background: "rgba(0, 0, 0, 0.45)",
             backdropFilter: "blur(12px)",
             WebkitBackdropFilter: "blur(12px)",
@@ -124,98 +99,84 @@ function ArtistHeroSkeleton({
         >
           {t(lang, "common.back")}
         </button>
+      </div>
 
-        {/* Bottom content row */}
-        <div
-          style={{
-            position: "relative",
-            zIndex: 2,
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            gap: "24px",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: 0, flex: 1 }}>
+      {/* Artist Header Skeleton Row (Circle Avatar + Details) */}
+      <div
+        style={{
+          position: "relative",
+          zIndex: 2,
+          padding: "0 36px 52px 36px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "24px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "18px", minWidth: 0, flex: 1 }}>
+          <div
+            className="skel"
+            style={{
+              width: "136px",
+              height: "136px",
+              borderRadius: "50%",
+              flexShrink: 0,
+              marginBottom: 0,
+            }}
+          />
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", minWidth: 0 }}>
             <h1
               style={{
-                fontSize: "42px",
+                fontSize: "36px",
                 fontWeight: 800,
                 color: "#ffffff",
                 margin: 0,
                 letterSpacing: "-0.5px",
-                lineHeight: 1.1,
+                lineHeight: 1.15,
                 opacity: 0.88,
               }}
             >
               {artistName}
             </h1>
-            {/* Shimmer bar for monthly listeners */}
             <div
               className="skel"
               style={{
-                width: "160px",
-                height: "18px",
+                width: "140px",
+                height: "16px",
                 borderRadius: "4px",
-                marginTop: "4px",
                 marginBottom: 0,
               }}
             />
-            {/* Action buttons placeholder */}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "14px", flexWrap: "wrap" }}>
-              <div
-                className="skel"
-                style={{
-                  width: "130px",
-                  height: "38px",
-                  borderRadius: "24px",
-                  marginBottom: 0,
-                }}
-              />
-              <div
-                className="skel"
-                style={{
-                  width: "115px",
-                  height: "38px",
-                  borderRadius: "24px",
-                  marginBottom: 0,
-                }}
-              />
-              <div
-                className="skel"
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "50%",
-                  marginBottom: 0,
-                }}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "6px" }}>
+              <div className="skel" style={{ width: "90px", height: "32px", borderRadius: "20px", marginBottom: 0 }} />
+              <div className="skel" style={{ width: "34px", height: "34px", borderRadius: "50%", marginBottom: 0 }} />
+              <div className="skel" style={{ width: "34px", height: "34px", borderRadius: "50%", marginBottom: 0 }} />
+              <div className="skel" style={{ width: "34px", height: "34px", borderRadius: "50%", marginBottom: 0 }} />
             </div>
           </div>
+        </div>
 
-          {/* Glass bio card placeholder */}
-          <div
-            style={{
-              width: "320px",
-              maxWidth: "100%",
-              background: "rgba(255, 255, 255, 0.05)",
-              backdropFilter: "blur(24px)",
-              WebkitBackdropFilter: "blur(24px)",
-              border: "none",
-              borderRadius: "14px",
-              padding: "16px 18px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.45)",
-            }}
-          >
-            <div className="skel" style={{ width: "90px", height: "12px", borderRadius: "3px", marginBottom: 0 }} />
-            <div className="skel" style={{ width: "100%", height: "13px", borderRadius: "3px", marginBottom: 0 }} />
-            <div className="skel" style={{ width: "85%", height: "13px", borderRadius: "3px", marginBottom: 0 }} />
-            <div className="skel" style={{ width: "60%", height: "13px", borderRadius: "3px", marginBottom: 0 }} />
-          </div>
+        {/* Glass bio card placeholder */}
+        <div
+          style={{
+            width: "300px",
+            maxWidth: "100%",
+            background: "rgba(255, 255, 255, 0.05)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "none",
+            borderRadius: "14px",
+            padding: "14px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+          }}
+        >
+          <div className="skel" style={{ width: "90px", height: "12px", borderRadius: "3px", marginBottom: 0 }} />
+          <div className="skel" style={{ width: "100%", height: "13px", borderRadius: "3px", marginBottom: 0 }} />
+          <div className="skel" style={{ width: "70%", height: "13px", borderRadius: "3px", marginBottom: 0 }} />
         </div>
       </div>
 
@@ -681,15 +642,6 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
     }
   };
 
-  const handleShare = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href || profile?.name || artist);
-      showToast(lang === "ru" ? "Ссылка скопирована в буфер обмена" : "Link copied to clipboard");
-    } catch {
-      showToast(profile?.name || artist);
-    }
-  };
-
   const playPopular = (track: TrackRef) => {
     const idx = popular.findIndex((t) => trackKey(t) === trackKey(track));
     void playTracks(popular, idx < 0 ? 0 : idx);
@@ -715,16 +667,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
           </div>
         ) : (
           <div className="page-panel">
-            {pl.cover_url || pl.tracks[0]?.artwork_url ? (
-              <div
-                className="page-ambient-glow"
-                style={{
-                  backgroundImage: `url("${pl.cover_url || pl.tracks[0]?.artwork_url}")`,
-                }}
-              />
-            ) : (
-              <div className="page-ambient-glow-fallback" />
-            )}
+            <PageAmbientBackdrop url={pl.cover_url || pl.tracks[0]?.artwork_url} />
             <div className="page-panel-header">
               <div className="hero-ref">
                 <div className="hero-ref-cover">
@@ -950,7 +893,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
   };
 
   return (
-    <div className="view artist-view" style={{ padding: 0 }}>
+    <div className="view artist-view" style={{ padding: 0, position: "relative", minHeight: "100%", background: "transparent" }}>
       {mode === "profile" && (
         <div key="profile" style={{ animation: "fade .18s ease", width: "100%" }}>
           {loading && !profile && (
@@ -971,64 +914,69 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
               profile.popular_tracks?.[0]?.artwork_url ||
               profile.releases?.[0]?.artwork_url
             );
+            const avatarUrl = resolveArtworkUrl(
+              profile.avatar_url ||
+              heroBannerUrl
+            );
 
             return (
               <>
-                {/* Full-Bleed Hero Banner */}
-                <div
-                  className="artist-hero-banner"
-                  style={{
-                    position: "relative",
-                    width: "100%",
-                    minHeight: "420px",
-                    borderRadius: 0,
-                    overflow: "hidden",
-                    marginBottom: "0px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "flex-end",
-                    padding: "48px 32px 32px",
-                    border: "none",
-                    boxShadow: "none",
-                  }}
-                >
-                  {/* Native Artwork Banner Layer: 100% crisp from 0% to 90%, smooth fade to transparent from 90% to 100% */}
+                {/* Full-bleed solid background with smooth ambient glow from artist image (Ref Kai Angel) */}
+                {heroBannerUrl && (
                   <div
-                    className="artist-hero-bg-layer"
+                    className="artist-ambient-backdrop"
                     style={{
-                      position: "absolute",
+                      position: "fixed",
                       inset: 0,
-                      backgroundImage: heroBannerUrl ? `url("${heroBannerUrl}")` : undefined,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center 25%",
-                      filter: "none",
-                      opacity: 1,
-                      WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 90%, rgba(0,0,0,0.6) 95%, transparent 100%)",
-                      maskImage: "linear-gradient(to bottom, #000 0%, #000 90%, rgba(0,0,0,0.6) 95%, transparent 100%)",
-                      zIndex: 1,
+                      width: "100vw",
+                      height: "100vh",
+                      zIndex: 0,
                       pointerEvents: "none",
+                      overflow: "hidden",
+                      background: "#0b0e14",
                     }}
                   >
-                    {/* Readability Scrim: light top shading, vibrant clean middle, soft bottom contrast for title */}
+                    {/* Atmospheric diffuse blur filling top and right sides */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "-80px",
+                        right: "-40px",
+                        width: "85vw",
+                        height: "750px",
+                        backgroundImage: `url("${heroBannerUrl}")`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center 25%",
+                        filter: "blur(110px) saturate(1.8)",
+                        opacity: 0.5,
+                        transform: "translate3d(0, 0, 0)",
+                      }}
+                    />
+                    {/* Smooth transition into clean solid #0b0e14 base */}
                     <div
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background: "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0.3) 78%, rgba(0,0,0,0.7) 92%, rgba(0,0,0,0.85) 100%)",
-                        pointerEvents: "none",
+                        background: "linear-gradient(180deg, rgba(11, 14, 20, 0.15) 0%, rgba(11, 14, 20, 0.5) 360px, #0b0e14 620px, #0b0e14 100%)",
                       }}
                     />
                   </div>
+                )}
 
-                  {/* Floating Back Button on Top Left */}
+                {/* Top Bar with Back Button */}
+                <div
+                  style={{
+                    position: "relative",
+                    zIndex: 2,
+                    padding: "16px 36px 16px 36px",
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
                   <button
                     onClick={goBack}
                     title={t(lang, "common.back")}
                     style={{
-                      position: "absolute",
-                      top: "48px",
-                      left: "32px",
-                      zIndex: 10,
                       background: "rgba(0, 0, 0, 0.45)",
                       backdropFilter: "blur(12px)",
                       WebkitBackdropFilter: "blur(12px)",
@@ -1042,211 +990,278 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                       display: "flex",
                       alignItems: "center",
                       gap: "6px",
+                      transition: "transform 0.12s ease, background 0.12s ease",
                     }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.15)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0, 0, 0, 0.45)")}
                   >
                     {t(lang, "common.back")}
                   </button>
+                </div>
 
-                  <div
-                    style={{
-                      position: "relative",
-                      zIndex: 2,
-                      display: "flex",
-                      alignItems: "flex-end",
-                      justifyContent: "space-between",
-                      gap: "24px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", minWidth: 0, flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                        <h1 style={{ fontSize: "42px", fontWeight: 800, color: "#ffffff", margin: 0, letterSpacing: "-0.5px", lineHeight: 1.1 }}>
-                          {profile.name}
-                        </h1>
-                      {profile.verified && (
-                        <span title={lang === "ru" ? "Верифицированный исполнитель" : "Verified Artist"}>
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="#3b82f6">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M9 12l2 2 4-4" stroke="#ffffff" strokeWidth="2.5" fill="none" />
-                          </svg>
-                        </span>
-                      )}
-                    </div>
-
-                    {profile.monthly_listeners != null && (
-                      <div style={{ fontSize: "14px", fontWeight: 500, color: "rgba(255, 255, 255, 0.85)", marginTop: 2 }}>
-                        {(profile.monthly_listeners / 1_000_000).toFixed(2)}M{" "}
-                        {lang === "ru" ? "слушателей за месяц" : "monthly listeners"}
-                      </div>
-                    )}
-
-                    {/* Action Buttons: 1. Play [▶ Воспроизвести], 2. Follow [+ Подписаться], 3. Share [↗] */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "14px", flexWrap: "wrap" }}>
-                      {popular.length > 0 && (
-                        <button
-                          onClick={() => playPopular(popular[0])}
-                          style={{
-                            background: "#ffffff",
-                            color: "#000000",
-                            border: "none",
-                            borderRadius: "24px",
-                            padding: "9px 20px",
-                            fontWeight: 600,
-                            fontSize: "14px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            cursor: "pointer",
-                            boxShadow: "0 4px 14px rgba(0, 0, 0, 0.35)",
-                            transition: "transform 0.16s ease",
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.04)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                            <polygon points="6 4 20 12 6 20 6 4" />
-                          </svg>
-                          <span>{lang === "ru" ? "Воспроизвести" : "Play"}</span>
-                        </button>
-                      )}
-
-                      <button
-                        onClick={handleToggleFollow}
-                        disabled={followLoading}
-                        style={{
-                          background: isFollowed ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.12)",
-                          color: "#ffffff",
-                          border: "none",
-                          borderRadius: "24px",
-                          padding: "9px 18px",
-                          fontWeight: 600,
-                          fontSize: "13px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          cursor: "pointer",
-                          backdropFilter: "blur(8px)",
-                          transition: "all 0.18s ease",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.25)")}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = isFollowed ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.12)")}
-                      >
-                        {isFollowed ? (
-                          <>
-                            <span>✓</span>
-                            <span>{lang === "ru" ? "Подписка" : "Following"}</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>+</span>
-                            <span>{lang === "ru" ? "Подписаться" : "Follow"}</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={handleShare}
-                        title={lang === "ru" ? "Поделиться" : "Share"}
-                        style={{
-                          background: "rgba(255, 255, 255, 0.12)",
-                          color: "#ffffff",
-                          border: "none",
-                          borderRadius: "50%",
-                          width: "36px",
-                          height: "36px",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                          backdropFilter: "blur(8px)",
-                          transition: "all 0.16s ease",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.22)")}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.12)")}
-                      >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="18" cy="5" r="3" />
-                          <circle cx="6" cy="12" r="3" />
-                          <circle cx="18" cy="19" r="3" />
-                          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-
-                {/* Floating Glass Bio Card without border */}
-                  <div
-                    style={{
-                      width: "320px",
-                      maxWidth: "100%",
-                      background: "rgba(255, 255, 255, 0.06)",
-                      backdropFilter: "blur(24px)",
-                      WebkitBackdropFilter: "blur(24px)",
-                      border: "none",
-                      borderRadius: "14px",
-                      padding: "16px 18px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      boxShadow: "0 10px 30px rgba(0, 0, 0, 0.45)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255, 255, 255, 0.9)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        {lang === "ru" ? "Об исполнителе" : "About the artist"}
-                      </span>
-                      <button
-                        onClick={() => setBioModalOpen(true)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "var(--accent, #ffffff)",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          padding: 0,
-                        }}
-                      >
-                        {lang === "ru" ? "Показать всё" : "Show all"} →
-                      </button>
-                    </div>
-
+                {/* Artist Header Info: Circular Avatar + Name/Stats/Actions (Ref Kai Angel) */}
+                <div
+                  className="artist-header-row"
+                  style={{
+                    position: "relative",
+                    zIndex: 2,
+                    padding: "0 36px 44px 36px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "28px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "18px", minWidth: 0, flex: 1 }}>
+                    {/* Round Avatar in a Circle (Large, No Border) */}
                     <div
+                      className="artist-round-avatar"
                       style={{
-                        fontSize: "13px",
-                        lineHeight: "1.45",
-                        color: "rgba(255, 255, 255, 0.75)",
-                        display: "-webkit-box",
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: "vertical",
+                        width: "136px",
+                        height: "136px",
+                        borderRadius: "50%",
                         overflow: "hidden",
+                        border: "none",
+                        boxShadow: "none",
+                        flexShrink: 0,
+                        background: "#18181b",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
                     >
-                      {geniusData?.biography ||
-                        profile.biography ||
-                        (lang === "ru"
-                          ? `${profile.name} — исполнитель, доступный для прослушивания в Vessel.`
-                          : `${profile.name} is available for streaming on Vessel.`)}
+                      {avatarUrl ? (
+                        <img
+                          src={avatarUrl}
+                          alt={profile.name}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "var(--text3)",
+                            fontSize: "44px",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {profile.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Artist Details */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                        <h1
+                          style={{
+                            fontSize: "36px",
+                            fontWeight: 800,
+                            color: "#ffffff",
+                            margin: 0,
+                            letterSpacing: "-0.5px",
+                            lineHeight: 1.15,
+                          }}
+                        >
+                          {profile.name}
+                        </h1>
+                        {profile.verified && (
+                          <span title={lang === "ru" ? "Верифицированный исполнитель" : "Verified Artist"}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="#3b82f6">
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M9 12l2 2 4-4" stroke="#ffffff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+
+                      {profile.monthly_listeners != null && (
+                        <div style={{ fontSize: "14px", fontWeight: 500, color: "rgba(255, 255, 255, 0.72)" }}>
+                          {(profile.monthly_listeners / 1_000_000).toFixed(2)}M{" "}
+                          {lang === "ru" ? "слушателей за месяц" : "monthly listeners"}
+                        </div>
+                      )}
+
+                      {/* Action buttons row */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
+                        {popular.length > 0 && (
+                          <button
+                            onClick={() => playPopular(popular[0])}
+                            style={{
+                              background: "#ffffff",
+                              color: "#000000",
+                              border: "none",
+                              borderRadius: "20px",
+                              height: "40px",
+                              padding: "0 22px",
+                              fontWeight: 700,
+                              fontSize: "14px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              cursor: "pointer",
+                              boxShadow: "0 4px 14px rgba(0, 0, 0, 0.35)",
+                              transition: "transform 0.16s ease",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.04)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                              <polygon points="6 4 20 12 6 20 6 4" />
+                            </svg>
+                            <span>{lang === "ru" ? "Играть" : "Play"}</span>
+                          </button>
+                        )}
+
+                        {popular.length > 0 && (
+                          <button
+                            onClick={() => {
+                              const shuffled = [...popular].sort(() => Math.random() - 0.5);
+                              void playTracks(shuffled, 0);
+                            }}
+                            title={lang === "ru" ? "Перемешать" : "Shuffle"}
+                            style={{
+                              background: "rgba(255, 255, 255, 0.1)",
+                              color: "#ffffff",
+                              border: "none",
+                              borderRadius: "10px",
+                              width: "40px",
+                              height: "40px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              cursor: "pointer",
+                              backdropFilter: "blur(8px)",
+                              WebkitBackdropFilter: "blur(8px)",
+                              transition: "all 0.16s ease",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.18)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)")}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="16 3 21 3 21 8" />
+                              <line x1="4" y1="20" x2="21" y2="3" />
+                              <polyline points="21 16 21 21 16 21" />
+                              <line x1="15" y1="15" x2="21" y2="21" />
+                              <line x1="4" y1="4" x2="9" y2="9" />
+                            </svg>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={handleToggleFollow}
+                          disabled={followLoading}
+                          title={isFollowed ? (lang === "ru" ? "В библиотеке" : "In library") : (lang === "ru" ? "Сохранить в библиотеку" : "Save to library")}
+                          style={{
+                            background: isFollowed ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.1)",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: "10px",
+                            width: "40px",
+                            height: "40px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            backdropFilter: "blur(8px)",
+                            WebkitBackdropFilter: "blur(8px)",
+                            transition: "all 0.16s ease",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.22)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = isFollowed ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.1)")}
+                        >
+                          {isFollowed ? (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                            </svg>
+                          ) : (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Bio Card (Floating Glass on Right) */}
+                  {(geniusData?.biography || profile.biography) && (
+                    <div
+                      style={{
+                        width: "300px",
+                        maxWidth: "100%",
+                        background: "rgba(255, 255, 255, 0.06)",
+                        backdropFilter: "blur(20px)",
+                        WebkitBackdropFilter: "blur(20px)",
+                        border: "none",
+                        borderRadius: "14px",
+                        padding: "14px 16px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255, 255, 255, 0.85)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          {lang === "ru" ? "Об исполнителе" : "About the artist"}
+                        </span>
+                        <button
+                          onClick={() => setBioModalOpen(true)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--accent, #ffffff)",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
+                        >
+                          {lang === "ru" ? "Показать всё" : "Show all"} →
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12.5px",
+                          lineHeight: "1.4",
+                          color: "rgba(255, 255, 255, 0.72)",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {geniusData?.biography || profile.biography}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
 
               {/* Page content below banner */}
-              <div className="artist-content" style={{ padding: "0 32px" }}>
+              <div className="artist-content" style={{ padding: "0 32px", position: "relative", zIndex: 2 }}>
                 {/* Popular Tracks Section (Top 5 + Show all toggle) */}
                 {popular.length > 0 && (
                   <div className="section" style={{ marginBottom: "32px" }}>
                     <div className="sec-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                      <span className="sec-title" style={{ fontSize: "20px", fontWeight: 700, color: "var(--text)" }}>
+                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "#ffffff" }}>
                         {t(lang, "artist.popular")}
                       </span>
                       {popular.length > 5 && (
                         <span
                           className="sec-link"
                           onClick={() => setShowAllPopular((prev) => !prev)}
-                          style={{ cursor: "pointer", fontSize: "13px", color: "var(--text2)", fontWeight: 500 }}
+                          style={{ cursor: "pointer", fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", fontWeight: 500 }}
                         >
                           {showAllPopular
                             ? (lang === "ru" ? "Свернуть" : "Collapse")
@@ -1275,14 +1290,14 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 {albums.length > 0 && (
                   <div className="section" style={{ marginBottom: "32px" }}>
                     <div className="sec-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                      <span className="sec-title" style={{ fontSize: "20px", fontWeight: 700, color: "var(--text)" }}>
+                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "#ffffff" }}>
                         {lang === "ru" ? "Альбомы" : "Albums"}
                       </span>
                       {albums.length > INITIAL_RELEASES && (
                         <span
                           className="sec-link"
                           onClick={() => navigateTo("artist-releases")}
-                          style={{ cursor: "pointer", fontSize: "13px", color: "var(--text2)", fontWeight: 500 }}
+                          style={{ cursor: "pointer", fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", fontWeight: 500 }}
                         >
                           {t(lang, "artist.showAll")} ({albums.length})
                         </span>
@@ -1305,14 +1320,14 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 {singles.length > 0 && (
                   <div className="section" style={{ marginBottom: "32px" }}>
                     <div className="sec-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                      <span className="sec-title" style={{ fontSize: "20px", fontWeight: 700, color: "var(--text)" }}>
+                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "#ffffff" }}>
                         {lang === "ru" ? "Синглы и EP" : "Singles & EPs"}
                       </span>
                       {singles.length > INITIAL_RELEASES && (
                         <span
                           className="sec-link"
                           onClick={() => navigateTo("artist-singles")}
-                          style={{ cursor: "pointer", fontSize: "13px", color: "var(--text2)", fontWeight: 500 }}
+                          style={{ cursor: "pointer", fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", fontWeight: 500 }}
                         >
                           {t(lang, "artist.showAll")} ({singles.length})
                         </span>

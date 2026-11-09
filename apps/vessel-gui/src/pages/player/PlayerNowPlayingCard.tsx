@@ -85,7 +85,7 @@ export function PlayerNowPlayingCard({
         WebkitBackdropFilter: "none",
         border: "none",
         borderRadius: 0,
-        padding: "32px 8px 36px 8px",
+        padding: "16px 8px 32px 8px",
         display: "flex",
         gap: 52,
         alignItems: "center",
