@@ -2,8 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useApp } from "../store";
 import { t } from "../i18n";
 import * as api from "../api/commands";
-
-const APP_VERSION = "1.5.3";
+import { APP_CURRENT_VERSION } from "../services/updater";
 
 interface TitlebarProps {
   hasUpdate?: boolean;
@@ -73,7 +72,7 @@ export function Titlebar({ hasUpdate, onOpenUpdate }: TitlebarProps = {}) {
           Vessel
         </span>
         <span className="titlebar-app-version" data-tauri-drag-region>
-          {APP_VERSION}
+          {APP_CURRENT_VERSION}
         </span>
       </div>
 

@@ -494,7 +494,27 @@ pub fn get_image_cache() -> &'static std::sync::RwLock<std::collections::HashMap
     IMAGE_CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
 }
 
-pub async fn fetch_image_bytes(target_url: &str) -> Option<(String, Vec<u8>)> {
+pub fn detect_image_provider_segment(url: &str) -> Option<&'static str> {
+    let lower = url.to_lowercase();
+    if lower.contains("scdn.co") || lower.contains("spotifycdn.com") {
+        Some("spotify")
+    } else if lower.contains("dzcdn.net") || lower.contains("deezer.com") {
+        Some("deezer")
+    } else if lower.contains("googleusercontent.com")
+        || lower.contains("ytimg.com")
+        || lower.contains("ggpht.com")
+    {
+        Some("youtube_music")
+    } else if lower.contains("sndcdn.com") || lower.contains("soundcloud.com") {
+        Some("soundcloud")
+    } else if lower.contains("yandex.net") || lower.contains("yandex.ru") {
+        Some("yandex_music")
+    } else {
+        None
+    }
+}
+
+pub async fn fetch_image_bytes(target_url: &str, is_server_routed: bool) -> Option<(String, Vec<u8>)> {
     let cache = get_image_cache();
     if let Ok(guard) = cache.read() {
         if let Some(entry) = guard.get(target_url) {
@@ -503,35 +523,87 @@ pub async fn fetch_image_bytes(target_url: &str) -> Option<(String, Vec<u8>)> {
     }
 
     let client = vessel_core::provider::download::shared_download_client();
-    let encoded_target: String =
-        url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
-    let proxy_url = format!(
-        "{}/api/v1/image?url={}",
-        vessel_core::config::OFFICIAL_SERVER_URL,
-        encoded_target
-    );
 
-    // 1. Сначала пробуем через серверный прокси (IP-шлюз РФ -> Польша)
-    let mut resp_opt = client
-        .get(&proxy_url)
-        .header(
-            "Authorization",
-            format!("Bearer {}", vessel_core::config::OFFICIAL_SERVER_TOKEN),
-        )
-        .timeout(std::time::Duration::from_secs(8))
-        .send()
-        .await
-        .ok();
-
-    // 2. Если прокси не ответил успехом, пробуем напрямую
-    if resp_opt.as_ref().map(|r| !r.status().is_success()).unwrap_or(true) {
-        resp_opt = client
+    let resp_opt = if !is_server_routed {
+        // Честный локальный режим: скачиваем напрямую с CDN без обращения к серверу Vessel
+        vessel_core::dlog!("[image] local direct fetch for {}", target_url);
+        let direct_res = client
             .get(target_url)
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+            )
             .timeout(std::time::Duration::from_secs(6))
             .send()
             .await
             .ok();
-    }
+
+        if direct_res.as_ref().is_some_and(|r| r.status().is_success()) {
+            direct_res
+        } else {
+            // Резервный fallback через серверный прокси, если прямой CDN заблокирован провайдером
+            vessel_core::dlog!(
+                "[image] direct fetch failed, trying server proxy fallback for {}",
+                target_url
+            );
+            let encoded_target: String =
+                url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
+            let proxy_url = format!(
+                "{}/api/v1/image?url={}",
+                vessel_core::config::OFFICIAL_SERVER_URL,
+                encoded_target
+            );
+            client
+                .get(&proxy_url)
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", vessel_core::config::OFFICIAL_SERVER_TOKEN),
+                )
+                .timeout(std::time::Duration::from_secs(8))
+                .send()
+                .await
+                .ok()
+        }
+    } else {
+        // Серверный режим: сначала через прокси сервера Vessel
+        vessel_core::dlog!("[image] server routed proxy fetch for {}", target_url);
+        let encoded_target: String =
+            url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
+        let proxy_url = format!(
+            "{}/api/v1/image?url={}",
+            vessel_core::config::OFFICIAL_SERVER_URL,
+            encoded_target
+        );
+        let proxy_res = client
+            .get(&proxy_url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", vessel_core::config::OFFICIAL_SERVER_TOKEN),
+            )
+            .timeout(std::time::Duration::from_secs(8))
+            .send()
+            .await
+            .ok();
+
+        if proxy_res.as_ref().is_some_and(|r| r.status().is_success()) {
+            proxy_res
+        } else {
+            vessel_core::dlog!(
+                "[image] server proxy failed, fallback to direct fetch for {}",
+                target_url
+            );
+            client
+                .get(target_url)
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+                )
+                .timeout(std::time::Duration::from_secs(6))
+                .send()
+                .await
+                .ok()
+        }
+    };
 
     if let Some(resp) = resp_opt {
         if resp.status().is_success() {
@@ -556,7 +628,10 @@ pub async fn fetch_image_bytes(target_url: &str) -> Option<(String, Vec<u8>)> {
 }
 
 #[tauri::command]
-async fn get_artwork_data(url: String) -> Result<ArtworkData, String> {
+async fn get_artwork_data(
+    state: State<'_, Arc<Mutex<GuiCore>>>,
+    url: String,
+) -> Result<ArtworkData, String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
         return Err("Пустой URL".to_string());
@@ -576,7 +651,23 @@ async fn get_artwork_data(url: String) -> Result<ArtworkData, String> {
         trimmed.to_string()
     };
 
-    if let Some((mime, bytes)) = fetch_image_bytes(&clean_url).await {
+    let is_server_routed = {
+        if let Ok(core_guard) = state.lock() {
+            if let Some(segment) = detect_image_provider_segment(&clean_url) {
+                core_guard
+                    .config
+                    .provider_routing
+                    .get(segment)
+                    .is_some_and(|t| t.starts_with("server:"))
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    };
+
+    if let Some((mime, bytes)) = fetch_image_bytes(&clean_url, is_server_routed).await {
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
         Ok(ArtworkData {
@@ -612,11 +703,12 @@ pub fn run() -> anyhow::Result<()> {
 
     let core = load_core(&paths).expect("Р Р…Р Вµ РЎС“Р Т‘Р В°Р В»Р С•РЎРѓРЎРЉ Р В·Р В°Р С–РЎР‚РЎС“Р В·Р С‘РЎвЂљРЎРЉ РЎРЏР Т‘РЎР‚Р С•");
     let core = Arc::new(Mutex::new(core));
+    let core_for_img = Arc::clone(&core);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .register_asynchronous_uri_scheme_protocol("vessel-img", |_ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("vessel-img", move |_ctx, request, responder| {
             let cache = get_image_cache();
 
             if request.method() == "OPTIONS" {
@@ -682,8 +774,24 @@ pub fn run() -> anyhow::Result<()> {
                 }
             }
 
+            let is_server_routed = {
+                if let Ok(core_guard) = core_for_img.lock() {
+                    if let Some(segment) = detect_image_provider_segment(&target_url) {
+                        core_guard
+                            .config
+                            .provider_routing
+                            .get(segment)
+                            .is_some_and(|t| t.starts_with("server:"))
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
             tauri::async_runtime::spawn(async move {
-                if let Some((content_type, bytes_vec)) = fetch_image_bytes(&target_url).await {
+                if let Some((content_type, bytes_vec)) = fetch_image_bytes(&target_url, is_server_routed).await {
                     let response = tauri::http::Response::builder()
                         .status(200)
                         .header("Content-Type", content_type)

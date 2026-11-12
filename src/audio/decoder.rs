@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
@@ -13,7 +16,9 @@ use symphonia::core::{
 
 use crate::model::PlaybackSource;
 
-use super::{convert::convert_audio, media::open_media, output::AudioChunk};
+use super::{
+    convert::convert_audio, http_source::SharedTrackBuffer, media::open_media, output::AudioChunk,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn decode_source(
@@ -26,12 +31,13 @@ pub(super) fn decode_source(
     chunks: &Sender<AudioChunk>,
     buffered_samples: &AtomicU64,
     duration_ms: &AtomicU64,
+    shared_buffer: Option<Arc<SharedTrackBuffer>>,
 ) -> Result<()> {
     if current_generation.load(Ordering::Acquire) != generation {
         return Ok(());
     }
     crate::dlog!("[decode][gen{generation}] opening media (pos={position_ms})");
-    let media = open_media(&source, position_ms)?;
+    let media = open_media(&source, position_ms, shared_buffer)?;
     if current_generation.load(Ordering::Acquire) != generation {
         return Ok(());
     }

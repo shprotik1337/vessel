@@ -1,6 +1,10 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     io::{self, Read, Seek, SeekFrom},
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -18,37 +22,32 @@ pub(crate) const HTTP_CHUNK_BYTES: usize = 512 * 1024; // 512KB — безопа
 const BROWSER_UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
-struct ChunkData {
-    start: u64,
-    bytes: Vec<u8>,
-    length: Option<u64>,
-    range_supported: bool,
+pub(crate) struct ChunkData {
+    pub(crate) start: u64,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) length: Option<u64>,
+    pub(crate) range_supported: bool,
 }
 
-struct PrefetchTask {
-    start: u64,
-    handle: JoinHandle<io::Result<ChunkData>>,
-}
-
-pub(crate) struct HttpRangeSource {
+/// Общий RAM-буфер для всех инстансов `HttpRangeSource` одного трека и фонового загрузчика.
+pub(crate) struct SharedTrackBuffer {
     client: Client,
     url: String,
     headers: HeaderMap,
-    position: u64,
-    length: Option<u64>,
-    range_supported: bool,
-    /// Умный кэш чанков в оперативной памяти (устраняет пролаги при перемотке и повторном прослушивании)
-    chunks: BTreeMap<u64, Vec<u8>>,
-    /// Фоновая упреждающая загрузка следующего чанка
-    prefetch: Option<PrefetchTask>,
+    range_supported: AtomicBool,
+    total_length: Mutex<Option<u64>>,
+    chunks: Mutex<BTreeMap<u64, Arc<Vec<u8>>>>,
+    in_flight: Mutex<HashSet<u64>>,
+    in_flight_cond: Condvar,
+    playback_offset: AtomicU64,
 }
 
-impl HttpRangeSource {
-    pub(crate) fn open(
+impl SharedTrackBuffer {
+    pub(crate) fn new(
         url: &str,
         headers: &BTreeMap<String, String>,
         prefer_range: bool,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
         let ua = headers
             .get("User-Agent")
             .or_else(|| headers.get("user-agent"))
@@ -62,106 +61,345 @@ impl HttpRangeSource {
             .danger_accept_invalid_certs(true)
             .build()?;
         let headers = normalize_headers(headers)?;
-        let mut source = Self {
-            client,
-            url: url.to_string(),
-            headers,
-            position: 0,
-            length: None,
-            range_supported: prefer_range,
-            chunks: BTreeMap::new(),
-            prefetch: None,
-        };
 
-        // Загружаем первый чанк (0..512KB) синхронно для мгновенного старта декодера
+        Self::from_client_and_headers(client, url.to_string(), headers, prefer_range)
+    }
+
+    pub(crate) fn from_client_and_headers(
+        client: Client,
+        url: String,
+        headers: HeaderMap,
+        prefer_range: bool,
+    ) -> Result<Arc<Self>> {
+        let buffer = Arc::new(Self {
+            client,
+            url,
+            headers,
+            range_supported: AtomicBool::new(prefer_range),
+            total_length: Mutex::new(None),
+            chunks: Mutex::new(BTreeMap::new()),
+            in_flight: Mutex::new(HashSet::new()),
+            in_flight_cond: Condvar::new(),
+            playback_offset: AtomicU64::new(0),
+        });
+
+        // Загружаем первый чанк (0..512KB) синхронно для мгновенного старта воспроизведения
         let first_chunk = fetch_chunk_bytes(
-            &source.client,
-            &source.url,
-            &source.headers,
-            source.range_supported,
+            &buffer.client,
+            &buffer.url,
+            &buffer.headers,
+            buffer.range_supported.load(Ordering::Acquire),
             0,
         )?;
-        source.apply_chunk(first_chunk);
+        buffer.apply_chunk(
+            first_chunk.start,
+            first_chunk.bytes,
+            first_chunk.length,
+            first_chunk.range_supported,
+        );
 
-        // И сразу же запускаем опережающую загрузку следующего чанка в фоне!
-        source.maybe_start_prefetch(HTTP_CHUNK_BYTES as u64);
-
-        Ok(source)
+        Ok(buffer)
     }
 
-    fn apply_chunk(&mut self, chunk_data: ChunkData) {
-        if self.length.is_none() && chunk_data.length.is_some() {
-            self.length = chunk_data.length;
-        }
-        self.range_supported = chunk_data.range_supported;
-        self.chunks.insert(chunk_data.start, chunk_data.bytes);
+    pub(crate) fn total_length(&self) -> Option<u64> {
+        *self.total_length.lock().unwrap()
     }
 
-    fn maybe_start_prefetch(&mut self, next_start: u64) {
-        if self.length.is_some_and(|len| next_start >= len) {
-            return;
-        }
-        if self.chunks.contains_key(&next_start) {
-            return;
-        }
-        if self
-            .prefetch
-            .as_ref()
-            .is_some_and(|p| p.start == next_start)
-        {
-            return;
-        }
-        let client = self.client.clone();
-        let url = self.url.clone();
-        let headers = self.headers.clone();
-        let range_supported = self.range_supported;
-        let handle = thread::spawn(move || {
-            fetch_chunk_bytes(&client, &url, &headers, range_supported, next_start)
-        });
-        self.prefetch = Some(PrefetchTask {
-            start: next_start,
-            handle,
-        });
+    pub(crate) fn url(&self) -> &str {
+        &self.url
     }
 
-    fn ensure_chunk(&mut self, target_start: u64) -> io::Result<()> {
-        if self.chunks.contains_key(&target_start) {
-            return Ok(());
-        }
-        // Если для этой позиции уже работал фоновый предзагрузчик — забираем результат
-        if let Some(task) = self.prefetch.take() {
-            if task.start == target_start {
-                match task.handle.join() {
-                    Ok(Ok(chunk_data)) => {
-                        self.apply_chunk(chunk_data);
-                        return Ok(());
-                    }
-                    Ok(Err(err)) => {
-                        crate::dlog!(
-                            "[http] предзагрузка {target_start} завершилась ошибкой: {err}"
-                        );
-                    }
-                    Err(_) => {
-                        crate::dlog!("[http] поток предзагрузки запаниковал на {target_start}");
-                    }
+    pub(crate) fn set_playback_offset(&self, offset: u64) {
+        self.playback_offset.store(offset, Ordering::Release);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn playback_offset(&self) -> u64 {
+        self.playback_offset.load(Ordering::Acquire)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_range_supported(&self) -> bool {
+        self.range_supported.load(Ordering::Acquire)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn cached_chunk_count(&self) -> usize {
+        self.chunks.lock().unwrap().len()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn contains_chunk(&self, start: u64) -> bool {
+        self.chunks.lock().unwrap().contains_key(&start)
+    }
+
+    pub(crate) fn get_chunk(&self, start: u64) -> Option<Arc<Vec<u8>>> {
+        self.chunks.lock().unwrap().get(&start).cloned()
+    }
+
+    pub(crate) fn is_fully_buffered(&self) -> bool {
+        let total_length = match *self.total_length.lock().unwrap() {
+            Some(len) if len > 0 => len,
+            _ => return false,
+        };
+        let chunks = self.chunks.lock().unwrap();
+        let mut expected_start = 0u64;
+        while expected_start < total_length {
+            if let Some(chunk) = chunks.get(&expected_start) {
+                if chunk.is_empty() {
+                    return false;
                 }
+                expected_start = expected_start.saturating_add(chunk.len() as u64);
+            } else {
+                return false;
             }
         }
+        true
+    }
 
-        // Загружаем чанк синхронно с повторными попытками
-        let chunk_data = fetch_chunk_bytes(
+    pub(crate) fn apply_chunk(
+        &self,
+        start: u64,
+        bytes: Vec<u8>,
+        length: Option<u64>,
+        range_supported: bool,
+    ) {
+        if let Some(len) = length {
+            let mut total_len = self.total_length.lock().unwrap();
+            if total_len.is_none() {
+                *total_len = Some(len);
+            }
+        }
+        self.range_supported.store(range_supported, Ordering::Release);
+        self.chunks.lock().unwrap().insert(start, Arc::new(bytes));
+    }
+
+    pub(crate) fn ensure_chunk_foreground(&self, start: u64) -> io::Result<Arc<Vec<u8>>> {
+        if let Some(chunk) = self.get_chunk(start) {
+            return Ok(chunk);
+        }
+
+        // Если чанк прямо сейчас загружается фоновым preloader'ом — ждём результат
+        {
+            let mut in_flight = self.in_flight.lock().unwrap();
+            let start_wait = std::time::Instant::now();
+            while in_flight.contains(&start) {
+                if start_wait.elapsed() > Duration::from_secs(5) {
+                    break;
+                }
+                let (guard, _) = self
+                    .in_flight_cond
+                    .wait_timeout(in_flight, Duration::from_millis(50))
+                    .unwrap();
+                in_flight = guard;
+                if self.chunks.lock().unwrap().contains_key(&start) {
+                    break;
+                }
+            }
+            if let Some(chunk) = self.get_chunk(start) {
+                return Ok(chunk);
+            }
+            in_flight.insert(start);
+        }
+
+        // Загружаем чанк синхронно с высоким приоритетом для декодера
+        let range_supported = self.range_supported.load(Ordering::Acquire);
+        let result = fetch_chunk_bytes(
             &self.client,
             &self.url,
             &self.headers,
-            self.range_supported,
-            target_start,
-        )?;
-        self.apply_chunk(chunk_data);
-        Ok(())
+            range_supported,
+            start,
+        );
+
+        match result {
+            Ok(chunk_data) => {
+                self.apply_chunk(
+                    chunk_data.start,
+                    chunk_data.bytes,
+                    chunk_data.length,
+                    chunk_data.range_supported,
+                );
+                {
+                    let mut in_flight = self.in_flight.lock().unwrap();
+                    in_flight.remove(&start);
+                    self.in_flight_cond.notify_all();
+                }
+                self.get_chunk(start)
+                    .ok_or_else(|| io::Error::other("чанк не найден после загрузки"))
+            }
+            Err(err) => {
+                {
+                    let mut in_flight = self.in_flight.lock().unwrap();
+                    in_flight.remove(&start);
+                    self.in_flight_cond.notify_all();
+                }
+                Err(err)
+            }
+        }
     }
 }
 
-fn fetch_chunk_bytes(
+pub(crate) fn spawn_preloader(
+    buffer: Arc<SharedTrackBuffer>,
+    cancel: Arc<AtomicBool>,
+) -> JoinHandle<()> {
+    thread::Builder::new()
+        .name("vessel-preloader".to_string())
+        .spawn(move || {
+            run_preloader(buffer, cancel);
+        })
+        .expect("spawn vessel-preloader thread")
+}
+
+fn run_preloader(buffer: Arc<SharedTrackBuffer>, cancel: Arc<AtomicBool>) {
+    crate::dlog!("[preload] background preloader started");
+
+    let mut consecutive_errors = 0;
+    while !cancel.load(Ordering::Acquire) {
+        let total_length = match buffer.total_length() {
+            Some(len) if len > 0 => len,
+            _ => {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+        };
+
+        if !buffer.range_supported.load(Ordering::Acquire) {
+            crate::dlog!("[preload] range unsupported, stopping preloader");
+            break;
+        }
+
+        let next_chunk = select_next_missing_chunk(&buffer, total_length);
+        let Some(target_start) = next_chunk else {
+            crate::dlog!("[preload] track fully preloaded ({total_length} bytes)");
+            break;
+        };
+
+        // Регистрируем чанк в in_flight
+        {
+            let mut in_flight = buffer.in_flight.lock().unwrap();
+            if in_flight.contains(&target_start)
+                || buffer.chunks.lock().unwrap().contains_key(&target_start)
+            {
+                continue;
+            }
+            in_flight.insert(target_start);
+        }
+
+        let range_supported = buffer.range_supported.load(Ordering::Acquire);
+        let fetch_result = fetch_chunk_bytes(
+            &buffer.client,
+            &buffer.url,
+            &buffer.headers,
+            range_supported,
+            target_start,
+        );
+
+        match fetch_result {
+            Ok(chunk_data) => {
+                consecutive_errors = 0;
+                buffer.apply_chunk(
+                    chunk_data.start,
+                    chunk_data.bytes,
+                    chunk_data.length,
+                    chunk_data.range_supported,
+                );
+            }
+            Err(err) => {
+                consecutive_errors += 1;
+                crate::dlog!("[preload] error fetching chunk {target_start}: {err}");
+                let err_str = err.to_string();
+                if err_str.contains("403") || err_str.contains("404") || consecutive_errors >= 5 {
+                    crate::dlog!("[preload] unrecoverable HTTP error, stopping preloader");
+                    let mut in_flight = buffer.in_flight.lock().unwrap();
+                    in_flight.remove(&target_start);
+                    buffer.in_flight_cond.notify_all();
+                    break;
+                }
+                thread::sleep(Duration::from_millis(300));
+            }
+        }
+
+        // Снимаем регистрацию из in_flight и оповещаем ожидающих СТРОГО ПОСЛЕ apply_chunk
+        {
+            let mut in_flight = buffer.in_flight.lock().unwrap();
+            in_flight.remove(&target_start);
+            buffer.in_flight_cond.notify_all();
+        }
+
+        if cancel.load(Ordering::Acquire) {
+            crate::dlog!("[preload] preloader cancelled");
+            break;
+        }
+    }
+    crate::dlog!("[preload] background preloader exited");
+}
+
+fn select_next_missing_chunk(buffer: &SharedTrackBuffer, total_length: u64) -> Option<u64> {
+    let chunks = buffer.chunks.lock().unwrap();
+    let in_flight = buffer.in_flight.lock().unwrap();
+
+    let is_missing = |start: u64| -> bool {
+        !chunks.contains_key(&start) && !in_flight.contains(&start)
+    };
+
+    let playback_offset = buffer.playback_offset.load(Ordering::Acquire);
+    let current_chunk_start =
+        (playback_offset / HTTP_CHUNK_BYTES as u64) * HTTP_CHUNK_BYTES as u64;
+
+    // 1. Приоритетный поиск вперед от текущей позиции воспроизведения до конца файла
+    let mut pos = current_chunk_start;
+    while pos < total_length {
+        if is_missing(pos) {
+            return Some(pos);
+        }
+        pos = pos.saturating_add(HTTP_CHUNK_BYTES as u64);
+    }
+
+    // 2. Поиск от начала файла до текущей позиции воспроизведения
+    let mut pos = 0u64;
+    while pos < current_chunk_start && pos < total_length {
+        if is_missing(pos) {
+            return Some(pos);
+        }
+        pos = pos.saturating_add(HTTP_CHUNK_BYTES as u64);
+    }
+
+    None
+}
+
+pub(crate) struct HttpRangeSource {
+    buffer: Arc<SharedTrackBuffer>,
+    position: u64,
+}
+
+impl HttpRangeSource {
+    pub(crate) fn open(
+        url: &str,
+        headers: &BTreeMap<String, String>,
+        prefer_range: bool,
+    ) -> Result<Self> {
+        let buffer = SharedTrackBuffer::new(url, headers, prefer_range)?;
+        let cancel = Arc::new(AtomicBool::new(false));
+        let _ = spawn_preloader(Arc::clone(&buffer), cancel);
+        Ok(Self::from_shared_buffer(buffer))
+    }
+
+    pub(crate) fn from_shared_buffer(buffer: Arc<SharedTrackBuffer>) -> Self {
+        Self {
+            buffer,
+            position: 0,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn shared_buffer(&self) -> Arc<SharedTrackBuffer> {
+        Arc::clone(&self.buffer)
+    }
+}
+
+pub(crate) fn fetch_chunk_bytes(
     client: &Client,
     url: &str,
     headers: &HeaderMap,
@@ -175,7 +413,6 @@ fn fetch_chunk_bytes(
             Err(error) => {
                 last_error = Some(error);
                 if attempt < 2 {
-                    // Сеть прилегла на шконку, даём ей три шанса встать и не позориться 🫩
                     thread::sleep(Duration::from_millis(150 * (attempt + 1)));
                 }
             }
@@ -252,8 +489,6 @@ fn fetch_without_range(
     if !status.is_success() {
         return Err(io::Error::other(format!("источник вернул HTTP {status}")));
     }
-    // Сколько байт отдать запросившему: если сервер вернул 200 (весь файл) —
-    // пропускаем уже прочитанные start байт.
     let resp_headers = response.headers().clone();
     let length = dlina_iz_range(&resp_headers).or_else(|| {
         resp_headers
@@ -263,7 +498,6 @@ fn fetch_without_range(
     });
     let partial = status == StatusCode::PARTIAL_CONTENT;
     let skip = if partial { 0 } else { start };
-    // Content-Length (200) или total из Content-Range (206) = полный размер файла.
     let mut chunk = Vec::with_capacity(HTTP_CHUNK_BYTES + skip as usize);
     response
         .take(HTTP_CHUNK_BYTES as u64 + skip)
@@ -290,33 +524,28 @@ fn fetch_without_range(
 
 impl Read for HttpRangeSource {
     fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
-        if output.is_empty() || self.length.is_some_and(|length| self.position >= length) {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        let total_length = self.buffer.total_length();
+        if total_length.is_some_and(|length| self.position >= length) {
             return Ok(0);
         }
 
         let chunk_start = (self.position / HTTP_CHUNK_BYTES as u64) * HTTP_CHUNK_BYTES as u64;
-
-        if !self.chunks.contains_key(&chunk_start) {
-            self.ensure_chunk(chunk_start)?;
-        }
-
-        let Some(chunk) = self.chunks.get(&chunk_start) else {
-            return Ok(0);
-        };
+        let chunk = self.buffer.ensure_chunk_foreground(chunk_start)?;
 
         let offset = (self.position - chunk_start) as usize;
         if offset >= chunk.len() {
             // Текущий чанк прочитан до конца
-            if self.length.is_some_and(|len| self.position >= len) || chunk.len() < HTTP_CHUNK_BYTES
+            if total_length.is_some_and(|len| self.position >= len)
+                || chunk.len() < HTTP_CHUNK_BYTES
             {
                 return Ok(0);
             }
             // Переходим к следующему чанку
             let next_start = chunk_start + HTTP_CHUNK_BYTES as u64;
-            self.ensure_chunk(next_start)?;
-            let Some(next_chunk) = self.chunks.get(&next_start) else {
-                return Ok(0);
-            };
+            let next_chunk = self.buffer.ensure_chunk_foreground(next_start)?;
             let offset = (self.position - next_start) as usize;
             if offset >= next_chunk.len() {
                 return Ok(0);
@@ -324,19 +553,14 @@ impl Read for HttpRangeSource {
             let count = output.len().min(next_chunk.len() - offset);
             output[..count].copy_from_slice(&next_chunk[offset..offset + count]);
             self.position += count as u64;
-
-            // Запускаем предзагрузку следующего за ним
-            self.maybe_start_prefetch(next_start + HTTP_CHUNK_BYTES as u64);
+            self.buffer.set_playback_offset(self.position);
             return Ok(count);
         }
 
         let count = output.len().min(chunk.len() - offset);
         output[..count].copy_from_slice(&chunk[offset..offset + count]);
         self.position += count as u64;
-
-        // Предзагружаем следующий чанк заранее
-        let next_start = chunk_start + HTTP_CHUNK_BYTES as u64;
-        self.maybe_start_prefetch(next_start);
+        self.buffer.set_playback_offset(self.position);
 
         Ok(count)
     }
@@ -344,11 +568,12 @@ impl Read for HttpRangeSource {
 
 impl Seek for HttpRangeSource {
     fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+        let total_length = self.buffer.total_length();
         let target = match from {
             SeekFrom::Start(position) => position as i128,
             SeekFrom::Current(offset) => self.position as i128 + offset as i128,
             SeekFrom::End(offset) => {
-                self.length
+                total_length
                     .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "длина неизвестна"))?
                     as i128
                     + offset as i128
@@ -361,25 +586,26 @@ impl Seek for HttpRangeSource {
             ));
         }
         let target = target as u64;
-        if !self.range_supported && target != self.position {
-            // Сервер сказал Range? НЕ ЗНАЮ ТАКОГО, сиди теперь без перемотки как честный арестант ✌️
+        let range_supported = self.buffer.range_supported.load(Ordering::Acquire);
+        if !range_supported && !self.buffer.is_fully_buffered() && target != self.position {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "источник не поддерживает HTTP Range",
             ));
         }
         self.position = target;
+        self.buffer.set_playback_offset(target);
         Ok(target)
     }
 }
 
 impl MediaSource for HttpRangeSource {
     fn is_seekable(&self) -> bool {
-        self.range_supported
+        self.buffer.range_supported.load(Ordering::Acquire) || self.buffer.is_fully_buffered()
     }
 
     fn byte_len(&self) -> Option<u64> {
-        self.length
+        self.buffer.total_length()
     }
 }
 

@@ -1,9 +1,15 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use symphonia::core::io::MediaSource;
 
 use crate::model::PlaybackSource;
 
-use super::{hls::HlsSource, http_source::HttpRangeSource};
+use super::{
+    hls::HlsSource,
+    http_source::{HttpRangeSource, SharedTrackBuffer},
+};
+
 pub(super) struct OpenedMedia {
     pub(super) source: Box<dyn MediaSource>,
     pub(super) extension: Option<String>,
@@ -12,7 +18,11 @@ pub(super) struct OpenedMedia {
     pub(super) discard_ms: u64,
 }
 
-pub(super) fn open_media(source: &PlaybackSource, position_ms: u64) -> Result<OpenedMedia> {
+pub(super) fn open_media(
+    source: &PlaybackSource,
+    position_ms: u64,
+    shared_buffer: Option<Arc<SharedTrackBuffer>>,
+) -> Result<OpenedMedia> {
     if source.url.scheme() == "file" {
         let path = source
             .url
@@ -44,7 +54,12 @@ pub(super) fn open_media(source: &PlaybackSource, position_ms: u64) -> Result<Op
         });
     }
 
-    let media = HttpRangeSource::open(source.url.as_str(), &source.headers, source.supports_range)?;
+    let media = match shared_buffer {
+        Some(buffer) => HttpRangeSource::from_shared_buffer(buffer),
+        None => {
+            HttpRangeSource::open(source.url.as_str(), &source.headers, source.supports_range)?
+        }
+    };
     Ok(OpenedMedia {
         source: Box::new(media),
         extension: extension_from_url(source),

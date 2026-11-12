@@ -3,7 +3,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
-    thread,
+    thread::{self, JoinHandle},
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -17,15 +17,29 @@ use crate::model::PlaybackSource;
 
 use super::{
     decoder::decode_source,
+    http_source::{SharedTrackBuffer, spawn_preloader},
     output::{AudioChunk, build_stream},
     types::{AudioEvent, AudioStatus},
 };
 
 const AUDIO_CHUNKS: usize = 128;
 
+pub(crate) struct PreloadSession {
+    pub(crate) cancel: Arc<AtomicBool>,
+    pub(crate) buffer: Arc<SharedTrackBuffer>,
+    pub(crate) _handle: JoinHandle<()>,
+}
+
+impl Drop for PreloadSession {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Release);
+    }
+}
+
 pub struct AudioEngine {
     _stream: Stream,
     source: Arc<Mutex<Option<PlaybackSource>>>,
+    active_session: Arc<Mutex<Option<PreloadSession>>>,
     chunks: Sender<AudioChunk>,
     events: Receiver<AudioEvent>,
     event_tx: Sender<AudioEvent>,
@@ -90,6 +104,7 @@ impl AudioEngine {
         Ok(Self {
             _stream: stream,
             source: Arc::new(Mutex::new(None)),
+            active_session: Arc::new(Mutex::new(None)),
             chunks: chunk_tx,
             events: event_rx,
             event_tx,
@@ -141,7 +156,59 @@ impl AudioEngine {
         self.buffered_samples.store(0, Ordering::Release);
         self.duration_ms
             .store(initial_duration_ms, Ordering::Release);
-        self.start_decoder(source, 0);
+
+        // Проверяем, не принадлежит ли уже активная сессия буферизации этому же треку
+        let is_same_track = self
+            .active_session
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|s| s.buffer.url() == source.url.as_str()))
+            .unwrap_or(false);
+
+        let shared_buffer = if is_same_track {
+            // Переиспользуем существующую сессию буферизации этого же трека (не прерываем и не дублируем)
+            self.active_session
+                .lock()
+                .ok()
+                .and_then(|guard| guard.as_ref().map(|s| Arc::clone(&s.buffer)))
+        } else {
+            // Переключение на другой трек: отменяем сессию предыдущего трека
+            if let Ok(mut session_guard) = self.active_session.lock() {
+                if let Some(old_session) = session_guard.take() {
+                    old_session.cancel.store(true, Ordering::Release);
+                }
+            }
+
+            // Для сетевого источника создаем общий буфер и запускаем фоновый Full Track Preloader
+            if source.url.scheme() != "file" && !super::media::is_hls(&source) {
+                match SharedTrackBuffer::new(
+                    source.url.as_str(),
+                    &source.headers,
+                    source.supports_range,
+                ) {
+                    Ok(buffer) => {
+                        let cancel = Arc::new(AtomicBool::new(false));
+                        let handle = spawn_preloader(Arc::clone(&buffer), Arc::clone(&cancel));
+                        if let Ok(mut session_guard) = self.active_session.lock() {
+                            *session_guard = Some(PreloadSession {
+                                cancel,
+                                buffer: Arc::clone(&buffer),
+                                _handle: handle,
+                            });
+                        }
+                        Some(buffer)
+                    }
+                    Err(err) => {
+                        crate::dlog!("[engine] не удалось создать SharedTrackBuffer: {err}");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        };
+
+        self.start_decoder(source, 0, shared_buffer);
     }
 
     pub fn seek_to(&self, position_ms: u64) -> Result<()> {
@@ -151,7 +218,23 @@ impl AudioEngine {
             .map_err(|_| anyhow!("состояние аудио повреждено"))?
             .clone()
             .context("сейчас ничего не воспроизводится")?;
-        self.start_decoder(source, position_ms);
+
+        let shared_buffer = self
+            .active_session
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|s| Arc::clone(&s.buffer)));
+
+        if let Some(buf) = &shared_buffer {
+            let duration = self.duration_ms.load(Ordering::Acquire);
+            let total_len = buf.total_length().unwrap_or(0);
+            if duration > 0 && total_len > 0 {
+                let est_offset = (position_ms.saturating_mul(total_len)) / duration;
+                buf.set_playback_offset(est_offset);
+            }
+        }
+
+        self.start_decoder(source, position_ms, shared_buffer);
         Ok(())
     }
 
@@ -174,7 +257,11 @@ impl AudioEngine {
     }
 
     pub fn stop(&self) {
-        self.reset();
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.played_samples.store(0, Ordering::Release);
+        self.buffered_samples.store(0, Ordering::Release);
+        self.paused.store(false, Ordering::Release);
+        // Важно: Stop НЕ отменяет буферизацию текущего трека — фоновая загрузка продолжается до конца!
         let _ = self.event_tx.send(AudioEvent::Stopped);
     }
 
@@ -183,9 +270,11 @@ impl AudioEngine {
         self.played_samples.store(0, Ordering::Release);
         self.buffered_samples.store(0, Ordering::Release);
         self.duration_ms.store(0, Ordering::Release);
+        self.paused.store(false, Ordering::Release);
         if let Ok(mut current) = self.source.lock() {
             *current = None;
         }
+        // active_session не отменяется при reset/stop; отмена происходит строго при смене трека в play()
     }
 
     pub fn set_volume(&self, volume_percent: u8) {
@@ -216,7 +305,20 @@ impl AudioEngine {
         self.events.try_recv().ok()
     }
 
-    fn start_decoder(&self, source: PlaybackSource, position_ms: u64) {
+    #[cfg(test)]
+    pub(crate) fn active_buffer(&self) -> Option<Arc<SharedTrackBuffer>> {
+        self.active_session
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|s| Arc::clone(&s.buffer)))
+    }
+
+    fn start_decoder(
+        &self,
+        source: PlaybackSource,
+        position_ms: u64,
+        shared_buffer: Option<Arc<SharedTrackBuffer>>,
+    ) {
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         self.played_samples.store(
             position_ms
@@ -248,6 +350,7 @@ impl AudioEngine {
                 &chunks,
                 &buffered_samples,
                 &duration_ms,
+                shared_buffer,
             );
             if current_generation.load(Ordering::Acquire) != generation {
                 return;
