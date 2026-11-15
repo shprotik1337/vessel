@@ -101,7 +101,19 @@ impl SecretStore {
                 }
             }
         }
-        Ok(self.load_file()?.values.get(key.name()).cloned())
+        let file = self.load_file()?;
+        if let Some(val) = file.values.get(key.name()).filter(|v| !v.trim().is_empty()) {
+            return Ok(Some(val.clone()));
+        }
+        let suffix = format!(":{}", key.name());
+        if let Some((_, val)) = file
+            .values
+            .iter()
+            .find(|(k, v)| k.ends_with(&suffix) && !v.trim().is_empty())
+        {
+            return Ok(Some(val.clone()));
+        }
+        Ok(None)
     }
 
     pub fn remove(&self, key: SecretKey) -> Result<()> {
@@ -136,7 +148,19 @@ impl SecretStore {
                 return Ok(Some(value));
             }
         }
-        Ok(self.load_file()?.values.get(name).cloned())
+        let file = self.load_file()?;
+        if let Some(val) = file.values.get(name).filter(|v| !v.trim().is_empty()) {
+            return Ok(Some(val.clone()));
+        }
+        let suffix = format!(":{name}");
+        if let Some((_, val)) = file
+            .values
+            .iter()
+            .find(|(k, v)| k.ends_with(&suffix) && !v.trim().is_empty())
+        {
+            return Ok(Some(val.clone()));
+        }
+        Ok(None)
     }
 
     pub fn remove_named(&self, name: &str) -> Result<()> {

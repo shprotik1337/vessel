@@ -115,26 +115,50 @@ export function PlatformSwitchMenu({
       const primaryArtist = track.artists?.[0] || "";
       let candidateTracks: TrackRef[] = [];
 
+      const titleMatches = (targetTitle: string, candTitle: string): boolean => {
+        const normTarget = targetTitle.toLowerCase().trim();
+        const normCand = candTitle.toLowerCase().trim();
+        if (!normTarget || !normCand) return false;
+        if (normCand === normTarget) return true;
+        if (normCand.includes(normTarget) || normTarget.includes(normCand)) return true;
+        const cleanT = normTarget.replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ").trim();
+        const cleanC = normCand.replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ").trim();
+        if (cleanT && cleanC && (cleanC.includes(cleanT) || cleanT.includes(cleanC))) return true;
+        return false;
+      };
+
+      const isRelevant = (t: TrackRef) =>
+        titleMatches(cleanTitle, t.title) || titleMatches(rawTitle, t.title);
+
       // Шаг 1: Поиск по "Чистое название + Основной артист"
       const query1 = `${cleanTitle || rawTitle} ${primaryArtist}`.trim();
       let outcome = await api.search(query1, platformId).catch(() => null);
       if (outcome?.tracks && outcome.tracks.length > 0) {
-        candidateTracks = outcome.tracks;
+        const valid = outcome.tracks.filter(isRelevant);
+        if (valid.length > 0) {
+          candidateTracks = valid;
+        }
       }
 
       // Шаг 2 (если не найдено): Ищем ТОЛЬКО по чистому названию трека (особенно важно для SoundCloud)
       if (candidateTracks.length === 0 && cleanTitle.length > 1) {
         outcome = await api.search(cleanTitle, platformId).catch(() => null);
         if (outcome?.tracks && outcome.tracks.length > 0) {
-          // Если среди результатов есть трек, где автор или заголовок содержит имя артиста — отдаем приоритет
-          const normArtist = primaryArtist.toLowerCase();
-          const matchWithArtist = outcome.tracks.find((t) => {
-            const inTitle = t.title.toLowerCase().includes(normArtist);
-            const inArtists = t.artists?.some((a) => a.toLowerCase().includes(normArtist));
-            return inTitle || inArtists;
-          });
-          // Если есть трек с упоминанием артиста — берём его первым, иначе первый качественный результат (включая ремикс)
-          candidateTracks = matchWithArtist ? [matchWithArtist, ...outcome.tracks] : outcome.tracks;
+          const valid = outcome.tracks.filter(isRelevant);
+          if (valid.length > 0) {
+            // Если среди результатов есть трек, где автор или заголовок содержит имя артиста — отдаем приоритет
+            const normArtist = primaryArtist.toLowerCase();
+            const matchWithArtist =
+              normArtist && !normArtist.includes("unknown")
+                ? valid.find((t) => {
+                    const inTitle = t.title.toLowerCase().includes(normArtist);
+                    const inArtists = t.artists?.some((a) => a.toLowerCase().includes(normArtist));
+                    return inTitle || inArtists;
+                  })
+                : null;
+            // Если есть трек с упоминанием артиста — берём его первым, иначе первый качественный результат
+            candidateTracks = matchWithArtist ? [matchWithArtist, ...valid] : valid;
+          }
         }
       }
 
@@ -142,7 +166,10 @@ export function PlatformSwitchMenu({
       if (candidateTracks.length === 0) {
         outcome = await api.search(rawTitle, platformId).catch(() => null);
         if (outcome?.tracks && outcome.tracks.length > 0) {
-          candidateTracks = outcome.tracks;
+          const valid = outcome.tracks.filter(isRelevant);
+          if (valid.length > 0) {
+            candidateTracks = valid;
+          }
         }
       }
 

@@ -38,6 +38,12 @@ pub(crate) enum RuntimeMessage {
         /// Предупреждение для юзера: матч из общего поиска YTM — играем
         /// клип-версию, а не полный трек (видео-only fallback).
         video_only_notice: Option<String>,
+        /// Если трек заменён на другой платформе при фолбэке
+        replaced_track: Option<TrackRef>,
+    },
+    PlaybackNotice {
+        generation: u64,
+        message: String,
     },
     PlaybackFailed {
         generation: u64,

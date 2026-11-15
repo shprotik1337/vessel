@@ -33,6 +33,7 @@ pub(super) fn build_stream(
     duration_ms: Arc<AtomicU64>,
     crossfade_ms: Arc<AtomicU32>,
     agc_enabled: Arc<AtomicBool>,
+    equalizer: Arc<crate::audio::equalizer::SharedEqualizer>,
 ) -> Result<Stream> {
     macro_rules! typed_stream {
         ($sample:ty) => {
@@ -49,6 +50,7 @@ pub(super) fn build_stream(
                 duration_ms,
                 crossfade_ms,
                 agc_enabled,
+                equalizer,
             )
         };
     }
@@ -84,6 +86,7 @@ fn sobrat_stream_dlya_tipa<T>(
     duration_ms: Arc<AtomicU64>,
     crossfade_ms: Arc<AtomicU32>,
     agc_enabled: Arc<AtomicBool>,
+    equalizer: Arc<crate::audio::equalizer::SharedEqualizer>,
 ) -> Result<Stream>
 where
     T: SizedSample + FromSample<f32>,
@@ -94,12 +97,16 @@ where
     let mut chunk_generation = 0u64;
     let mut audible = false;
 
+    // Эквалайзер (10-полосный RBJ IIR каскад)
+    let sample_rate = config.sample_rate;
+    let channels = usize::from(config.channels).max(1);
+    let mut eq_dsp = crate::audio::equalizer::EqualizerDSP::new(sample_rate as f32, channels);
+    let mut channel_idx = 0usize;
+
     // Нормализация громкости (AGC): скользящий RMS и сглаженное усиление
     let mut rms_sum = 0.0f32;
     let mut sample_count = 0usize;
     let mut current_gain = 1.0f32;
-    let sample_rate = config.sample_rate;
-    let channels = usize::from(config.channels);
     let samples_per_sec = (sample_rate as usize) * channels;
 
     let stream = device.build_output_stream(
@@ -118,10 +125,12 @@ where
             }
             let mut consumed = 0u64;
             let is_agc = agc_enabled.load(Ordering::Relaxed);
-            let vol_mul = volume.load(Ordering::Relaxed) as f32 / 100.0;
+            let raw_vol = (volume.load(Ordering::Relaxed) as f32 / 100.0).clamp(0.0, 1.0);
+            let vol_mul = raw_vol * raw_vol;
             let cf_ms = crossfade_ms.load(Ordering::Relaxed) as u64;
             let dur_ms = duration_ms.load(Ordering::Relaxed);
             let base_played = played_samples.load(Ordering::Relaxed);
+            eq_dsp.sync_from_shared(&equalizer);
 
             for target in output.iter_mut() {
                 loop {
@@ -156,6 +165,10 @@ where
                             let fade = fade_in.min(fade_out);
                             value *= fade;
                         }
+
+                        // Применяем 10-полосный эквалайзер
+                        value = eq_dsp.process_sample(channel_idx, value);
+                        channel_idx = (channel_idx + 1) % channels;
 
                         // Применяем AGC нормализацию громкости
                         if is_agc {

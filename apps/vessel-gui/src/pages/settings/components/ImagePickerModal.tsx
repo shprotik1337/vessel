@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useState } from "react";
 import type { ImageLibraryItem } from "../../../customization";
 import { IconBackground } from "../../../components/Icons";
+import * as api from "../../../api/commands";
 
 interface ImagePickerModalProps {
   pickerTarget: "trackArt" | "wallpaper" | null;
@@ -21,70 +22,20 @@ export function ImagePickerModal({
   onAddToLibrary,
   lang = "ru",
 }: ImagePickerModalProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [loading, setLoading] = useState(false);
 
   if (pickerTarget === null) return null;
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith("image/")) return;
-
-    const name = file.name || `Изображение ${Date.now()}`;
-
+  const handlePickFromComputer = async () => {
     try {
-      let dataUrl: string;
+      setLoading(true);
+      const filePath = await api.pickFile(["png", "jpg", "jpeg", "webp", "gif", "bmp"]);
+      if (!filePath) return;
 
-      if (file.type === "image/gif") {
-        dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error("Failed to read GIF"));
-          reader.readAsDataURL(file);
-        });
-      } else {
-        dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const img = new Image();
-            img.onload = () => {
-              let { width, height } = img;
-              const maxDim = 2560;
-              if (width > maxDim || height > maxDim) {
-                const ratio = Math.min(maxDim / width, maxDim / height);
-                width = Math.round(width * ratio);
-                height = Math.round(height * ratio);
-              }
-              const canvas = document.createElement("canvas");
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext("2d");
-              if (!ctx) {
-                resolve(reader.result as string);
-                return;
-              }
-              ctx.drawImage(img, 0, 0, width, height);
-              try {
-                const webp = canvas.toDataURL("image/webp", 0.88);
-                if (webp.startsWith("data:image/webp")) {
-                  resolve(webp);
-                  return;
-                }
-              } catch {}
-              try {
-                resolve(canvas.toDataURL("image/jpeg", 0.88));
-              } catch {
-                resolve(reader.result as string);
-              }
-            };
-            img.onerror = () => resolve(reader.result as string);
-            img.src = reader.result as string;
-          };
-          reader.onerror = () => reject(new Error("Failed to read file"));
-          reader.readAsDataURL(file);
-        });
-      }
+      const fileName = filePath.split(/[/\\]/).pop() || `Изображение ${Date.now()}`;
+      const dataUrl = await api.loadImageAsDataUrl(filePath);
 
-      onAddToLibrary?.({ url: dataUrl, name });
+      onAddToLibrary?.({ url: dataUrl, name: fileName });
 
       if (pickerTarget === "trackArt") {
         onSelectTrackArt(dataUrl);
@@ -93,9 +44,9 @@ export function ImagePickerModal({
       }
       onClose();
     } catch (err) {
-      console.error("Failed to process picked image file:", err);
+      console.error("Failed to process picked image file from computer:", err);
     } finally {
-      e.target.value = "";
+      setLoading(false);
     }
   };
 
@@ -113,13 +64,6 @@ export function ImagePickerModal({
       }}
       onClick={onClose}
     >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={handleFileChange}
-      />
       <div
         style={{
           width: "100%",
@@ -213,12 +157,13 @@ export function ImagePickerModal({
           <button
             type="button"
             className="sett-token-action-btn"
-            onClick={() => fileInputRef.current?.click()}
-            style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+            onClick={handlePickFromComputer}
+            disabled={loading}
+            style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", opacity: loading ? 0.6 : 1 }}
             title={lang === "ru" ? "Выбрать файл изображения с компьютера" : "Choose image file from computer"}
           >
             <IconBackground size={15} />
-            <span>{lang === "ru" ? "С компьютера" : "From computer"}</span>
+            <span>{loading ? "…" : lang === "ru" ? "С компьютера" : "From computer"}</span>
           </button>
           <button
             type="button"

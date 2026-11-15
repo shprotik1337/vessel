@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useApp } from "../store";
 import { WaveSection } from "../components/WaveSection";
 import { QuickAccessSection } from "../components/QuickAccessSection";
-import { trackKey } from "../lib/utils";
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
+import { trackKey, resolveArtworkUrl } from "../lib/utils";
 import type { MixItem } from "../api/types";
 import {
   RecommendationsBlockContent,
@@ -10,10 +11,33 @@ import {
   ExploreBlockContent,
   HomeMixPageView,
 } from "./home_sections";
+import { getFirstHomeRecArtwork } from "./home_sections/RecommendationsSection";
 
 export function Home() {
   const { state, navigateTo, lang } = useApp();
   const [selectedMix, setSelectedMix] = useState<MixItem | null>(null);
+  const [recArt, setRecArt] = useState<string | null>(() => getFirstHomeRecArtwork());
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      if (e.detail && typeof e.detail === "string") {
+        setRecArt(e.detail);
+      }
+    };
+    window.addEventListener("vessel:home-recs-loaded", handler);
+    return () => window.removeEventListener("vessel:home-recs-loaded", handler);
+  }, []);
+
+  const homeCover = useMemo(() => {
+    if (recArt) return recArt;
+    const fromRec = getFirstHomeRecArtwork();
+    if (fromRec) return fromRec;
+    const firstFav = state?.library?.[0];
+    if (firstFav?.artwork_url) return resolveArtworkUrl(firstFav.artwork_url);
+    const firstPl = state?.playlists?.[0];
+    if (firstPl?.cover_url) return resolveArtworkUrl(firstPl.cover_url);
+    return null;
+  }, [recArt, state?.library, state?.playlists]);
 
   if (!state) return null;
 
@@ -35,6 +59,7 @@ export function Home() {
 
   return (
     <div className="view home-view-container">
+      <PageAmbientBackdrop url={homeCover} />
       <div className="home-rows-container">
         {/* 1. Wave Section */}
         <div className="home-row-line">

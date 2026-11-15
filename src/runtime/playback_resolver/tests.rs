@@ -194,7 +194,11 @@ fn best_candidates_sorted_by_confidence() {
 fn auto_chain_is_ytm_then_deezer_manual_is_single() {
     assert_eq!(
         PlaybackSourceKind::Auto.chain(),
-        vec![PlaybackSourceKind::YouTubeMusic, PlaybackSourceKind::Deezer]
+        vec![
+            PlaybackSourceKind::YouTubeMusic,
+            PlaybackSourceKind::Deezer,
+            PlaybackSourceKind::SoundCloud,
+        ]
     );
     assert_eq!(
         PlaybackSourceKind::Deezer.chain(),
@@ -203,6 +207,10 @@ fn auto_chain_is_ytm_then_deezer_manual_is_single() {
     assert_eq!(
         PlaybackSourceKind::YouTubeMusic.chain(),
         vec![PlaybackSourceKind::YouTubeMusic]
+    );
+    assert_eq!(
+        PlaybackSourceKind::SoundCloud.chain(),
+        vec![PlaybackSourceKind::SoundCloud]
     );
 }
 
@@ -362,7 +370,7 @@ fn clean_search_query_strips_feat_and_remix() {
         "Playboi Carti",
         150_000,
     );
-    assert_eq!(clean_search_query(&track1), "Playboi Carti - Twin Team");
+    assert_eq!(clean_search_query(&track1), "Twin Team Playboi Carti");
 
     let track2 = track(
         ProviderKind::Spotify,
@@ -371,7 +379,7 @@ fn clean_search_query_strips_feat_and_remix() {
         "Artist",
         200_000,
     );
-    assert_eq!(clean_search_query(&track2), "Artist - Song Name");
+    assert_eq!(clean_search_query(&track2), "Song Name Artist");
 }
 
 #[test]

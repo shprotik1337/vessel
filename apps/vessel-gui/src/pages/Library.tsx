@@ -4,6 +4,7 @@ import { useApp } from "../store";
 import { PlaylistCover } from "../components/PlaylistCover";
 import { ConfirmModal } from "../components/Modal";
 import { CreateOrImportPlaylistModal } from "../components/CreateOrImportPlaylistModal";
+import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { resolveArtworkUrl } from "../lib/utils";
 import { t } from "../i18n";
 import * as api from "../api/commands";
@@ -86,9 +87,7 @@ export function Library() {
     }
   };
 
-  if (!state) return null;
-
-  const playlists = state.playlists ?? [];
+  const playlists = state?.playlists ?? [];
   const userPlaylists = useMemo(() => playlists.filter((p) => !p.is_album), [playlists]);
   const savedAlbums = useMemo(() => playlists.filter((p) => Boolean(p.is_album)), [playlists]);
 
@@ -111,6 +110,8 @@ export function Library() {
     if (!q) return followedArtists;
     return followedArtists.filter((a) => a.name.toLowerCase().includes(q));
   }, [followedArtists, searchQuery]);
+
+  if (!state) return null;
 
   const doDelete = async () => {
     if (!deleteTarget) return;
@@ -144,6 +145,7 @@ export function Library() {
         boxSizing: "border-box",
       }}
     >
+      <PageAmbientBackdrop fallbackClass="page-ambient-glow-fav" />
       {/* Top Header & Navigation Bar */}
       <div
         className="library-header"

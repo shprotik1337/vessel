@@ -335,28 +335,17 @@ function AppContent() {
       )}
       {/* Root Ambient Glow Layer: Portaled from active page */}
       <div id="vessel-glow-root" className="vessel-glow-root" />
-      {/* Seamless Ambient Backdrop starting from the very top of window (Y = 0) */}
-      {config.theme?.ambientMode !== "off" && (
-        view === "player" ? (
-          config.theme?.ambientMode === "theme" ? (
-            <div className="app-ambient-backdrop-theme app-ambient-backdrop-fs" />
-          ) : globalAmbientArt ? (
-            <div
-              className="app-ambient-backdrop app-ambient-backdrop-fs"
-              style={{ backgroundImage: `url("${globalAmbientArt}")` }}
-            />
-          ) : (
-            <div className="app-ambient-backdrop-fallback app-ambient-backdrop-fs" />
-          )
+      {/* Seamless Ambient Backdrop (fullscreen player only) */}
+      {config.theme?.ambientMode !== "off" && view === "player" && (
+        config.theme?.ambientMode === "theme" ? (
+          <div className="app-ambient-backdrop-theme app-ambient-backdrop-fs" />
+        ) : globalAmbientArt ? (
+          <div
+            className="app-ambient-backdrop app-ambient-backdrop-fs"
+            style={{ backgroundImage: `url("${globalAmbientArt}")` }}
+          />
         ) : (
-          config.theme?.ambientMode === "theme" ? (
-            <div className="app-ambient-backdrop-theme app-ambient-backdrop-top" />
-          ) : globalAmbientArt ? (
-            <div
-              className="app-ambient-backdrop app-ambient-backdrop-top"
-              style={{ backgroundImage: `url("${globalAmbientArt}")` }}
-            />
-          ) : null
+          <div className="app-ambient-backdrop-fallback app-ambient-backdrop-fs" />
         )
       )}
       <Titlebar

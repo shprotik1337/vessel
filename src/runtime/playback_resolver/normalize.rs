@@ -12,24 +12,85 @@ pub fn search_query(track: &TrackRef) -> String {
     }
 }
 
-/// Очищенный запрос: артист + название без (feat. ...), [remaster], и т.д.
-/// Используется как фолбэк при пустой выдаче чужого каталога (например, Deezer).
-pub fn clean_search_query(track: &TrackRef) -> String {
-    let mut title = track.title.clone();
-    for marker in ["feat", "ft", "featuring", "with", "remix", "remaster"] {
-        strip_parenthesized(&mut title, marker);
+/// Удаляет всё содержимое любых круглых `(...)`, квадратных `[...]` и фигурных `{...}` скобок:
+/// "Bohemian Rhapsody (2011 Mix) [Remastered]" -> "Bohemian Rhapsody"
+pub fn strip_all_brackets(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut depth = 0;
+    for c in s.chars() {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            }
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
     }
-    title = strip_feat_suffix(&title);
-    let title = title.trim();
-    if track.artists.is_empty() {
+    out.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches(['-', '–', '—', ':', ',', '.'])
+        .trim()
+        .to_string()
+}
+
+/// Проверяет, является ли артист заглушкой / пустым / неизвестным
+pub fn is_unknown_artist(artist: &str) -> bool {
+    let trimmed = artist.trim();
+    trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("unknown artist")
+        || trimmed.eq_ignore_ascii_case("unknown")
+        || trimmed.eq_ignore_ascii_case("неизвестный исполнитель")
+        || trimmed.eq_ignore_ascii_case("неизвестный артист")
+}
+
+/// Получает имя первого/основного артиста (отсекая дубли в разных алфавитах через запятую: "Uchu Nekoko, 宇宙ネコ子" -> "Uchu Nekoko").
+pub fn primary_artist(track: &TrackRef) -> String {
+    if let Some(first) = track.artists.first() {
+        let trimmed = first.trim();
+        if is_unknown_artist(trimmed) {
+            return String::new();
+        }
+        if let Some((before, _)) = trimmed.split_once(',') {
+            let before_trimmed = before.trim();
+            if is_unknown_artist(before_trimmed) {
+                return String::new();
+            }
+            return before_trimmed.to_string();
+        }
+        trimmed.to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// Очищенный запрос: чистое название без скобок + основной артист через пробел (по стандарту Riff/Spotube).
+/// Используется как фолбэк при пустой выдаче чужого каталога (например, Deezer или YTM).
+pub fn clean_search_query(track: &TrackRef) -> String {
+    let stripped = strip_all_brackets(&track.title);
+    let title = if stripped.is_empty() {
+        track.title.trim()
+    } else {
+        stripped.as_str()
+    };
+    let artist = primary_artist(track);
+    if artist.is_empty() {
         title.to_string()
     } else {
-        let first_artist = track.artists.first().map(|s| s.as_str()).unwrap_or("");
-        if title.is_empty() {
-            first_artist.to_string()
-        } else {
-            format!("{} - {}", first_artist, title)
-        }
+        format!("{title} {artist}")
+    }
+}
+
+/// Запрос только по чистому названию трека (без скобок и без артиста) — для сложных случаев и ремиксов.
+pub fn clean_title_query(track: &TrackRef) -> String {
+    let stripped = strip_all_brackets(&track.title);
+    if stripped.is_empty() {
+        track.title.trim().to_string()
+    } else {
+        stripped
     }
 }
 
@@ -54,7 +115,6 @@ pub fn normalize_title(raw: &str) -> String {
         "video",
         "lyric",
         "remaster",
-        "remix",
         "feat",
         "ft",
         "featuring",

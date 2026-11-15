@@ -389,6 +389,18 @@ export function CustomizationTab() {
               <label className="checkbox-row-label">
                 <input
                   type="checkbox"
+                  checked={theme.ambientMode !== "off"}
+                  onChange={(e) => updateThemeDirectly({ ambientMode: e.target.checked ? "dynamic" : "off" })}
+                />
+                <div>
+                  <div className="checkbox-title">Контекстный динамический фон</div>
+                  <div className="checkbox-desc">Рассеянное свечение обложек рекомендаций, плейлистов и индиго в библиотеке</div>
+                </div>
+              </label>
+
+              <label className="checkbox-row-label">
+                <input
+                  type="checkbox"
                   checked={theme.glassMode}
                   onChange={(e) => updateThemeDirectly({ glassMode: e.target.checked })}
                 />
@@ -538,18 +550,6 @@ export function CustomizationTab() {
           <div className="custom-group">
             <h3 className="custom-group-title">Параметры плеера</h3>
             <div className="checkbox-options-list">
-              <label className="checkbox-row-label">
-                <input
-                  type="checkbox"
-                  checked={player.largeIcons}
-                  onChange={(e) => setPlayerOptions({ largeIcons: e.target.checked })}
-                />
-                <div>
-                  <div className="checkbox-title">Крупные кнопки управления (Large Icons)</div>
-                  <div className="checkbox-desc">Увеличивает размер Play/Pause, Next и Prev</div>
-                </div>
-              </label>
-
               <label className="checkbox-row-label">
                 <input
                   type="checkbox"

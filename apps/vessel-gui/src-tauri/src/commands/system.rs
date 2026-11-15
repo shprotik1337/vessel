@@ -10,6 +10,10 @@ pub async fn reset_settings(core: CoreState<'_>) -> Result<(), String> {
     let defaults = vessel_core::config::AppConfig::default();
     core.config.volume_percent = defaults.volume_percent;
     core.config.global_hotkeys_enabled = false;
+    core.config.auto_fallback = defaults.auto_fallback;
+    core.config.auto_cache = defaults.auto_cache;
+    core.runtime.set_auto_fallback(defaults.auto_fallback);
+    core.runtime.set_auto_cache(defaults.auto_cache);
     core.app.player.volume_percent = defaults.volume_percent;
     core.app
         .gui_dispatch(vessel_core::effect::AppEffect::SetVolume(

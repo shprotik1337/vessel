@@ -2,10 +2,12 @@ import { useRef, useState, useEffect } from "react";
 
 import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
-import { formatTime, providerLabel, isFavorite, filterValidArtists, resolveArtworkUrl } from "../lib/utils";
+import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import { IconSparkle } from "./Icons";
+import { EqualizerPopover } from "./player/EqualizerPopover";
+import { loadStoredEqualizer, isEqActive } from "./player/equalizerData";
 import * as api from "../api/commands";
 
 
@@ -42,12 +44,41 @@ const PAUSE_SVG = (
   </svg>
 );
 
-const VOLUME_SVG = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+const VOLUME_LOW_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+  </svg>
+);
+
+const VOLUME_HIGH_SVG = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+  </svg>
 );
 
 const MUTE_SVG = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+    <line x1="23" y1="9" x2="17" y2="15" />
+    <line x1="17" y1="9" x2="23" y2="15" />
+  </svg>
+);
+
+const EQUALIZER_SVG = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="4" y1="21" x2="4" y2="14" />
+    <line x1="4" y1="10" x2="4" y2="3" />
+    <line x1="12" y1="21" x2="12" y2="12" />
+    <line x1="12" y1="8" x2="12" y2="3" />
+    <line x1="20" y1="21" x2="20" y2="16" />
+    <line x1="20" y1="12" x2="20" y2="3" />
+    <line x1="1" y1="14" x2="7" y2="14" />
+    <line x1="9" y1="8" x2="15" y2="8" />
+    <line x1="17" y1="16" x2="23" y2="16" />
+  </svg>
 );
 
 const FULLSCREEN_SVG = (
@@ -84,19 +115,20 @@ export function BottomPlayer() {
   const [dragPercent, setDragPercent] = useState<number | null>(null);
   // Мут: запоминаем последнюю громкость, чтобы вернуть её при размуте
   const lastVolumeRef = useRef<number | null>(null);
+  const [isEqOpen, setIsEqOpen] = useState(false);
+  const eqBtnRef = useRef<HTMLButtonElement>(null);
 
   const isVertical = config.player?.position === "left" || config.player?.position === "right";
   const isProgressFill = config.player?.style === "progress_fill";
-  const effectiveHeight = isProgressFill ? 76 : (config.player?.height || 96);
+  const effectiveHeight = 76;
+  const eqState = loadStoredEqualizer();
 
-  if (!state) return null;
+  const track = state?.now_playing ?? null;
+  const player = state?.player;
+  const fav = track && state ? isFavorite(state.library, track) : false;
 
-  const track = state.now_playing;
-  const player = state.player;
-  const fav = track ? isFavorite(state.library, track) : false;
-
-  const durationMs = progress.duration_ms || player.duration_ms || track?.duration_ms || 0;
-  const currentPosMs = progress.position_ms ?? player.position_ms ?? 0;
+  const durationMs = progress.duration_ms || player?.duration_ms || track?.duration_ms || 0;
+  const currentPosMs = progress.position_ms ?? player?.position_ms ?? 0;
 
   const [interpolatedPos, setInterpolatedPos] = useState(currentPosMs);
   const syncRef = useRef({ pos: currentPosMs, time: Date.now() });
@@ -104,10 +136,10 @@ export function BottomPlayer() {
   useEffect(() => {
     syncRef.current = { pos: currentPosMs, time: Date.now() };
     setInterpolatedPos(currentPosMs);
-  }, [currentPosMs, player.status]);
+  }, [currentPosMs, player?.status]);
 
   useEffect(() => {
-    if (player.status !== "playing") return;
+    if (player?.status !== "playing") return;
     const interval = window.setInterval(() => {
       const elapsed = Date.now() - syncRef.current.time;
       const cur = syncRef.current.pos + elapsed;
@@ -115,7 +147,9 @@ export function BottomPlayer() {
       setInterpolatedPos(Math.min(max, cur));
     }, 60);
     return () => window.clearInterval(interval);
-  }, [player.status, durationMs]);
+  }, [player?.status, durationMs]);
+
+  if (!state || !player) return null;
 
   const activePosMs = player.status === "playing" ? interpolatedPos : currentPosMs;
   const percent =
@@ -217,17 +251,39 @@ export function BottomPlayer() {
 
   const onVolPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     volFromEvent(e.clientX);
-    const move = (ev: PointerEvent) => {
-      ev.preventDefault();
-      volFromEvent(ev.clientX);
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+  };
+
+  const onVolPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      volFromEvent(e.clientX);
+    }
+  };
+
+  const onVolPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const onVolWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const delta = e.deltaY < 0 ? 4 : -4;
+    const next = Math.min(100, Math.max(0, player.volume_percent + delta));
+    void api.setVolume(next).catch(() => {});
+  };
+
+  const onVolKeyDown = (e: React.KeyboardEvent) => {
+    let delta = 0;
+    if (e.key === "ArrowUp" || e.key === "ArrowRight") delta = 5;
+    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") delta = -5;
+    if (delta !== 0) {
+      e.preventDefault();
+      const next = Math.min(100, Math.max(0, player.volume_percent + delta));
+      void api.setVolume(next).catch(() => {});
+    }
   };
 
   const handleToggle = async () => {
@@ -374,17 +430,11 @@ export function BottomPlayer() {
           : isProgressFill
           ? "style-progress-fill floating-island"
           : "full-dock"
-      } ${
-        config.player?.largeIcons ? "large-icons" : ""
       } ${config.player?.hideDetails ? "hide-details" : ""} ${
         config.player?.miniPlayerShape === "capsule" ? "shape-capsule" : ""
       } ${
         config.player?.miniPlayerPreset ? `preset-${config.player.miniPlayerPreset}` : ""
-      } ${
-        config.player?.miniPlayerBg && config.player.miniPlayerBg !== "blur"
-          ? `bg-${config.player.miniPlayerBg}`
-          : "bg-theme"
-      }`}
+      } bg-theme`}
       style={
         isVertical
           ? {
@@ -408,12 +458,6 @@ export function BottomPlayer() {
             width: `${shownPercent}%`,
             transition: dragPercent != null ? "none" : undefined,
           }}
-        />
-      )}
-      {config.player?.miniPlayerBg === "artwork" && track?.artwork_url && (
-        <div
-          className="player-artwork-backdrop"
-          style={{ backgroundImage: `url("${resolveArtworkUrl(track.artwork_url) ?? track.artwork_url}")` }}
         />
       )}
 
@@ -577,20 +621,36 @@ export function BottomPlayer() {
             </button>
           </>
         )}
-        <div className="vol">
+        <div className="vol" onWheel={onVolWheel} onKeyDown={onVolKeyDown} tabIndex={0}>
           <button
             className="vol-btn"
             onClick={handleMute}
-            title={muted ? "Включить звук" : "Выключить звук"}
+            title={muted ? (lang === "ru" ? "Включить звук" : "Unmute") : (lang === "ru" ? "Выключить звук" : "Mute")}
             aria-label={muted ? "Unmute" : "Mute"}
           >
-            {muted ? MUTE_SVG : VOLUME_SVG}
+            {muted ? MUTE_SVG : player.volume_percent < 50 ? VOLUME_LOW_SVG : VOLUME_HIGH_SVG}
           </button>
-          <div ref={volBarRef} className="vol-bar" onPointerDown={onVolPointerDown}>
+          <div
+            ref={volBarRef}
+            className="vol-bar"
+            onPointerDown={onVolPointerDown}
+            onPointerMove={onVolPointerMove}
+            onPointerUp={onVolPointerUp}
+          >
             <div className="fill" style={{ width: `${player.volume_percent}%` }} />
             <div className="knob" style={{ left: `${player.volume_percent}%` }} />
           </div>
         </div>
+        <button
+          ref={eqBtnRef}
+          className={`ctrl-btn eq-btn ${isEqActive(eqState.enabled, eqState.gains) ? "active" : "muted"}`}
+          style={isEqActive(eqState.enabled, eqState.gains) ? { color: "var(--accent)" } : undefined}
+          onClick={() => setIsEqOpen((prev) => !prev)}
+          title={lang === "ru" ? "Эквалайзер" : "Equalizer"}
+          aria-label="Equalizer"
+        >
+          {EQUALIZER_SVG}
+        </button>
         <button
           className={`pl-fullscreen-btn ${fullscreenOpen ? "active" : ""}`}
           onClick={() => setFullscreenOpen(!fullscreenOpen)}
@@ -627,6 +687,14 @@ export function BottomPlayer() {
           </div>
         </button>
       </div>
+
+      {isEqOpen && (
+        <EqualizerPopover
+          lang={lang}
+          onClose={() => setIsEqOpen(false)}
+          anchorRef={eqBtnRef}
+        />
+      )}
     </footer>
   );
 }

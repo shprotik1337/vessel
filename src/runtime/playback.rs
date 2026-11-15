@@ -5,7 +5,7 @@ use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use crate::{
     action::Action,
     model::{ProviderKind, TrackRef},
-    provider::MusicProvider,
+    provider::{MusicProvider, ProviderRegistry},
     storage::HistoryEntry,
 };
 
@@ -15,12 +15,173 @@ use super::{
     playback_resolver::{PlaybackResolver, PlaybackSourceKind},
 };
 
+pub(super) async fn resolve_and_play_chain(
+    chain: Vec<PlaybackSourceKind>,
+    track: TrackRef,
+    resolver: Arc<PlaybackResolver>,
+    providers: Arc<ProviderRegistry>,
+    sender: UnboundedSender<RuntimeMessage>,
+    generation: u64,
+    auto_cache: bool,
+    session: String,
+    origin_failed_provider: Option<ProviderKind>,
+) {
+    let mut failures: Vec<String> = Vec::new();
+    let mut any_candidates_found = false;
+
+    for source in chain {
+        crate::dlog!("[Playback][{session}] trying provider={}", source.label());
+
+        // Этап 1: матчинг в этом каталоге
+        let (candidates, candidates_from_general) = match resolver
+            .resolve_candidates_in(source, &track)
+            .await
+        {
+            Ok((Some(candidates), stage)) => {
+                crate::dlog!(
+                    "[Playback][{session}] {} {} candidates={}",
+                    stage.describe(),
+                    source.as_str(),
+                    candidates.len()
+                );
+                if !candidates.is_empty() {
+                    any_candidates_found = true;
+                }
+                (candidates, false)
+            }
+            Ok((None, stage)) => {
+                crate::dlog!(
+                    "[Playback][{session}] {} в {}",
+                    stage.describe(),
+                    source.label()
+                );
+                failures.push(format!(
+                    "{}: матча нет ({})",
+                    source.label(),
+                    stage.describe()
+                ));
+                continue;
+            }
+            Err(error) => {
+                crate::dlog!(
+                    "[Playback][{session}] {} resolve failed: {error:#}",
+                    source.label()
+                );
+                failures.push(format!("{}: {error:#}", source.label()));
+                continue;
+            }
+        };
+
+        // Этап 2: перебираем кандидатов, пока какой-нибудь
+        // не отдаст проигрываемый поток
+        let Some(foreign) = providers.get(source.provider_kind()) else {
+            continue;
+        };
+        let video_only_notice = if let Some(origin) = origin_failed_provider {
+            Some(format!(
+                "Воспроизведение через {} (трек недоступен в {})",
+                source.label(),
+                origin.label()
+            ))
+        } else if candidates_from_general {
+            Some(format!(
+                "Играю клип-версию «{}» с YouTube Music — полная версия недоступна в каталогах",
+                track.title
+            ))
+        } else {
+            None
+        };
+        for (index, foreign_track) in candidates.iter().enumerate() {
+            crate::dlog!(
+                "[Playback][{session}] source resolution candidate {} {} «{}»",
+                index + 1,
+                source.as_str(),
+                foreign_track.title
+            );
+
+            match foreign.playback_source(foreign_track).await {
+                Ok(mut source_stream) => {
+                    if source_stream.duration_ms.is_none() {
+                        source_stream.duration_ms =
+                            track.duration_ms.or(foreign_track.duration_ms);
+                    }
+                    crate::dlog!(
+                        "[Playback][{session}] selected provider={} ({} канд.)",
+                        source.label(),
+                        candidates.len()
+                    );
+
+                    if auto_cache {
+                        let cache_track = foreign_track.clone();
+                        let cache_orig = track.clone();
+                        let cache_source = source_stream.clone();
+                        tokio::spawn(async move {
+                            let _ = crate::provider::cache::download_track_to_cache_with_alias(
+                                &cache_track,
+                                Some(&cache_orig),
+                                &cache_source,
+                            )
+                            .await;
+                        });
+                    }
+
+                    let _ = sender.send(RuntimeMessage::PlaybackReady {
+                        generation,
+                        source: source_stream,
+                        video_only_notice: video_only_notice.clone(),
+                        replaced_track: Some(foreign_track.clone()),
+                    });
+                    return;
+                }
+                Err(error) => {
+                    crate::dlog!(
+                        "[Playback][{session}] {} candidate {} not playable: {error:#}",
+                        source.as_str(),
+                        index + 1
+                    );
+                }
+            }
+        }
+
+        resolver.drop_cache(&track, source);
+        crate::dlog!("[Playback][{session}] {} failed", source.label());
+        failures.push(format!(
+            "{}: не проигрался ({} канд.)",
+            source.label(),
+            candidates.len()
+        ));
+    }
+
+    let err_msg = if let Some(origin) = origin_failed_provider {
+        format!(
+            "Трек «{}» недоступен в {} и не найден на альтернативных платформах",
+            track.title,
+            origin.label()
+        )
+    } else if any_candidates_found {
+        "Не удалось загрузить трек".to_string()
+    } else {
+        "Трек не был найден на доступных платформах".to_string()
+    };
+
+    let _ = sender.send(RuntimeMessage::PlaybackFailed {
+        generation,
+        error: err_msg,
+    });
+}
+
 pub(super) fn spawn_playback(
     provider: Arc<dyn MusicProvider>,
     sender: UnboundedSender<RuntimeMessage>,
     generation: u64,
     track: TrackRef,
     auto_cache: bool,
+    auto_fallback: bool,
+    resolver: Arc<PlaybackResolver>,
+    providers: Arc<ProviderRegistry>,
+    has_deezer_arl: bool,
+    is_remote_deezer: bool,
+    session: String,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         // 1. Если трек уже в локальном кэше — играем локально сразу
@@ -32,6 +193,7 @@ pub(super) fn spawn_playback(
                 generation,
                 source: cached,
                 video_only_notice: None,
+                replaced_track: None,
             });
             return;
         }
@@ -41,6 +203,65 @@ pub(super) fn spawn_playback(
         let mut source = match source_result {
             Ok(s) => s,
             Err(error) => {
+                crate::dlog!(
+                    "[Playback][{session}] native playback failed for {}: {error}",
+                    track.provider.label()
+                );
+                // Для SoundCloud авто-фолбэк на другие платформы не запускаем:
+                // там уникальный андерграунд/ремиксы, которых нет на других платформах.
+                if auto_fallback && track.provider != ProviderKind::SoundCloud {
+                    let _ = sender.send(RuntimeMessage::PlaybackNotice {
+                        generation,
+                        message: format!(
+                            "Трек недоступен в {}, пробуем найти его на другой платформе...",
+                            track.provider.label()
+                        ),
+                    });
+                    let origin = track.provider;
+                    let base_chain = if origin == ProviderKind::Spotify {
+                        // Для Spotify YouTube Music уже был опрошен при запуске нативного/серверного трека,
+                        // поэтому в фоллбэке сразу опрашиваем: Deezer -> SoundCloud
+                        vec![
+                            PlaybackSourceKind::Deezer,
+                            PlaybackSourceKind::SoundCloud,
+                        ]
+                    } else {
+                        vec![
+                            PlaybackSourceKind::YouTubeMusic,
+                            PlaybackSourceKind::Deezer,
+                            PlaybackSourceKind::SoundCloud,
+                        ]
+                    };
+                    let chain: Vec<_> = base_chain
+                        .into_iter()
+                        .filter(|s| {
+                            if s.provider_kind() == origin {
+                                return false;
+                            }
+                            if *s == PlaybackSourceKind::Deezer && !has_deezer_arl && !is_remote_deezer {
+                                return false;
+                            }
+                            resolver.source_available(*s)
+                        })
+                        .collect();
+
+                    if !chain.is_empty() {
+                        resolve_and_play_chain(
+                            chain,
+                            track,
+                            resolver,
+                            providers,
+                            sender,
+                            generation,
+                            auto_cache,
+                            session,
+                            Some(origin),
+                        )
+                        .await;
+                        return;
+                    }
+                }
+
                 let _ = sender.send(RuntimeMessage::PlaybackFailed {
                     generation,
                     error: error.to_string(),
@@ -68,6 +289,7 @@ pub(super) fn spawn_playback(
             generation,
             source,
             video_only_notice: None,
+            replaced_track: None,
         });
     })
 }
@@ -100,6 +322,20 @@ impl Runtime {
     pub fn set_audio_agc(&self, enabled: bool) {
         if let Some(audio) = &self.audio {
             audio.set_agc(enabled);
+        }
+    }
+
+    pub fn set_audio_equalizer(&self, enabled: bool, gains: &[f32]) {
+        if let Some(audio) = &self.audio {
+            audio.set_equalizer(enabled, gains);
+        }
+    }
+
+    pub fn get_audio_equalizer(&self) -> (bool, Vec<f32>) {
+        if let Some(audio) = &self.audio {
+            audio.get_equalizer()
+        } else {
+            (false, vec![0.0; 10])
         }
     }
 
@@ -158,6 +394,7 @@ impl Runtime {
                         generation,
                         source: cached_source,
                         video_only_notice: None,
+                        replaced_track: None,
                     });
                 }));
                 return;
@@ -232,180 +469,20 @@ impl Runtime {
             // чтобы UI не давал мотать старый источник
             actions.push(Action::Audio(crate::audio::AudioEvent::Buffering));
             let auto_cache = self.config.auto_cache;
+            let session = self.playback_session_id.clone();
             self.playback_task = Some(tokio::spawn(async move {
-                let mut failures: Vec<String> = Vec::new();
-                let mut any_candidates_found = false;
-
-                for source in chain {
-                    crate::dlog!("[Playback][{session}] trying provider={}", source.label());
-
-                    // Этап 1: матчинг в этом каталоге
-                    let (candidates, candidates_from_general) = match resolver
-                        .resolve_candidates_in(source, &track)
-                        .await
-                    {
-                        Ok((Some(candidates), stage)) => {
-                            crate::dlog!(
-                                "[Playback][{session}] {} {} candidates={}",
-                                stage.describe(),
-                                source.as_str(),
-                                candidates.len()
-                            );
-                            if !candidates.is_empty() {
-                                any_candidates_found = true;
-                            }
-                            (candidates, false)
-                        }
-                        Ok((None, stage)) => {
-                            crate::dlog!(
-                                "[Playback][{session}] {} в {}",
-                                stage.describe(),
-                                source.label()
-                            );
-                            failures.push(format!(
-                                "{}: матча нет ({})",
-                                source.label(),
-                                stage.describe()
-                            ));
-                            // Фолбэк: честный поиск не нашёл,
-                            // но в YTM остался официальный клип — общий поиск
-                            if source == PlaybackSourceKind::YouTubeMusic {
-                                match resolver.resolve_candidates_general(&track).await {
-                                    Ok((Some(video_candidates), stage)) => {
-                                        crate::dlog!(
-                                            "[Playback][{session}] {} {} candidates={}",
-                                            stage.describe(),
-                                            source.as_str(),
-                                            video_candidates.len()
-                                        );
-                                        if !video_candidates.is_empty() {
-                                            any_candidates_found = true;
-                                        }
-                                        (video_candidates, true)
-                                    }
-                                    Ok((None, stage)) => {
-                                        crate::dlog!(
-                                            "[Playback][{session}] {} в общем поиске {}",
-                                            stage.describe(),
-                                            source.label()
-                                        );
-                                        failures.push(format!(
-                                            "YouTube Music (клипы): {}",
-                                            stage.describe()
-                                        ));
-                                        continue;
-                                    }
-                                    Err(error) => {
-                                        crate::dlog!(
-                                            "[Playback][{session}] general search failed: {error:#}"
-                                        );
-                                        failures.push(format!("YouTube Music (клипы): {error:#}"));
-                                        continue;
-                                    }
-                                }
-                            } else {
-                                continue;
-                            }
-                        }
-                        Err(error) => {
-                            crate::dlog!(
-                                "[Playback][{session}] {} resolve failed: {error:#}",
-                                source.label()
-                            );
-                            failures.push(format!("{}: {error:#}", source.label()));
-                            continue;
-                        }
-                    };
-
-                    // Этап 2: перебираем кандидатов, пока какой-нибудь
-                    // не отдаст проигрываемый поток
-                    let Some(foreign) = providers.get(source.provider_kind()) else {
-                        continue;
-                    };
-                    // Предупреждение «играем клип-версию, а не полный трек» —
-                    // только для матчей из общего поиска YTM
-                    let video_only_notice = if candidates_from_general {
-                        Some(format!(
-                            "Играю клип-версию «{}» с YouTube Music — полная версия недоступна в каталогах",
-                            track.title
-                        ))
-                    } else {
-                        None
-                    };
-                    for (index, foreign_track) in candidates.iter().enumerate() {
-                        crate::dlog!(
-                            "[Playback][{session}] source resolution candidate {} {} «{}»",
-                            index + 1,
-                            source.as_str(),
-                            foreign_track.title
-                        );
-
-                        match foreign.playback_source(foreign_track).await {
-                            Ok(mut source_stream) => {
-                                if source_stream.duration_ms.is_none() {
-                                    source_stream.duration_ms =
-                                        track.duration_ms.or(foreign_track.duration_ms);
-                                }
-                                // Играем через чужого провайдера, но
-                                // UI-трек остаётся Spotify (лайки/история)
-                                crate::dlog!(
-                                    "[Playback][{session}] selected provider={} ({} канд.)",
-                                    source.label(),
-                                    candidates.len()
-                                );
-
-                                if auto_cache {
-                                    let cache_track = foreign_track.clone();
-                                    let cache_orig = track.clone();
-                                    let cache_source = source_stream.clone();
-                                    tokio::spawn(async move {
-                                        let _ = crate::provider::cache::download_track_to_cache_with_alias(
-                                            &cache_track,
-                                            Some(&cache_orig),
-                                            &cache_source,
-                                        )
-                                        .await;
-                                    });
-                                }
-
-                                let _ = sender.send(RuntimeMessage::PlaybackReady {
-                                    generation,
-                                    source: source_stream,
-                                    video_only_notice: video_only_notice.clone(),
-                                });
-                                return;
-                            }
-                            Err(error) => {
-                                crate::dlog!(
-                                    "[Playback][{session}] {} candidate {} not playable: {error:#}",
-                                    source.as_str(),
-                                    index + 1
-                                );
-                            }
-                        }
-                    }
-
-                    // Ни один кандидат каталога не проигрался — выкидываем
-                    // матч из кэша и идём к следующему источнику цепочки
-                    resolver.drop_cache(&track, source);
-                    crate::dlog!("[Playback][{session}] {} failed", source.label());
-                    failures.push(format!(
-                        "{}: не проигрался ({} канд.)",
-                        source.label(),
-                        candidates.len()
-                    ));
-                }
-
-                let err_msg = if any_candidates_found {
-                    "Не удалось загрузить трек".to_string()
-                } else {
-                    "Трек не был найден".to_string()
-                };
-
-                let _ = sender.send(RuntimeMessage::PlaybackFailed {
+                resolve_and_play_chain(
+                    chain,
+                    track,
+                    resolver,
+                    providers,
+                    sender,
                     generation,
-                    error: err_msg,
-                });
+                    auto_cache,
+                    session,
+                    None,
+                )
+                .await;
             }));
             return;
         }
@@ -437,12 +514,33 @@ impl Runtime {
         }
         self.current_track = Some(track.clone());
         self.current_track_started = false;
+        let auto_fallback = self.config.auto_fallback;
+        let resolver = Arc::clone(&self.playback_resolver);
+        let providers = Arc::clone(&self.providers);
+        let is_remote_deezer = self
+            .providers
+            .get(ProviderKind::Deezer)
+            .map_or(false, |p| p.is_remote());
+        let has_deezer_arl = self
+            .secrets
+            .get(crate::secrets::SecretKey::DeezerArl)
+            .ok()
+            .flatten()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let session = self.playback_session_id.clone();
         self.playback_task = Some(spawn_playback(
             provider,
             self.sender.clone(),
             self.playback_generation,
             track,
             self.config.auto_cache,
+            auto_fallback,
+            resolver,
+            providers,
+            has_deezer_arl,
+            is_remote_deezer,
+            session,
         ));
     }
 

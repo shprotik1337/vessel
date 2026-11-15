@@ -156,6 +156,13 @@ pub struct AppConfig {
     /// Автоматическое фоновое сохранение воспроизводимых треков в локальный кэш
     #[serde(default = "default_auto_cache")]
     pub auto_cache: bool,
+    /// Автоматический кросс-платформенный поиск (YouTube Music -> Deezer -> SoundCloud) при недоступности трека
+    #[serde(default = "default_auto_fallback")]
+    pub auto_fallback: bool,
+}
+
+fn default_auto_fallback() -> bool {
+    true
 }
 
 fn default_auto_cache() -> bool {
@@ -228,6 +235,7 @@ impl Default for AppConfig {
             include_playlists_in_recommendations: true,
             excluded_recommendation_playlist_ids: Vec::new(),
             auto_cache: true,
+            auto_fallback: true,
         }
     }
 }

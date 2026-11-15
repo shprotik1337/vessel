@@ -206,6 +206,17 @@ pub async fn set_audio_agc(core: CoreState<'_>, enabled: bool) -> Result<(), Str
 }
 
 #[tauri::command]
+pub async fn set_equalizer(
+    core: CoreState<'_>,
+    enabled: bool,
+    gains: Vec<f32>,
+) -> Result<(), String> {
+    let core = lock(&core);
+    core.runtime.set_audio_equalizer(enabled, &gains);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn fetch_server_lyrics(
     core: CoreState<'_>,
     track_name: Option<String>,

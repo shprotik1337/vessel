@@ -811,7 +811,8 @@ button{font-family:inherit}
   text-decoration: underline;
 }
 
-.sidebar{position:relative !important;z-index:50 !important;width:232px;height:calc(100% - 38px) !important;margin-top:38px !important;flex-shrink:0;background:var(--sidebar-bg, var(--panel));border-right:1px solid var(--border);display:flex;flex-direction:column;gap:16px;padding:14px 10px;overflow-y:auto;overflow-x:hidden;transition:width .2s cubic-bezier(0.4,0,0.2,1),padding .2s ease,background .2s}
+.sidebar{position:relative !important;z-index:50 !important;width:232px;flex-shrink:0;background:var(--sidebar-bg, var(--panel));border-right:1px solid var(--border);display:flex;flex-direction:column;gap:16px;padding:14px 10px;overflow-y:auto;overflow-x:hidden;transition:width .2s cubic-bezier(0.4,0,0.2,1),padding .2s ease,background .2s}
+.sidebar:not(.dock-top):not(.dock-bottom){height:calc(100% - 38px) !important;margin-top:38px !important}
 .sidebar.collapsed,
 .sidebar.rail-sidebar{width:68px !important;min-width:68px !important;max-width:68px !important;padding:14px 6px;gap:7px;align-items:center}
 .sidebar-header{display:flex;align-items:center;gap:6px;width:100%}
@@ -1444,7 +1445,7 @@ button{font-family:inherit}
 @keyframes errPulse{0%,100%{box-shadow:0 0 0 1px transparent,0 10px 32px rgba(0,0,0,.5)}50%{box-shadow:0 0 0 1px var(--red),0 10px 32px rgba(201,86,79,.3)}}
 .player .err-banner{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:4px 16px;border-radius:15px 15px 0 0;background:rgba(18,18,20,0.95);border-bottom:1px solid var(--red);color:var(--text);font-size:12px;z-index:10}
 .pl-left{grid-column:1;grid-row:1;display:flex;align-items:center;gap:14px;min-width:0;max-width:100%;overflow:hidden;justify-self:start}
-.pl-art{width:66px;height:66px;border-radius:10px;overflow:hidden;flex-shrink:0;cursor:pointer}
+.pl-art{width:52px;height:52px;border-radius:10px;overflow:hidden;flex-shrink:0;cursor:pointer}
 .pl-meta{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;flex:0 1 auto;overflow:hidden}
 .pl-meta .ttl{font-size:14px;font-weight:600;letter-spacing:-.01em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;color:var(--text)}
 .pl-sub{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;line-height:1.25}
@@ -3596,7 +3597,9 @@ body.vessel-block-dragging .section-slot-wrapper {
 .sidebar.dock-top,
 .sidebar.dock-bottom {
   width: 100% !important;
-  min-height: 46px;
+  height: 58px !important;
+  min-height: 58px !important;
+  max-height: 58px !important;
   flex-shrink: 0;
   flex-direction: row;
   align-items: center;
@@ -3617,11 +3620,13 @@ body.vessel-block-dragging .section-slot-wrapper {
 .sidebar.dock-top {
   border-bottom: 1px solid var(--border);
   order: 0 !important;
+  margin-top: 38px !important;
 }
 
 .sidebar.dock-bottom {
   border-top: 1px solid var(--border);
   order: 2 !important;
+  margin-top: 0 !important;
 }
 
 .sidebar.full-dock {
@@ -3634,19 +3639,30 @@ body.vessel-block-dragging .section-slot-wrapper {
   margin: 0 !important;
 }
 
+.sidebar.dock-top.style-compact {
+  margin: 38px 0 0 0 !important;
+  width: 100% !important;
+  height: 58px !important;
+  max-height: 58px !important;
+}
+
 .sidebar.style-dock {
   border-radius: var(--radius-panel, 14px) !important;
 }
 
 .sidebar.dock-top.style-dock {
-  margin: 8px 12px 0 12px !important;
+  margin: 46px 12px 0 12px !important;
   width: calc(100% - 24px) !important;
+  height: 58px !important;
+  max-height: 58px !important;
   border: 1px solid var(--border) !important;
 }
 
 .sidebar.dock-bottom.style-dock {
   margin: 0 12px 8px 12px !important;
   width: calc(100% - 24px) !important;
+  height: 58px !important;
+  max-height: 58px !important;
   border: 1px solid var(--border) !important;
 }
 
@@ -3670,8 +3686,10 @@ body.vessel-block-dragging .section-slot-wrapper {
 }
 
 .sidebar.dock-top.style-round {
-  margin: 8px 12px 0 12px !important;
+  margin: 46px 12px 0 12px !important;
   width: calc(100% - 24px) !important;
+  height: 58px !important;
+  max-height: 58px !important;
   border-radius: 9999px !important;
   border: 1px solid var(--border) !important;
 }
@@ -7222,48 +7240,56 @@ body.vessel-block-dragging .section-slot-wrapper {
   z-index: 0;
 }
 
-/* Cover Ambient Glow: Restored original rich diffuse bloom, centered near the cover, scrolls with page */
-.page-ambient-glow {
+/* Contextual Dynamic Page Ambient Backdrop */
+.page-ambient-container {
   position: absolute !important;
-  top: -84px !important;
-  left: -30px !important;
-  width: 700px !important;
-  height: 560px !important;
-  border-radius: 50% !important;
-  background-size: cover !important;
-  background-position: center !important;
-  filter: blur(100px) saturate(2) brightness(0.48) !important;
-  opacity: 0.55;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
   pointer-events: none !important;
-  will-change: transform, opacity;
+  overflow: hidden !important;
+  z-index: 0 !important;
+  user-select: none !important;
 }
 
-.page-ambient-glow-fallback {
+.page-ambient-mask-area {
   position: absolute !important;
-  top: -84px !important;
-  left: -30px !important;
-  width: 700px !important;
-  height: 560px !important;
-  border-radius: 50% !important;
-  background: radial-gradient(circle, var(--accent-glow, rgba(140, 140, 245, 0.25)) 0%, transparent 70%) !important;
-  filter: blur(80px) !important;
-  opacity: 0.5;
-  pointer-events: none !important;
-  will-change: transform, opacity;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.8) 40%, rgba(0, 0, 0, 0.65) 80%, rgba(0, 0, 0, 0.5) 100%) !important;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.8) 40%, rgba(0, 0, 0, 0.65) 80%, rgba(0, 0, 0, 0.5) 100%) !important;
 }
 
-.page-ambient-glow-fav {
+.page-ambient-layer-img {
   position: absolute !important;
-  top: -84px !important;
-  left: -30px !important;
-  width: 700px !important;
-  height: 560px !important;
-  border-radius: 50% !important;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.04) 40%, transparent 70%) !important;
-  filter: blur(80px) !important;
-  opacity: 0.6;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  filter: blur(80px) saturate(135%) brightness(0.65) !important;
+  transform: scale(1.2) !important;
   pointer-events: none !important;
-  will-change: transform, opacity;
+  user-select: none !important;
+  will-change: opacity !important;
+}
+
+.page-ambient-layer-theme {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: radial-gradient(circle at 45% 25%, var(--accent-glow, rgba(255, 255, 255, 0.15)) 0%, transparent 70%) !important;
+  filter: blur(60px) !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  will-change: opacity !important;
+}
+
+/* Legacy compatibility classes */
+.page-ambient-glow, .page-ambient-glow-fallback, .page-ambient-glow-fav {
+  display: none !important;
 }
 
 /* Hide global player backdrop when page-specific glow is active */
@@ -9913,6 +9939,180 @@ body:has(.app-shell.no-player) .library-fab-container {
 .wave-platform-btn.active {
   background: rgba(255, 255, 255, 0.12);
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.06);
+}
+
+/* AMOLED Wave Banner */
+.amoled-wave-banner {
+  position: relative;
+  width: 100%;
+  height: 300px;
+  background: #000000;
+  border-radius: 20px;
+  overflow: visible;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  margin-bottom: 24px;
+}
+
+.amoled-wave-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 20px;
+}
+
+.amoled-wave-center {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.amoled-wave-title-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  padding: 6px 16px;
+  border-radius: 14px;
+  transition: transform 0.16s ease, opacity 0.16s ease;
+}
+
+.amoled-wave-title-btn:hover {
+  transform: scale(1.03);
+  opacity: 0.92;
+}
+
+.amoled-wave-title-btn:active {
+  transform: scale(0.98);
+}
+
+.amoled-wave-play-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.amoled-wave-title-text {
+  color: #ffffff;
+  line-height: 1;
+}
+
+.amoled-wave-tune-container {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.amoled-wave-tune-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.amoled-wave-tune-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: scale(1.02);
+}
+
+.amoled-wave-tune-btn:active {
+  transform: scale(0.98);
+}
+
+.amoled-wave-tune-btn.active {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Floating Platforms Row Popover */
+.amoled-wave-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(14, 14, 16, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 30px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.7);
+  z-index: 20;
+  animation: amoledWavePopIn 0.18s ease-out;
+}
+
+@keyframes amoledWavePopIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.amoled-wave-platform-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+
+.amoled-wave-platform-circle:hover {
+  transform: scale(1.12);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.amoled-wave-platform-circle.active {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.amoled-wave-platform-circle.inactive {
+  opacity: 0.36;
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 /* Modern Wave Hero Card */

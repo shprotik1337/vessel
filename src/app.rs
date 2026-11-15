@@ -105,6 +105,8 @@ pub struct App {
     /// Треки, для которых в текущей сессии уже был выполнен fallback на онлайн-поток
     /// (защита от бесконечного цикла повторных попыток)
     failed_cache_fallbacks: std::collections::HashSet<String>,
+    /// Счётчик подряд идущих неудач воспроизведения для безопасного авто-скипа
+    pub consecutive_playback_failures: usize,
 }
 
 impl App {
@@ -148,6 +150,7 @@ impl App {
             effects: Vec::new(),
             playback_generation: 0,
             failed_cache_fallbacks: std::collections::HashSet::new(),
+            consecutive_playback_failures: 0,
         })
     }
 
@@ -240,10 +243,42 @@ impl App {
                 self.player.buffered_ms = buffered_ms;
             }
             Action::Audio(event) => self.handle_audio_event(event),
+            Action::TrackReplaced { new_track } => {
+                self.now_playing = Some(new_track.clone());
+                if let Some(idx) = self.queue_index {
+                    if idx < self.queue.len() {
+                        self.queue[idx] = new_track.clone();
+                        self.queue_dirty = true;
+                    }
+                }
+                if let Some(dur) = new_track.duration_ms {
+                    self.player.duration_ms = dur;
+                }
+                self.consecutive_playback_failures = 0;
+            }
             Action::PlaybackFailed(error) => {
-                // Явный ERROR-статус: не возвращаемся молча в старое состояние
-                self.player.status = PlaybackStatus::Error;
-                self.status_message = error;
+                self.status_message = error.clone();
+                self.consecutive_playback_failures += 1;
+                let max_failures = self.queue.len().max(1).min(5);
+                if !self.queue.is_empty() && self.consecutive_playback_failures < max_failures {
+                    let current = self.queue_index.unwrap_or(0);
+                    let next = if current + 1 < self.queue.len() {
+                        current + 1
+                    } else if self.player.repeat == RepeatMode::All {
+                        0
+                    } else {
+                        self.playback_generation = self.playback_generation.wrapping_add(1);
+                        self.player.status = PlaybackStatus::Stopped;
+                        self.effects.push(AppEffect::Stop);
+                        return;
+                    };
+                    self.set_queue_track(next);
+                } else {
+                    self.consecutive_playback_failures = 0;
+                    self.playback_generation = self.playback_generation.wrapping_add(1);
+                    self.player.status = PlaybackStatus::Error;
+                    self.effects.push(AppEffect::Stop);
+                }
             }
             Action::PlaybackNotice(message) => {
                 // Некритичное предупреждение (клип-версия и т.п.)
@@ -496,6 +531,7 @@ impl App {
                 self.player.status = PlaybackStatus::Playing;
                 self.status_message.clear();
                 self.failed_cache_fallbacks.clear();
+                self.consecutive_playback_failures = 0;
             }
             crate::audio::AudioEvent::Paused => self.player.status = PlaybackStatus::Paused,
             crate::audio::AudioEvent::Stopped => self.player.status = PlaybackStatus::Stopped,

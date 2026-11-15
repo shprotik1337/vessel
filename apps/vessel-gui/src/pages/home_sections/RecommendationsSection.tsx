@@ -7,6 +7,7 @@ import {
   filterValidArtists,
   parseActiveProviders,
   normalizeProvider,
+  resolveArtworkUrl,
 } from "../../lib/utils";
 import type { TrackRef } from "../../api/types";
 import * as api from "../../api/commands";
@@ -18,6 +19,14 @@ let cachedHomeRecsProvidersKey: string | null = null;
 export function clearHomeRecsCache() {
   cachedHomeRecs = null;
   cachedHomeRecsProvidersKey = null;
+}
+
+export function getFirstHomeRecArtwork(): string | null {
+  if (cachedHomeRecs && cachedHomeRecs.length > 0) {
+    const art = cachedHomeRecs[0]?.artwork_url;
+    if (art) return resolveArtworkUrl(art) ?? null;
+  }
+  return null;
 }
 
 export function RecommendationsBlockContent({
@@ -134,6 +143,13 @@ export function RecommendationsBlockContent({
             cachedHomeRecs = tracks;
             cachedHomeRecsProvidersKey = providers;
             setRecTracks(tracks);
+            if (tracks[0]?.artwork_url) {
+              window.dispatchEvent(
+                new CustomEvent("vessel:home-recs-loaded", {
+                  detail: resolveArtworkUrl(tracks[0].artwork_url),
+                })
+              );
+            }
           } else {
             const fallbackFavs = tasteTracks
               .filter((t) => activeProviders.includes(normalizeProvider(t.provider)))

@@ -196,6 +196,14 @@ export async function setAutoCache(enabled: boolean): Promise<void> {
   return invoke("set_auto_cache", { enabled });
 }
 
+export async function getAutoFallback(): Promise<boolean> {
+  return invoke<boolean>("get_auto_fallback");
+}
+
+export async function setAutoFallback(enabled: boolean): Promise<void> {
+  return invoke("set_auto_fallback", { enabled });
+}
+
 export async function getStorageStats(): Promise<StorageStats> {
   return invoke<StorageStats>("get_storage_stats");
 }

@@ -43,6 +43,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const hasTriggeredAutoplayRef = useRef(false);
   const lastAutoCachedTrackKeyRef = useRef<string | null>(null);
   const lastErrorRef = useRef<string | null>(null);
+  const lastNoticeRef = useRef<string | null>(null);
 
   const { toast, toastError, showToast } = useToastState();
 
@@ -345,6 +346,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     } else if (state?.player.status !== "error") {
       lastErrorRef.current = null;
+      if (state?.status_message) {
+        const msg = state.status_message;
+        if (
+          msg.includes("пробуем найти") ||
+          msg.includes("Воспроизведение через") ||
+          msg.includes("Играю клип-версию")
+        ) {
+          if (lastNoticeRef.current !== msg) {
+            lastNoticeRef.current = msg;
+            showToast(msg, false);
+          }
+        }
+      }
     }
   }, [state?.player.status, state?.status_message, showToast]);
 

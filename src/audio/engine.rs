@@ -52,6 +52,7 @@ pub struct AudioEngine {
     duration_ms: Arc<AtomicU64>,
     crossfade_ms: Arc<AtomicU32>,
     agc_enabled: Arc<AtomicBool>,
+    equalizer: Arc<crate::audio::equalizer::SharedEqualizer>,
     output_rate: u32,
     output_channels: usize,
     output_name: String,
@@ -82,6 +83,7 @@ impl AudioEngine {
         let duration_ms = Arc::new(AtomicU64::new(0));
         let crossfade_ms = Arc::new(AtomicU32::new(0));
         let agc_enabled = Arc::new(AtomicBool::new(false));
+        let equalizer = crate::audio::equalizer::SharedEqualizer::new();
 
         // В колбэке нельзя устраивать сходку с мьютексами, аудиодрайвер за такое этапирует звук в лагерь 🫩
         let stream = build_stream(
@@ -98,6 +100,7 @@ impl AudioEngine {
             Arc::clone(&duration_ms),
             Arc::clone(&crossfade_ms),
             Arc::clone(&agc_enabled),
+            Arc::clone(&equalizer),
         )?;
         stream.play().context("не удалось запустить аудиовыход")?;
 
@@ -116,6 +119,7 @@ impl AudioEngine {
             duration_ms,
             crossfade_ms,
             agc_enabled,
+            equalizer,
             output_rate,
             output_channels,
             output_name,
@@ -128,6 +132,14 @@ impl AudioEngine {
 
     pub fn set_agc(&self, enabled: bool) {
         self.agc_enabled.store(enabled, Ordering::Release);
+    }
+
+    pub fn set_equalizer(&self, enabled: bool, gains: &[f32]) {
+        self.equalizer.set_params(enabled, gains);
+    }
+
+    pub fn get_equalizer(&self) -> (bool, Vec<f32>) {
+        self.equalizer.get_params()
     }
 
     pub fn output_devices() -> Result<Vec<String>> {

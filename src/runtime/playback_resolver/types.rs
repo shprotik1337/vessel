@@ -42,12 +42,14 @@ impl ResolveStage {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaybackSourceKind {
-    /// Автоматически: YouTube Music → Deezer
+    /// Автоматически: YouTube Music → Deezer → SoundCloud
     Auto,
     /// Аудио через каталог YouTube Music
     YouTubeMusic,
     /// Аудио через каталог Deezer
     Deezer,
+    /// Аудио через каталог SoundCloud
+    SoundCloud,
 }
 
 impl PlaybackSourceKind {
@@ -56,6 +58,7 @@ impl PlaybackSourceKind {
             Self::Auto => ProviderKind::YouTubeMusic, // primary; реальная цепочка — chain()
             Self::YouTubeMusic => ProviderKind::YouTubeMusic,
             Self::Deezer => ProviderKind::Deezer,
+            Self::SoundCloud => ProviderKind::SoundCloud,
         }
     }
 
@@ -65,6 +68,7 @@ impl PlaybackSourceKind {
             Self::Auto => "Автоматически",
             Self::YouTubeMusic => "YouTube Music",
             Self::Deezer => "Deezer",
+            Self::SoundCloud => "SoundCloud",
         }
     }
 
@@ -73,6 +77,7 @@ impl PlaybackSourceKind {
             Self::Auto => "auto",
             Self::YouTubeMusic => "youtube_music",
             Self::Deezer => "deezer",
+            Self::SoundCloud => "soundcloud",
         }
     }
 
@@ -81,15 +86,16 @@ impl PlaybackSourceKind {
             "auto" => Some(Self::Auto),
             "youtube_music" | "youtube" => Some(Self::YouTubeMusic),
             "deezer" => Some(Self::Deezer),
+            "soundcloud" => Some(Self::SoundCloud),
             _ => None,
         }
     }
 
-    /// Цепочка probing'а: Auto = YouTube Music → Deezer;
+    /// Цепочка probing'а: Auto = YouTube Music → Deezer → SoundCloud;
     /// ручные режимы — только выбранный источник.
     pub fn chain(self) -> Vec<Self> {
         match self {
-            Self::Auto => vec![Self::YouTubeMusic, Self::Deezer],
+            Self::Auto => vec![Self::YouTubeMusic, Self::Deezer, Self::SoundCloud],
             other => vec![other],
         }
     }
@@ -99,6 +105,7 @@ impl PlaybackSourceKind {
         match self {
             Self::YouTubeMusic => Self::Deezer,
             Self::Deezer => Self::YouTubeMusic,
+            Self::SoundCloud => Self::YouTubeMusic,
             Self::Auto => Self::Deezer,
         }
     }

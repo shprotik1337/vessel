@@ -22,16 +22,16 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   const validPositions = ["left", "right", "top", "bottom"] as const;
   const sidebarPos = validPositions.includes(raw.sidebar?.position)
     ? raw.sidebar.position
-    : "top";
+    : "left";
   const validSidebarStyles: ComponentStyle[] = ["dock", "compact", "round", "floating", "island"];
   const sidebarStyle: ComponentStyle = validSidebarStyles.includes(raw.sidebar?.style)
     ? raw.sidebar.style
-    : "floating";
+    : "dock";
   const sidebarAutoHide = Boolean(raw.sidebar?.autoHide);
   const sidebarWidth =
     typeof raw.sidebar?.width === "number" && !isNaN(raw.sidebar.width)
       ? Math.max(160, Math.min(360, raw.sidebar.width))
-      : 232;
+      : 68;
   const sidebarHeight =
     typeof raw.sidebar?.height === "number" && !isNaN(raw.sidebar.height)
       ? Math.max(50, Math.min(130, raw.sidebar.height))
@@ -48,11 +48,11 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
   const validPlayerStyles: ComponentStyle[] = ["dock", "floating", "progress_fill"];
   const playerStyle: ComponentStyle = validPlayerStyles.includes(raw.player?.style)
     ? raw.player.style
-    : "floating";
+    : "progress_fill";
   const playerHeight =
     typeof raw.player?.height === "number" && !isNaN(raw.player.height)
       ? Math.max(68, Math.min(120, raw.player.height))
-      : 96;
+      : 76;
   const playerWidthPercent =
     typeof raw.player?.widthPercent === "number" && !isNaN(raw.player.widthPercent)
       ? Math.max(50, Math.min(100, raw.player.widthPercent))

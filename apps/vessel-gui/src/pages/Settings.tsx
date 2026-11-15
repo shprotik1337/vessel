@@ -134,6 +134,8 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
     if (confirm === "settings") {
       await api.resetSettings();
       resetToDefaults();
+      localStorage.setItem("vessel_auto_fallback", "true");
+      localStorage.setItem("vessel_auto_cache", "true");
       localStorage.removeItem("vessel_scale");
       localStorage.removeItem("vessel_scale_fullscreen");
       localStorage.removeItem("vessel_scale_windowed");
@@ -149,6 +151,8 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
     } else {
       await api.resetData();
       resetToDefaults();
+      localStorage.setItem("vessel_auto_fallback", "true");
+      localStorage.setItem("vessel_auto_cache", "true");
       localStorage.removeItem("vessel_scale");
       localStorage.removeItem("vessel_scale_fullscreen");
       localStorage.removeItem("vessel_scale_windowed");

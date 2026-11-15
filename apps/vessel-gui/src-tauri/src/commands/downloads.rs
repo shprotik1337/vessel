@@ -112,6 +112,21 @@ pub async fn set_auto_cache(core: CoreState<'_>, enabled: bool) -> Result<(), St
 }
 
 #[tauri::command]
+pub async fn get_auto_fallback(core: CoreState<'_>) -> Result<bool, String> {
+    let core = lock(&core);
+    Ok(core.config.auto_fallback)
+}
+
+#[tauri::command]
+pub async fn set_auto_fallback(core: CoreState<'_>, enabled: bool) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.auto_fallback = enabled;
+    core.runtime.set_auto_fallback(enabled);
+    core.app.config_dirty = true;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_storage_stats(core: CoreState<'_>) -> Result<StorageStats, String> {
     let core = lock(&core);
     let track_cache = PathBuf::from(resolve_track_cache_dir(&core));

@@ -33,7 +33,10 @@ use crate::{
 
 pub use cache::MatchCache;
 pub use matching::{best_candidates, best_candidates_video, best_match, match_confidence_public};
-pub use normalize::{clean_search_query, normalize_title, search_query};
+pub use normalize::{
+    clean_search_query, clean_title_query, normalize_title, primary_artist, search_query,
+    strip_all_brackets,
+};
 pub use types::{
     MAX_CANDIDATES, MIN_CONFIDENCE, MatchCandidate, PlaybackSourceKind, ResolveStage, SEARCH_LIMIT,
     SEARCH_TIMEOUT,
@@ -145,53 +148,53 @@ impl PlaybackResolver {
             bail!("источник воспроизведения {} не подключён", source.as_str());
         };
 
-        // 3. Поиск в чужом каталоге (с таймаутом — сеть может висеть)
-        let query = search_query(track);
-        let search =
-            tokio::time::timeout(SEARCH_TIMEOUT, foreign_provider.search(&query, None)).await;
-        let page = match search {
-            Ok(Ok(page)) => page,
-            Ok(Err(error)) => bail!("поиск в {} не удался: {error}", source.as_str()),
-            Err(_) => bail!(
-                "поиск в {} не ответил за {} с",
-                source.as_str(),
-                SEARCH_TIMEOUT.as_secs()
-            ),
-        };
+        // 3. Поиск в чужом каталоге: 3-шаговый каскад (как в PlatformSwitchMenu)
+        // Шаг 1: с артистом со скобочками
+        // Шаг 2: со скобочками без артиста
+        // Шаг 3: без скобочек и без артиста
+        let artist = primary_artist(track);
+        let raw_title = track.title.trim();
+        let clean_title = strip_all_brackets(raw_title);
 
-        // 4. Матчинг кандидатов
-        let mut candidates = best_candidates(track, &page.tracks, foreign_kind);
-        if candidates.is_empty() {
-            // Фолбэк: пробуем очищенный запрос без feat/скобок (актуально для Deezer)
-            let clean_q = clean_search_query(track);
-            if clean_q != query {
-                if let Ok(Ok(clean_page)) =
-                    tokio::time::timeout(SEARCH_TIMEOUT, foreign_provider.search(&clean_q, None))
-                        .await
-                {
-                    let clean_candidates = best_candidates(track, &clean_page.tracks, foreign_kind);
-                    if !clean_candidates.is_empty() {
-                        candidates = clean_candidates;
+        let mut queries = Vec::new();
+        if !artist.is_empty() {
+            queries.push(format!("{raw_title} {artist}"));
+        }
+        queries.push(raw_title.to_string());
+        if !clean_title.is_empty() && clean_title != raw_title {
+            queries.push(clean_title.clone());
+        }
+
+        let mut candidates: Vec<MatchCandidate> = Vec::new();
+
+        for q in &queries {
+            if let Ok(Ok(page)) =
+                tokio::time::timeout(SEARCH_TIMEOUT, foreign_provider.search(q, None)).await
+            {
+                if !page.tracks.is_empty() {
+                    let ranked = best_candidates(track, &page.tracks, foreign_kind);
+                    if !ranked.is_empty() {
+                        candidates = ranked;
+                        break;
+                    }
+                    if foreign_kind == ProviderKind::YouTubeMusic {
+                        let video_ranked = best_candidates_video(track, &page.tracks);
+                        if !video_ranked.is_empty() {
+                            candidates = video_ranked;
+                            break;
+                        }
                     }
                 }
             }
         }
 
         if candidates.is_empty() {
-            let had_any = !page.tracks.is_empty();
-            let stage = if had_any {
-                ResolveStage::MatchNotConfident
-            } else {
-                ResolveStage::MatchNotFound
-            };
             crate::dlog!(
-                "[resolver] {}: «{}» → {} (кандидатов в выдаче: {})",
-                stage.describe(),
+                "[resolver] MATCH_NOT_FOUND: «{}» → {}",
                 track.title,
-                source.as_str(),
-                page.tracks.len()
+                source.as_str()
             );
-            return Ok((None, stage));
+            return Ok((None, ResolveStage::MatchNotFound));
         }
 
         let matched: Vec<TrackRef> = candidates

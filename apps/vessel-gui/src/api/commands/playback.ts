@@ -41,6 +41,10 @@ export async function setAudioAgc(enabled: boolean): Promise<void> {
   return invoke("set_audio_agc", { enabled });
 }
 
+export async function setEqualizer(enabled: boolean, gains: number[]): Promise<void> {
+  return invoke("set_equalizer", { enabled, gains });
+}
+
 export async function stopPlayback(): Promise<void> {
   return invoke("stop");
 }

@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
 import { useApp } from "../../../store";
 import { useCustomization, hexToRgba } from "../../../customization";
+import * as api from "../../../api/commands";
 import {
   IconSparkles,
-  IconCustomization,
   IconSolid,
   IconDisc,
   IconPlay,
@@ -123,6 +123,19 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
     }
   };
 
+  const handlePickFromPc = async () => {
+    try {
+      const filePath = await api.pickFile(["png", "jpg", "jpeg", "webp", "gif", "bmp"]);
+      if (!filePath) return;
+      const dataUrl = await api.loadImageAsDataUrl(filePath);
+      const fileName = filePath.split(/[/\\]/).pop() || `Изображение ${Date.now()}`;
+      addToImageLibrary({ url: dataUrl, name: fileName });
+      showToast(lang === "ru" ? "Изображение добавлено в библиотеку!" : "Image added to library!");
+    } catch (err) {
+      console.error("Failed to pick image file:", err);
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -158,38 +171,28 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
       </div>
 
       <div className="sett-section-title">
-        {lang === "ru" ? "ОКРУЖЕНИЕ ИНТЕРФЕЙСА (ЭМБИЕНТ-СВЕЧЕНИЕ)" : "AMBIENT GLOW"}
+        {lang === "ru" ? "КОНТЕКСТНЫЙ ДИНАМИЧЕСКИЙ ФОН" : "CONTEXTUAL DYNAMIC BACKGROUND"}
       </div>
       <div className="sett-card">
         <div className="sett-card-info" style={{ marginBottom: 12 }}>
           <div className="sett-card-title">
-            {lang === "ru" ? "Режим фонового рассеянного свечения" : "Ambient Glow Mode"}
+            {lang === "ru" ? "Контекстный динамический фон" : "Contextual Dynamic Background"}
           </div>
           <div className="sett-card-desc">
             {lang === "ru"
-              ? "Выберите источник цветного эмбиент-свечения позади интерфейса"
-              : "Choose source of colored ambient glow behind UI"}
+              ? "Плавное рассеянное свечение обложки рекомендаций на Главной, обложек плейлистов и индиго-ауры в Библиотеке с мягким угасанием в цвет темы"
+              : "Smooth ambient glow matching recommendations on Home, playlist covers, and indigo aura in Library fading into theme background"}
           </div>
         </div>
         <div className="sett-segmented-group">
           <button
             type="button"
-            className={`sett-segmented-btn ${(config.theme?.ambientMode || "dynamic") === "dynamic" ? "active" : ""}`}
+            className={`sett-segmented-btn ${(config.theme?.ambientMode !== "off") ? "active" : ""}`}
             onClick={() => updateThemeDirectly({ ambientMode: "dynamic" })}
           >
             <span className="sett-segmented-btn-icon"><IconSparkles size={15} /></span>
             <span className="sett-segmented-btn-label">
-              {lang === "ru" ? "Динамический (под обложку трека)" : "Dynamic (Cover match)"}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.theme?.ambientMode === "theme" ? "active" : ""}`}
-            onClick={() => updateThemeDirectly({ ambientMode: "theme" })}
-          >
-            <span className="sett-segmented-btn-icon"><IconCustomization size={15} /></span>
-            <span className="sett-segmented-btn-label">
-              {lang === "ru" ? "Статичный (акцент темы)" : "Static (Theme accent)"}
+              {lang === "ru" ? "Динамический" : "Dynamic"}
             </span>
           </button>
           <button
@@ -199,7 +202,7 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
           >
             <span className="sett-segmented-btn-icon"><IconSolid size={15} /></span>
             <span className="sett-segmented-btn-label">
-              {lang === "ru" ? "Отключено (чистый фон)" : "Off (Clean background)"}
+              {lang === "ru" ? "Отключен (чистый фон)" : "Off (Clean theme background)"}
             </span>
           </button>
         </div>
@@ -404,7 +407,7 @@ export function BackgroundSection({ onOpenImagePicker }: BackgroundSectionProps)
             />
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handlePickFromPc}
               title={lang === "ru" ? "Выбрать изображение с компьютера" : "Choose image from computer"}
               style={{
                 position: "absolute",

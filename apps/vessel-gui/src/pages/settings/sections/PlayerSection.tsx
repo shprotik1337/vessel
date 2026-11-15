@@ -3,9 +3,6 @@ import { useCustomization } from "../../../customization";
 import {
   IconPlayer,
   IconSparkles,
-  IconBackground,
-  IconInterface,
-  IconDisc,
   IconLayoutBottom,
   IconLayoutTop,
   IconLayoutLeft,
@@ -23,9 +20,7 @@ export function PlayerSection() {
     setPlayerStyle,
     setQueuePosition,
     setShowMiniPlayer,
-    setMiniPlayerBg,
     setMiniPlayerShape,
-    setPlayerOptions,
     setFullscreenLyricsPosition,
   } = useCustomization();
 
@@ -208,43 +203,6 @@ export function PlayerSection() {
       <div className="sett-card">
         <div className="sett-card-info" style={{ marginBottom: 12 }}>
           <div className="sett-card-title">
-            {lang === "ru" ? "Фон мини-плеера" : "Mini-Player Background"}
-          </div>
-          <div className="sett-card-desc">
-            {lang === "ru" ? "Выберите источник фона мини-плеера" : "Select mini-player background source"}
-          </div>
-        </div>
-        <div className="sett-segmented-group">
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.miniPlayerBg === "theme" || !config.player?.miniPlayerBg ? "active" : ""}`}
-            onClick={() => setMiniPlayerBg("theme")}
-          >
-            <span className="sett-segmented-btn-icon"><IconInterface size={14} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Тема" : "Theme"}</span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.miniPlayerBg === "artwork" ? "active" : ""}`}
-            onClick={() => setMiniPlayerBg("artwork")}
-          >
-            <span className="sett-segmented-btn-icon"><IconBackground size={14} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Обложка" : "Artwork"}</span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.miniPlayerBg === "dominant" ? "active" : ""}`}
-            onClick={() => setMiniPlayerBg("dominant")}
-          >
-            <span className="sett-segmented-btn-icon"><IconDisc size={14} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Цвет обложки" : "Dominant"}</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="sett-card">
-        <div className="sett-card-info" style={{ marginBottom: 12 }}>
-          <div className="sett-card-title">
             {lang === "ru" ? "Форма мини-плеера" : "Mini-Player Shape"}
           </div>
           <div className="sett-card-desc">
@@ -270,29 +228,6 @@ export function PlayerSection() {
             <span className="sett-segmented-btn-icon"><IconShapeRect size={15} /></span>
             <span className="sett-segmented-btn-label">{lang === "ru" ? "Стандартный" : "Standard"}</span>
           </button>
-        </div>
-      </div>
-
-      <div className="sett-card">
-        <div className="sett-card-row">
-          <div className="sett-card-info">
-            <div className="sett-card-title">
-              {lang === "ru" ? "Крупные значки управления" : "Large Control Icons"}
-            </div>
-            <div className="sett-card-desc">
-              {lang === "ru"
-                ? "Увеличить размер кнопок Play, Next и Previous для удобного нажатия"
-                : "Enlarge Play, Next and Previous buttons for easier clicking"}
-            </div>
-          </div>
-          <label className="sett-switch">
-            <input
-              type="checkbox"
-              checked={config.player?.largeIcons ?? false}
-              onChange={(e) => setPlayerOptions({ largeIcons: e.target.checked })}
-            />
-            <span className="sett-slider" />
-          </label>
         </div>
       </div>
 

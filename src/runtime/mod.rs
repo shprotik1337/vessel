@@ -259,16 +259,23 @@ impl Runtime {
                     generation,
                     source,
                     video_only_notice,
+                    replaced_track,
                 } if generation == self.playback_generation => {
                     crate::dlog!(
                         "[Playback][{}] playback started (gen {generation})",
                         self.playback_session_id
                     );
                     self.last_audio_status = None;
-                    // Предупреждение «только клип» — до старта, UI покажет
-                    // в статусной строке
+                    if let Some(replaced) = &replaced_track {
+                        self.current_track = Some(replaced.clone());
+                    }
                     if let Some(notice) = video_only_notice {
                         actions.push(Action::PlaybackNotice(notice));
+                    }
+                    if let Some(replaced) = replaced_track {
+                        actions.push(Action::TrackReplaced {
+                            new_track: replaced,
+                        });
                     }
                     if let Some(audio) = &self.audio {
                         audio.play(source);
@@ -277,6 +284,11 @@ impl Runtime {
                             "в системе не найден аудиовыход".to_string(),
                         ));
                     }
+                }
+                RuntimeMessage::PlaybackNotice { generation, message }
+                    if generation == self.playback_generation =>
+                {
+                    actions.push(Action::PlaybackNotice(message));
                 }
                 RuntimeMessage::PlaybackFailed { generation, error }
                     if generation == self.playback_generation =>
@@ -403,6 +415,14 @@ impl Runtime {
 
     pub fn set_auto_cache(&mut self, enabled: bool) {
         self.config.auto_cache = enabled;
+    }
+
+    pub fn set_auto_fallback(&mut self, enabled: bool) {
+        self.config.auto_fallback = enabled;
+    }
+
+    pub fn auto_fallback(&self) -> bool {
+        self.config.auto_fallback
     }
 
     pub fn reload_providers(&mut self) {

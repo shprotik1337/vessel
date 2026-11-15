@@ -44,6 +44,10 @@ pub enum Action {
     },
     Audio(AudioEvent),
     PlaybackFailed(String),
+    /// Трек заменён на альтернативной платформе (Deezer / YTM / SoundCloud)
+    TrackReplaced {
+        new_track: TrackRef,
+    },
     /// Некритичное предупреждение playback-пайплайна (например «играю
     /// клип-версию, полный трек недоступен») — показываем в статусной строке.
     PlaybackNotice(String),

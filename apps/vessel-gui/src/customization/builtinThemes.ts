@@ -18,7 +18,7 @@ export const BUILTIN_THEMES: ThemePreset[] = [
   {
     id: "amoled",
     name: "AMOLED",
-    desc: "Максимально глубокий чёрный для OLED-экранов",
+    desc: "Максимально глубокий чёрный для OLED-экранов с акриловым стеклом",
     accentColor: "#ffffff",
     secondaryColor: "#000000",
     appBgColor: "#000000",
@@ -26,9 +26,9 @@ export const BUILTIN_THEMES: ThemePreset[] = [
     playerBgColor: "#000000",
     cardBgColor: "#000000",
     textColor: "#ffffff",
-    glassMode: false,
-    glassOpacity: 1,
-    ambientMode: "off",
+    glassMode: true,
+    glassOpacity: 0.35,
+    ambientMode: "dynamic",
   },
   {
     id: "crimson",
