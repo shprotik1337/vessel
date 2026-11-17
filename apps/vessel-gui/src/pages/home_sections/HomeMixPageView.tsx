@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
 import { useApp } from "../../store";
 import { Artwork } from "../../components/Artwork";
-import { PlatformIcon } from "../../components/PlatformIcon";
 import { filterValidArtists, trackKey } from "../../lib/utils";
 import type { MixItem } from "../../api/types";
 import * as api from "../../api/commands";
-import { formatDuration, getProviderLabel } from "./HomeHelpers";
+import { formatDuration } from "./HomeHelpers";
 
 export function HomeMixPageView({
   mix,
@@ -134,7 +133,7 @@ export function HomeMixPageView({
                         className="pl-artist-link"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigateTo("artist", { artist, provider: t.provider });
+                          navigateTo("artist", { artist, provider: t.provider === "spotify" ? "deezer" : t.provider });
                         }}
                       >
                         {artist}
@@ -143,10 +142,6 @@ export function HomeMixPageView({
                     </span>
                   ))}
                 </div>
-              </div>
-              <div className="home-lib-badge">
-                <PlatformIcon kind={t.provider as any} size={14} />
-                <span>{getProviderLabel(t.provider)}</span>
               </div>
               <div className="home-lib-duration">{formatDuration(t.duration_ms)}</div>
             </div>

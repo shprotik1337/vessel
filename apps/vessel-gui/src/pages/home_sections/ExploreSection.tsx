@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "../../store";
 import { Artwork } from "../../components/Artwork";
-import { PlatformIcon } from "../../components/PlatformIcon";
 import { cleanAlbumTitle } from "../../lib/utils";
 import * as api from "../../api/commands";
 import { ScrollableCardRow, globalArtistAvatars } from "./HomeHelpers";
@@ -325,11 +324,6 @@ export function ExploreBlockContent({
                       seed={i + 10}
                       className="home-artist-avatar-img"
                     />
-                    {art.provider && (
-                      <div className="home-rec-badge" style={{ bottom: "2px", right: "2px" }}>
-                        <PlatformIcon kind={art.provider as any} size={12} />
-                      </div>
-                    )}
                   </div>
                   <div className="home-artist-name">{art.name}</div>
                   <div className="home-artist-sub">{lang === "ru" ? "Исполнитель" : "Artist"}</div>
@@ -382,11 +376,6 @@ export function ExploreBlockContent({
                           </svg>
                         </button>
                       </div>
-                      {alb.provider && (
-                        <div className="home-rec-badge">
-                          <PlatformIcon kind={alb.provider as any} size={13} />
-                        </div>
-                      )}
                     </div>
                     <div className="home-explore-card-title">{title}</div>
                     <div className="home-explore-card-sub">{author}</div>

@@ -35,10 +35,31 @@ export function CreateOrImportPlaylistModal({
   const [importing, setImporting] = useState(false);
 
   // Likes transfer state
-  const [likesProvider, setLikesProvider] = useState<"deezer" | "spotify" | "soundcloud">("deezer");
+  const [likesProvider, setLikesProvider] = useState<"deezer" | "spotify" | "soundcloud">("spotify");
   const [likesTarget, setLikesTarget] = useState<"favorites" | "playlist">("favorites");
   const [likesPlaylistTitle, setLikesPlaylistTitle] = useState("");
   const [likesProfileUrl, setLikesProfileUrl] = useState("");
+  const [spotifyAuthOpen, setSpotifyAuthOpen] = useState(false);
+
+  const spotifyConnected = Boolean(
+    state?.providers?.find((p) => p.kind === "spotify")?.connected
+  );
+
+  useEffect(() => {
+    if (!spotifyAuthOpen) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const stillOpen = await api.spotifyLoginWindowOpen();
+        if (!stillOpen) {
+          setSpotifyAuthOpen(false);
+          await refresh();
+        }
+      } catch {
+        setSpotifyAuthOpen(false);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [spotifyAuthOpen, refresh]);
 
   // Sliding capsule refs and styles
   const modeRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({});
@@ -620,8 +641,8 @@ export function CreateOrImportPlaylistModal({
                   />
                   {(
                     [
-                      { key: "deezer", label: "Deezer" },
                       { key: "spotify", label: "Spotify" },
+                      { key: "deezer", label: "Deezer" },
                       { key: "soundcloud", label: "SoundCloud" },
                     ] as const
                   ).map((prov) => {
@@ -659,6 +680,56 @@ export function CreateOrImportPlaylistModal({
                     );
                   })}
                 </div>
+
+                {likesProvider === "spotify" && !spotifyConnected && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                      background: "var(--elev, rgba(255, 255, 255, 0.05))",
+                      border: "1px solid var(--border, rgba(255, 255, 255, 0.1))",
+                      borderRadius: "10px",
+                      padding: "10px 12px",
+                    }}
+                  >
+                    <span style={{ fontSize: "12.5px", color: "var(--text2)" }}>
+                      {lang === "ru"
+                        ? "Войдите в аккаунт Spotify, чтобы перенести лайки"
+                        : "Sign in to Spotify to transfer your liked tracks"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          setSpotifyAuthOpen(true);
+                          await api.spotifyBrowserLogin();
+                        } catch (err) {
+                          setSpotifyAuthOpen(false);
+                          showToast(String(err), true);
+                        }
+                      }}
+                      disabled={spotifyAuthOpen}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#1DB954",
+                        color: "#000000",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        cursor: spotifyAuthOpen ? "default" : "pointer",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {spotifyAuthOpen
+                        ? (lang === "ru" ? "Ожидание входа..." : "Signing in...")
+                        : (lang === "ru" ? "Войти в Spotify" : "Sign in to Spotify")}
+                    </button>
+                  </div>
+                )}
 
                 {likesProvider === "soundcloud" && (
                   <div

@@ -14,7 +14,9 @@
   --safe-area-bottom-gap: 76px;
   --safe-area-bottom: calc(var(--player-height, 96px) + var(--player-bottom-offset, 8px) + var(--safe-area-bottom-gap, 76px));
 }
-html,body{height:100%}
+html,body{height:100%;user-select:none;-webkit-user-select:none}
+input,textarea,[contenteditable="true"]{user-select:text;-webkit-user-select:text}
+img,a{-webkit-user-drag:none}
 body{background:var(--bg);color:var(--text);font-family:Inter,-apple-system,'Segoe UI',sans-serif;font-size:13px;-webkit-font-smoothing:antialiased;overflow:hidden}
 button{font-family:inherit}
 ::-webkit-scrollbar{width:10px;height:10px}
@@ -9941,178 +9943,227 @@ body:has(.app-shell.no-player) .library-fab-container {
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.06);
 }
 
-/* AMOLED Wave Banner */
-.amoled-wave-banner {
+/* Моя волна — виджет шёлкового потока (перенос 1-в-1 из референса, режим «Спокойная», 500px) */
+.wave-stream-widget {
   position: relative;
   width: 100%;
-  height: 300px;
-  background: #000000;
-  border-radius: 20px;
-  overflow: visible;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  height: 500px;
+  border-radius: 26px;
+  overflow: hidden;
+  background: #080808;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.85);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  padding: 40px 20px 32px;
   user-select: none;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   margin-bottom: 24px;
 }
 
-.amoled-wave-canvas {
+.wave-stream-canvas {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none;
   z-index: 1;
-  border-radius: 20px;
+  filter: blur(22px) saturate(140%);
+  opacity: 0.95;
+  pointer-events: none;
 }
 
-.amoled-wave-center {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.amoled-wave-title-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-  background: transparent;
-  border: none;
-  color: #ffffff;
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  cursor: pointer;
-  padding: 6px 16px;
-  border-radius: 14px;
-  transition: transform 0.16s ease, opacity 0.16s ease;
-}
-
-.amoled-wave-title-btn:hover {
-  transform: scale(1.03);
-  opacity: 0.92;
-}
-
-.amoled-wave-title-btn:active {
-  transform: scale(0.98);
-}
-
-.amoled-wave-play-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-}
-
-.amoled-wave-title-text {
-  color: #ffffff;
-  line-height: 1;
-}
-
-.amoled-wave-tune-container {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.amoled-wave-tune-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 18px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.16s ease;
-}
-
-.amoled-wave-tune-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.35);
-  transform: scale(1.02);
-}
-
-.amoled-wave-tune-btn:active {
-  transform: scale(0.98);
-}
-
-.amoled-wave-tune-btn.active {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-/* Floating Platforms Row Popover */
-.amoled-wave-popover {
+.wave-stream-vignette {
   position: absolute;
-  top: calc(100% + 10px);
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
+  z-index: 2;
+  background:
+    radial-gradient(ellipse 65% 55% at 50% 52%, transparent 30%, #080808 95%),
+    linear-gradient(
+      to bottom,
+      rgba(8, 8, 8, 0.6) 0%,
+      transparent 25%,
+      transparent 75%,
+      rgba(8, 8, 8, 0.85) 100%
+    );
+  pointer-events: none;
+}
+
+.wave-stream-header {
+  position: relative;
+  z-index: 5;
+  text-align: center;
+  max-width: min(760px, 90%);
+}
+
+.wave-stream-header h1 {
+  margin: 0 0 6px;
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: -0.6px;
+  line-height: 1.1;
+  color: #ffffff;
+  text-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+
+.wave-stream-subtitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.3s;
+}
+
+.wave-covers-track {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  height: 240px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
-  background: rgba(14, 14, 16, 0.94);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 30px;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.7);
-  z-index: 20;
-  animation: amoledWavePopIn 0.18s ease-out;
+  justify-content: center;
 }
 
-@keyframes amoledWavePopIn {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -6px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0) scale(1);
-  }
+.wave-cover-item {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border-radius: 24px;
+  overflow: hidden;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.7);
+  transition:
+    transform 0.65s cubic-bezier(0.19, 1, 0.22, 1),
+    opacity 0.65s ease,
+    filter 0.65s ease,
+    box-shadow 0.65s ease;
+  will-change: transform, opacity;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.amoled-wave-platform-circle {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: inline-flex;
+.wave-cover-item.active {
+  box-shadow:
+    0 22px 50px rgba(0, 0, 0, 0.85),
+    0 0 25px rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.wave-cover-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.wave-cover-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 40px;
+  font-weight: 800;
+}
+
+.wave-cover-placeholder {
+  background: rgba(255, 255, 255, 0.06);
+  cursor: default;
+}
+
+.wave-cover-loader {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+
+.wave-cover-item.loading .wave-cover-loader {
+  opacity: 1;
+}
+
+.wave-cover-spinner {
+  width: 36px;
+  height: 36px;
+  border: 2.5px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: waveStreamSpin 0.7s linear infinite;
+}
+
+@keyframes waveStreamSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.wave-stream-controls {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.wave-stream-play-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  position: relative;
   padding: 0;
-  transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
-.amoled-wave-platform-circle:hover {
-  transform: scale(1.12);
-  background: rgba(255, 255, 255, 0.12);
+.wave-stream-play-btn:hover {
+  transform: scale(1.08);
 }
 
-.amoled-wave-platform-circle.active {
-  background: rgba(255, 255, 255, 0.13);
-  border-color: rgba(255, 255, 255, 0.22);
+.wave-stream-play-btn:active {
+  transform: scale(0.94);
 }
 
-.amoled-wave-platform-circle.inactive {
-  opacity: 0.36;
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.05);
+.wave-stream-play-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: #080808;
+}
+
+.wave-btn-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid rgba(0, 0, 0, 0.15);
+  border-top-color: #080808;
+  border-radius: 50%;
+  animation: waveStreamSpin 0.65s linear infinite;
+  display: none;
+}
+
+.wave-stream-play-btn.loading svg {
+  display: none;
+}
+
+.wave-stream-play-btn.loading .wave-btn-spinner {
+  display: block;
 }
 
 /* Modern Wave Hero Card */

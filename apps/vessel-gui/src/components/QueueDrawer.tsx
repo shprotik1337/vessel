@@ -4,8 +4,7 @@ import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
 import { Artwork } from "./Artwork";
 import { IconSparkle, IconInfinity, IconWaveStream } from "./Icons";
-import { PlatformIcon } from "./PlatformIcon";
-import { formatDuration, filterValidArtists, isFavorite, trackKey, providerLabel } from "../lib/utils";
+import { formatDuration, filterValidArtists, isFavorite, trackKey } from "../lib/utils";
 import type { TrackRef } from "../api/types";
 import { fetchLyricsMulti, parseCandidateToLyricsData, type LyricsData } from "../lib/lyrics";
 import * as api from "../api/commands";
@@ -650,14 +649,6 @@ export function QueueDrawer() {
                       {filterValidArtists(currentTrack.artists).join(", ") || "—"}
                     </div>
                   </div>
-                  <span
-                    className="queue-platform-badge"
-                    title={providerLabel(currentTrack.provider)}
-                  >
-                    <span className="platform-icon-wrap">
-                      <PlatformIcon kind={currentTrack.provider} size={15} />
-                    </span>
-                  </span>
                   <div className="queue-playing-indicator">
                     <span className="queue-eq-bar" />
                     <span className="queue-eq-bar" />
@@ -769,15 +760,6 @@ export function QueueDrawer() {
                           </div>
                         </div>
 
-                        <span
-                          className="queue-platform-badge"
-                          title={providerLabel(track.provider)}
-                        >
-                          <span className="platform-icon-wrap">
-                            <PlatformIcon kind={track.provider} size={15} />
-                          </span>
-                        </span>
-
                         <div className="queue-track-duration">
                           {track.duration_ms ? formatDuration(track.duration_ms) : ""}
                         </div>
@@ -846,11 +828,6 @@ export function QueueDrawer() {
               {filterValidArtists(flying.track.artists).join(", ") || "—"}
             </div>
           </div>
-          <span className="queue-platform-badge" title={providerLabel(flying.track.provider)}>
-            <span className="platform-icon-wrap">
-              <PlatformIcon kind={flying.track.provider} size={15} />
-            </span>
-          </span>
           <div className="queue-track-duration">
             {flying.track.duration_ms ? formatDuration(flying.track.duration_ms) : ""}
           </div>

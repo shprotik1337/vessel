@@ -123,7 +123,25 @@ impl ServerClient {
             reqwest::header::AUTHORIZATION,
             format!("Bearer {}", self.token),
         );
-        if let Some(session) = session_token {
+        let owned_session = if session_token.is_none() {
+            self.secrets
+                .as_ref()
+                .and_then(|s| {
+                    s.get_named("vessel-user-session")
+                        .ok()
+                        .flatten()
+                        .filter(|v| !v.trim().is_empty())
+                        .or_else(|| {
+                            s.get(crate::secrets::SecretKey::SessionToken)
+                                .ok()
+                                .flatten()
+                                .filter(|v| !v.trim().is_empty())
+                        })
+                })
+        } else {
+            None
+        };
+        if let Some(session) = session_token.or(owned_session.as_deref()) {
             request = request.header(crate::protocol::USER_SESSION_HEADER, session);
         }
         if let Some(secrets) = &self.secrets {

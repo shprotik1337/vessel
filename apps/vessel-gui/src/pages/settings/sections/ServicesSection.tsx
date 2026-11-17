@@ -19,7 +19,6 @@ import {
   type BrowserLoginKind,
   type SettingsTab,
 } from "../types";
-import { t } from "../../../i18n";
 import * as api from "../../../api/commands";
 
 interface ServicesSectionProps {
@@ -43,116 +42,13 @@ const SERVICE_FEATURES = [
   { id: "playlists", label: "Поиск плейлистов", icon: <IconPlaylist size={16} /> },
 ];
 
-function SpotifyPlaybackSourceSection() {
-  const { showToast, lang, state } = useApp();
-  const [source, setSource] = useState<string>("youtube_music");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    void api.getSpotifyPlaybackSource().then(setSource).catch(() => {});
-  }, []);
-
-  const isSpotifyConnected = state?.providers.some(
-    (p) => p.kind === "spotify" && p.connected,
-  );
-  const ytAvailable = state?.providers.some((p) => p.kind === "youtube_music" && p.connected) ?? true;
-  const deezerAvailable = state?.providers.some((p) => p.kind === "deezer" && p.connected) ?? false;
-  const autoAvailable = deezerAvailable || ytAvailable;
-
-  const choose = async (key: string) => {
-    setSaving(true);
-    try {
-      await api.setSpotifyPlaybackSource(key);
-      setSource(key);
-      showToast(t(lang, "settings.playbackSource.saved"));
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const options = [
-    {
-      key: "auto",
-      label: t(lang, "settings.playbackSource.auto"),
-      desc: "YouTube Music → Deezer",
-      available: autoAvailable,
-    },
-    {
-      key: "youtube_music",
-      label: t(lang, "settings.playbackSource.yt"),
-      desc: "YouTube Music",
-      available: ytAvailable,
-    },
-    {
-      key: "deezer",
-      label: t(lang, "settings.playbackSource.deezer"),
-      desc: "Deezer",
-      available: deezerAvailable,
-    },
-  ];
-
-  return (
-    <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255, 255, 255, 0.08)" }}>
-      <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text)", marginBottom: 4 }}>
-        {t(lang, "settings.playbackSource")}
-      </div>
-      <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 12, lineHeight: 1.4 }}>
-        {isSpotifyConnected
-          ? t(lang, "settings.playbackSource.sub")
-          : `${t(lang, "settings.notConnected")} — Spotify`}
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {options.map((opt) => {
-          const isSelected = source === opt.key;
-          return (
-            <button
-              key={opt.key}
-              type="button"
-              className="sett-token-action-btn"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: isSelected ? "1.5px solid var(--accent)" : "1px solid rgba(255, 255, 255, 0.08)",
-                background: isSelected ? "var(--elev2, rgba(255, 255, 255, 0.08))" : "rgba(255, 255, 255, 0.03)",
-                color: isSelected ? "#ffffff" : "var(--text2)",
-                opacity: opt.available ? 1 : 0.45,
-                cursor: opt.available && !saving ? "pointer" : "not-allowed",
-                transition: "all 0.15s ease",
-              }}
-              disabled={saving || !opt.available}
-              onClick={() => void choose(opt.key)}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: "50%",
-                  border: isSelected ? "4px solid var(--accent)" : "2px solid rgba(255, 255, 255, 0.3)",
-                  background: isSelected ? "#fff" : "transparent",
-                  boxSizing: "border-box",
-                  flexShrink: 0,
-                  transition: "all 0.15s ease",
-                }} />
-                <span style={{ fontSize: 13, fontWeight: isSelected ? 600 : 400 }}>
-                  {opt.label}
-                </span>
-              </div>
-              <span style={{ fontSize: 11, color: isSelected ? "var(--accent)" : "var(--text3)" }}>
-                {opt.available ? opt.desc : t(lang, "settings.playbackSource.unavailable")}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+const SPOTIFY_FEATURES = [
+  { id: "token", label: "Проверка токена", icon: <IconKey size={16} /> },
+  { id: "search", label: "Поиск треков (метаданные)", icon: <IconSearch size={16} /> },
+  { id: "metadata", label: "Получение метаданных треков", icon: <IconDisc size={16} /> },
+  { id: "playlists", label: "Перенос плейлистов и альбомов", icon: <IconPlaylist size={16} /> },
+  { id: "likes", label: "Перенос лайков (Избранное)", icon: <IconSparkles size={16} /> },
+];
 
 export function ServicesSection({ activeTab }: ServicesSectionProps) {
   const { state, refresh, showToast, lang } = useApp();
@@ -175,7 +71,10 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
   };
   const providerStatus = state?.providers.find((p) => p.kind === serviceKey);
   const isYt = serviceKey === "youtube_music";
-  const isConnected = isYt ? true : (providerStatus?.connected ?? false);
+  const isSpotify = serviceKey === "spotify";
+  const isGuest = Boolean(providerStatus?.guest);
+  const isPublicAccess = isYt || isGuest;
+  const isConnected = isPublicAccess ? true : (providerStatus?.connected ?? false);
   const segment = api.PROVIDER_SEGMENT[serviceKey] ?? serviceKey;
   const route = routes[segment] ?? "local";
 
@@ -382,9 +281,13 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
           <span>{providerStatus?.label || (isYt ? "YouTube Music" : serviceKey)}</span>
         </h1>
         <p className="sett-page-sub">
-          {lang === "ru"
-            ? "Настройка авторизации и роутинга сетевых запросов"
-            : "Authorization and routing settings"}
+          {isSpotify
+            ? (lang === "ru"
+                ? "Spotify нужен только для переноса плейлистов, альбомов и лайков"
+                : "Spotify is used only for transferring playlists, albums, and liked tracks")
+            : (lang === "ru"
+                ? "Настройка авторизации и роутинга сетевых запросов"
+                : "Authorization and routing settings")}
         </p>
       </div>
 
@@ -397,14 +300,14 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
             </div>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
-                {isYt
+                {isPublicAccess
                   ? (lang === "ru" ? "Сервис активен" : "Service active")
                   : isConnected
                   ? (lang === "ru" ? "Сервис настроен" : "Service configured")
                   : (lang === "ru" ? "Требуется авторизация" : "Authorization required")}
               </div>
               <div style={{ fontSize: 13, color: "var(--text2)", marginTop: 2 }}>
-                {isYt
+                {isPublicAccess
                   ? (lang === "ru" ? "Авторизация не требуется — сервис работает публично" : "No authorization required — public access")
                   : isConnected
                   ? (lang === "ru" ? "Готов к использованию" : "Ready to use")
@@ -422,8 +325,8 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, color: "var(--text)" }}>
-                {isYt
-                  ? (lang === "ru" ? "YouTube Music (Публичный доступ)" : "YouTube Music (Public access)")
+                {isPublicAccess
+                  ? `${providerStatus?.label || (isYt ? "YouTube Music" : serviceKey)} (${lang === "ru" ? "Публичный доступ" : "Public access"})`
                   : isConnected
                   ? `${providerStatus?.label} ${lang === "ru" ? "Аккаунт" : "Account"}`
                   : (lang === "ru" ? "Не авторизован" : "Not authorized")}
@@ -481,7 +384,7 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
             </button>
           )}
 
-          {!isYt && isConnected && (
+          {!isPublicAccess && isConnected && (
             <button
               type="button"
               className="sett-token-action-btn"
@@ -495,10 +398,6 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
             >
               {lang === "ru" ? "Отключить сервис" : "Disconnect Service"}
             </button>
-          )}
-
-          {serviceKey === "spotify" && (
-            <SpotifyPlaybackSourceSection />
           )}
         </div>
 
@@ -529,7 +428,7 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
           </div>
 
           <div className="sett-capabilities-list">
-            {SERVICE_FEATURES.map((feat) => (
+            {(isSpotify ? SPOTIFY_FEATURES : SERVICE_FEATURES).map((feat) => (
               <div key={feat.id} className="sett-capability-row">
                 <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span>{feat.icon}</span>

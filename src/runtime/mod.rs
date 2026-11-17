@@ -23,6 +23,7 @@ use crate::{
     audio::{AudioEngine, AudioStatus},
     config::AppConfig,
     effect::AppEffect,
+    model::ProviderKind,
     provider::ProviderRegistry,
     secrets::SecretStore,
     storage::{HistoryEntry, Storage},
@@ -30,7 +31,7 @@ use crate::{
 
 use message::RuntimeMessage;
 use onboarding::{spawn_soundcloud_probe, spawn_zapret_apply, spawn_zapret_plan};
-use providers::build_registry;
+use providers::{build_registry, build_registry_with_guests};
 
 pub struct Runtime {
     pub(super) providers: Arc<ProviderRegistry>,
@@ -65,6 +66,9 @@ pub struct Runtime {
     pub(super) storage: Storage,
     pub(super) current_track: Option<crate::model::TrackRef>,
     pub(super) current_track_started: bool,
+    /// Проверенные сервером гостевые провайдеры (например `["deezer", "soundcloud"]`),
+    /// активны только для онлайн-аккаунтов Vessel.
+    pub(super) guest_providers: Vec<String>,
 }
 
 impl Runtime {
@@ -80,11 +84,8 @@ impl Runtime {
         };
         let (sender, receiver) = mpsc::unbounded_channel();
         let providers_arc = Arc::new(setup.registry);
-        let playback_source = config
-            .spotify_playback_source
-            .as_deref()
-            .and_then(playback_resolver::PlaybackSourceKind::from_str)
-            .unwrap_or(playback_resolver::PlaybackSourceKind::Auto);
+        // Для Spotify всегда используется режим Auto (YouTube Music → Deezer)
+        let playback_source = playback_resolver::PlaybackSourceKind::Auto;
         let playback_resolver = Arc::new(playback_resolver::PlaybackResolver::new(
             Arc::clone(&providers_arc),
             playback_source,
@@ -119,6 +120,7 @@ impl Runtime {
             storage,
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         }
     }
 
@@ -425,8 +427,68 @@ impl Runtime {
         self.config.auto_fallback
     }
 
+    pub fn set_guest_providers(&mut self, guest_providers: Vec<String>) {
+        if self.guest_providers != guest_providers {
+            self.guest_providers = guest_providers;
+            self.reload_providers();
+        }
+    }
+
+    pub fn guest_providers(&self) -> &[String] {
+        &self.guest_providers
+    }
+
+    /// Проверяет, работает ли провайдер в гостевом (публичном) режиме через сервер.
+    /// Возвращает `false` для оффлайн-аккаунтов и если у пользователя заданы личные ключи.
+    pub fn is_guest_provider(&self, kind: ProviderKind) -> bool {
+        if !matches!(kind, ProviderKind::Deezer | ProviderKind::SoundCloud) {
+            return false;
+        }
+        let has_online_session = self
+            .secrets
+            .get_named("vessel-user-session")
+            .ok()
+            .flatten()
+            .is_some_and(|s| !s.trim().is_empty());
+        if !has_online_session {
+            return false;
+        }
+        let seg = crate::protocol::kind_segment(kind);
+        if !self.guest_providers.iter().any(|g| g == seg) {
+            return false;
+        }
+        let has_personal = match kind {
+            ProviderKind::Deezer => self
+                .secrets
+                .get(crate::secrets::SecretKey::DeezerArl)
+                .ok()
+                .flatten()
+                .is_some_and(|s| !s.trim().is_empty()),
+            ProviderKind::SoundCloud => {
+                self.secrets
+                    .get(crate::secrets::SecretKey::SoundCloudOAuthToken)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|s| !s.trim().is_empty())
+                    || self
+                        .secrets
+                        .get(crate::secrets::SecretKey::SoundCloudClientIdOverride)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|s| !s.trim().is_empty())
+            }
+            _ => true,
+        };
+        !has_personal
+    }
+
     pub fn reload_providers(&mut self) {
-        let setup = build_registry(&self.config, &self.secrets, true);
+        let setup = build_registry_with_guests(
+            &self.config,
+            &self.secrets,
+            true,
+            &self.guest_providers,
+        );
         self.providers = Arc::new(setup.registry);
         let playback_source = self.playback_resolver.source();
         self.playback_resolver = Arc::new(playback_resolver::PlaybackResolver::new(
@@ -521,6 +583,7 @@ mod tests {
             storage: Storage::new(std::path::PathBuf::from("unused.sqlite3")),
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         };
         sender
             .send(RuntimeMessage::SearchFinished {
@@ -588,6 +651,7 @@ mod tests {
             storage: Storage::new(std::path::PathBuf::from("unused.sqlite3")),
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         };
         let actions = runtime.dispatch(vec![AppEffect::Search {
             query: String::new(),
@@ -638,6 +702,7 @@ mod tests {
             storage: Storage::new(std::path::PathBuf::from("unused.sqlite3")),
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         };
 
         let actions = runtime.dispatch(vec![AppEffect::SaveCredential {
@@ -696,6 +761,7 @@ mod tests {
             storage: Storage::new(std::path::PathBuf::from("unused.sqlite3")),
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         };
         let actions = runtime.dispatch(vec![AppEffect::GenerateWave]);
         assert!(matches!(
@@ -744,6 +810,7 @@ mod tests {
             storage: storage.clone(),
             current_track: Some(history_track()),
             current_track_started: true,
+            guest_providers: Vec::new(),
         };
         runtime.record_current(true, false);
         runtime.record_current(true, false);
@@ -838,6 +905,7 @@ mod tests {
             storage: Storage::new(std::path::PathBuf::from("unused.sqlite3")),
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         };
 
         drop(runtime);
@@ -882,6 +950,7 @@ mod tests {
             storage: storage.clone(),
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         };
 
         let t = history_track();

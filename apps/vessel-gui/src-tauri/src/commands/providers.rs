@@ -619,28 +619,74 @@ pub async fn remove_credential(core: CoreState<'_>, provider: String) -> Result<
     let kind = credential_kind_from_str(&provider)?;
     let (account_state, secrets_file, session_token) = {
         let mut core = lock(&core);
+        // Сначала удаляем namespaced-секреты текущего онлайн-аккаунта, чтобы
+        // `SecretStore::get` (который ищет по суффиксу `:key`) не видел старый
+        // личный токен во время `remove_credential` / `is_guest_provider` / `reload_providers`.
+        if let vessel_core::user::AccountState::Authenticated { user_id, .. } = &core.account_state
+        {
+            let secrets = core.runtime.secrets();
+            let ns_key =
+                vessel_core::vault_sync::account_secret_key(user_id, kind.secret_key().name());
+            let _ = secrets.remove_named(&ns_key);
+            if matches!(
+                kind,
+                CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken
+            ) {
+                for sc_key in [
+                    vessel_core::secrets::SecretKey::SoundCloudOAuthToken,
+                    vessel_core::secrets::SecretKey::SoundCloudClientIdOverride,
+                    vessel_core::secrets::SecretKey::SoundCloudClientId,
+                ] {
+                    let k = vessel_core::vault_sync::account_secret_key(user_id, sc_key.name());
+                    let _ = secrets.remove_named(&k);
+                }
+            } else if matches!(
+                kind,
+                CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh
+            ) {
+                for yt_key in [
+                    vessel_core::secrets::SecretKey::YouTubeCookie,
+                    vessel_core::secrets::SecretKey::YouTubeOAuthRefresh,
+                ] {
+                    let k = vessel_core::vault_sync::account_secret_key(user_id, yt_key.name());
+                    let _ = secrets.remove_named(&k);
+                }
+            }
+        }
         core.runtime
             .remove_credential(kind.secret_key())
             .map_err(|e| e.to_string())?;
         match kind {
             CredentialKind::SoundCloudClientId | CredentialKind::SoundCloudOAuthToken => {
-                core.app.soundcloud_enabled = false;
+                let enabled = core
+                    .runtime
+                    .is_guest_provider(vessel_core::model::ProviderKind::SoundCloud);
+                core.app.soundcloud_enabled = enabled;
+                core.config.soundcloud_enabled = enabled;
             }
             CredentialKind::YandexToken => {
                 core.app.yandex_enabled = false;
+                core.config.yandex_enabled = false;
             }
             CredentialKind::DeezerArl => {
-                core.app.deezer_enabled = false;
+                let enabled = core
+                    .runtime
+                    .is_guest_provider(vessel_core::model::ProviderKind::Deezer);
+                core.app.deezer_enabled = enabled;
+                core.config.deezer_enabled = enabled;
             }
             CredentialKind::SpotifySpDc => {
                 core.app.spotify_enabled = false;
+                core.config.spotify_enabled = false;
             }
             CredentialKind::SpotifyOAuthRefreshToken => {
                 core.app.spotify_enabled = false;
+                core.config.spotify_enabled = false;
             }
             CredentialKind::YouTubeCookie | CredentialKind::YouTubeOAuthRefresh => {}
         }
         core.app.config_dirty = true;
+        core.last_state_hash = 0;
 
         let secrets = vessel_core::secrets::SecretStore::new(core.paths.secrets_file.clone());
         let token = secrets.get_named("vessel-user-session").ok().flatten();

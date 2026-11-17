@@ -64,6 +64,12 @@ pub async fn get_or_generate_personal_mixes(
     include_playlists: bool,
     excluded_playlist_ids: &[String],
 ) -> Result<Vec<MixItem>> {
+    let allowed_providers: Vec<ProviderKind> = allowed_providers
+        .iter()
+        .copied()
+        .filter(|p| *p != ProviderKind::Spotify)
+        .collect();
+    let allowed_providers = allowed_providers.as_slice();
     let now_ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -508,6 +514,12 @@ pub async fn get_or_generate_explore_content(
     include_playlists: bool,
     excluded_playlist_ids: &[String],
 ) -> Result<ExploreContent> {
+    let allowed_providers: Vec<ProviderKind> = allowed_providers
+        .iter()
+        .copied()
+        .filter(|p| *p != ProviderKind::Spotify)
+        .collect();
+    let allowed_providers = allowed_providers.as_slice();
     let now_ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -772,7 +784,7 @@ pub async fn get_or_generate_explore_content(
         let fallback_prov = allowed_providers
             .first()
             .copied()
-            .unwrap_or(ProviderKind::Spotify);
+            .unwrap_or(ProviderKind::Deezer);
         for (artist_name, _) in profile.top_artists.iter().take(12) {
             artist_items.push(CollectionItem {
                 kind: CollectionKind::Artist,
@@ -781,7 +793,7 @@ pub async fn get_or_generate_explore_content(
                 title: artist_name.clone(),
                 subtitle: "Исполнитель".to_string(),
                 artwork_url: None,
-                web_url: url::Url::parse("https://open.spotify.com").unwrap(),
+                web_url: url::Url::parse("https://www.deezer.com").unwrap(),
                 track_count: 0,
             });
         }

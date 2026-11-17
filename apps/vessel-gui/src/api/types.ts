@@ -63,6 +63,7 @@ export interface ProviderStatus {
   connected: boolean;
   has_credentials: boolean;
   enabled: boolean;
+  guest?: boolean;
   origin: string;
 }
 

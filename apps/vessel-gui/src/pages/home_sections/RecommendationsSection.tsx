@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useApp, semanticTrackKey } from "../../store";
-import { PlatformIcon } from "../../components/PlatformIcon";
 import { Artwork } from "../../components/Artwork";
 import {
   trackKey,
@@ -286,9 +285,6 @@ export function RecommendationsBlockContent({
                           </svg>
                         )}
                       </button>
-                    </div>
-                    <div className="home-rec-badge">
-                      <PlatformIcon kind={track.provider as any} size={13} />
                     </div>
                   </div>
                   <div className="home-rec-title">{track.title}</div>

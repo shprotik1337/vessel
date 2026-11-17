@@ -7,7 +7,7 @@ import { VirtualTrackList } from "../components/VirtualTrackList";
 import { Artwork } from "../components/Artwork";
 import { PlaylistCover } from "../components/PlaylistCover";
 import { ArtistBioModal } from "../components/ArtistBioModal";
-import { trackKey, providerLabel, formatDuration, artistLabel, filterValidArtists, dedupe, resolveArtworkUrl } from "../lib/utils";
+import { trackKey, formatDuration, artistLabel, filterValidArtists, dedupe, resolveArtworkUrl } from "../lib/utils";
 import { t, type Lang } from "../i18n";
 import type { ArtistProfile, CollectionItem, GeniusArtistInfo, Playlist, TrackRef } from "../api/types";
 import * as api from "../api/commands";
@@ -377,8 +377,9 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
         let loadedProfile: ArtistProfile | null = null;
         let activeTarget: { provider: string; id: string } | null = null;
 
-        // 1. If explicit provider and id were passed, attempt loading it first
-        if (provider && artistId) {
+        // 1. If explicit provider and id were passed (and it's not Spotify), attempt loading it first
+        const isSpotifyOrigin = provider === "spotify";
+        if (provider && artistId && !isSpotifyOrigin) {
           try {
             loadedProfile = await api.artistProfile(provider, artistId);
             activeTarget = { provider, id: artistId };
@@ -387,23 +388,29 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
           }
         }
 
-        // 2. If not loaded, search for artist across all providers
+        // 2. If not loaded, search for artist across non-Spotify providers (preferring Deezer / YouTube Music for Spotify tracks)
         if (!loadedProfile) {
           const found = await api.searchCollections(artist, "artists").catch(() => []);
           if (cancelled) return;
           const lower = artist.toLowerCase().trim();
 
-          const candidates = [...found].sort((a, b) => {
-            const aExact = a.title.toLowerCase().trim() === lower ? 1 : 0;
-            const bExact = b.title.toLowerCase().trim() === lower ? 1 : 0;
-            if (aExact !== bExact) return bExact - aExact;
-            if (provider) {
-              const aProv = a.provider === provider ? 1 : 0;
-              const bProv = b.provider === provider ? 1 : 0;
-              if (aProv !== bProv) return bProv - aProv;
-            }
-            return 0;
-          });
+          const candidates = found
+            .filter((c) => c.provider !== "spotify")
+            .sort((a, b) => {
+              const aExact = a.title.toLowerCase().trim() === lower ? 1 : 0;
+              const bExact = b.title.toLowerCase().trim() === lower ? 1 : 0;
+              if (aExact !== bExact) return bExact - aExact;
+              if (isSpotifyOrigin) {
+                const rank = (p: string) => (p === "deezer" ? 2 : p === "youtube_music" ? 1 : 0);
+                const diff = rank(b.provider) - rank(a.provider);
+                if (diff !== 0) return diff;
+              } else if (provider) {
+                const aProv = a.provider === provider ? 1 : 0;
+                const bProv = b.provider === provider ? 1 : 0;
+                if (aProv !== bProv) return bProv - aProv;
+              }
+              return 0;
+            });
 
           for (const cand of candidates) {
             if (cancelled) return;
@@ -422,7 +429,11 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
         // build a dynamic profile from search tracks so the user NEVER sees "Артист не найден"!
         if (!loadedProfile) {
           try {
-            let searchRes = await api.search(artist, provider || undefined).catch(() => null);
+            const searchProv = isSpotifyOrigin ? "deezer" : (provider || undefined);
+            let searchRes = await api.search(artist, searchProv).catch(() => null);
+            if (!searchRes || !searchRes.tracks || searchRes.tracks.length === 0) {
+              searchRes = await api.search(artist, "youtube_music").catch(() => null);
+            }
             if (!searchRes || !searchRes.tracks || searchRes.tracks.length === 0) {
               searchRes = await api.search(artist, undefined).catch(() => null);
             }
@@ -616,7 +627,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
   const handleToggleFollow = async () => {
     if (!profile) return;
     const targetId = activeTargetState?.id || artistId || artist;
-    const targetProv = activeTargetState?.provider || provider || "spotify";
+    const rawProv = activeTargetState?.provider || provider;
+    const targetProv = !rawProv || rawProv === "spotify" ? "deezer" : rawProv;
     setFollowLoading(true);
     try {
       if (isFollowed) {
@@ -625,7 +637,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
       } else {
         await api.followArtist({
           id: targetId,
-          provider: (targetProv as any) || "spotify",
+          provider: (targetProv as any) || "deezer",
           name: profile.name,
           avatar_url: profile.avatar_url,
           header_image_url: profile.header_image_url,
@@ -676,7 +688,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 <div className="hero-ref-info">
                   <div className="hero-ref-title">{pl.title}</div>
                   <div className="hero-ref-subtitle">
-                    {profile?.name || (preview.provider ? providerLabel(preview.provider) : t(lang, "artist.playlist"))}
+                    {profile?.name || t(lang, "artist.playlist")}
                   </div>
                   <div className="hero-ref-meta">
                     <span>{pl.tracks.length} {t(lang, "common.tracks")}</span>

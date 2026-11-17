@@ -36,8 +36,9 @@ pub async fn generate_home_recommendations(
     provider_filter: Option<&str>,
     force_refresh: bool,
 ) -> Result<Vec<TrackRef>> {
-    let allowed_providers =
+    let mut allowed_providers =
         parse_provider_filter(provider_filter).unwrap_or_else(|| providers.kinds().collect());
+    allowed_providers.retain(|p| *p != ProviderKind::Spotify);
     if allowed_providers.is_empty() {
         return Ok(Vec::new());
     }

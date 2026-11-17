@@ -207,37 +207,17 @@ pub(super) fn spawn_playback(
                     "[Playback][{session}] native playback failed for {}: {error}",
                     track.provider.label()
                 );
-                // Для SoundCloud авто-фолбэк на другие платформы не запускаем:
-                // там уникальный андерграунд/ремиксы, которых нет на других платформах.
-                if auto_fallback && track.provider != ProviderKind::SoundCloud {
-                    let _ = sender.send(RuntimeMessage::PlaybackNotice {
-                        generation,
-                        message: format!(
-                            "Трек недоступен в {}, пробуем найти его на другой платформе...",
-                            track.provider.label()
-                        ),
-                    });
+                // Кросс-платформенный фоллбэк нужен ТОЛЬКО для Spotify (у него нет нативного аудио).
+                // Все остальные платформы воспроизводят треки нативно; при ошибке срабатывает автоскип.
+                let _ = auto_fallback;
+                if track.provider == ProviderKind::Spotify {
                     let origin = track.provider;
-                    let base_chain = if origin == ProviderKind::Spotify {
-                        // Для Spotify YouTube Music уже был опрошен при запуске нативного/серверного трека,
-                        // поэтому в фоллбэке сразу опрашиваем: Deezer -> SoundCloud
-                        vec![
-                            PlaybackSourceKind::Deezer,
-                            PlaybackSourceKind::SoundCloud,
-                        ]
-                    } else {
-                        vec![
-                            PlaybackSourceKind::YouTubeMusic,
-                            PlaybackSourceKind::Deezer,
-                            PlaybackSourceKind::SoundCloud,
-                        ]
-                    };
+                    // Классический фоллбэк Spotify: YouTube Music → Deezer
+                    // (при ошибке серверного Spotify YTM уже опрашивался, пробуем Deezer)
+                    let base_chain = vec![PlaybackSourceKind::Deezer];
                     let chain: Vec<_> = base_chain
                         .into_iter()
                         .filter(|s| {
-                            if s.provider_kind() == origin {
-                                return false;
-                            }
                             if *s == PlaybackSourceKind::Deezer && !has_deezer_arl && !is_remote_deezer {
                                 return false;
                             }

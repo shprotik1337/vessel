@@ -1,343 +1,672 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useApp } from "../store";
-import { PlatformIcon } from "./PlatformIcon";
+import { artistLabel, resolveArtworkUrl, trackKey } from "../lib/utils";
+import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
-interface ProviderOption {
-  key: string;
-  label: string;
-  color: string;
-}
+type RGB = [number, number, number];
+type Palette = [RGB, RGB];
 
-const PROVIDER_OPTIONS: ProviderOption[] = [
-  { key: "youtube_music", label: "YouTube Music", color: "#FF0000" },
-  { key: "soundcloud", label: "SoundCloud", color: "#FF5500" },
-  { key: "spotify", label: "Spotify", color: "#1DB954" },
-  { key: "yandex", label: "Yandex Music", color: "#FFCC00" },
-  { key: "deezer", label: "Deezer", color: "#A238FF" },
+// Зафиксированный режим «Спокойная» из референса (waveEnergy = 0.6)
+const WAVE_ENERGY = 0.6;
+
+// Запасные палитры (из референса) на случай, если у трека нет обложки
+const FALLBACK_PALETTES: Palette[] = [
+  [
+    [225, 140, 65],
+    [140, 70, 20],
+  ],
+  [
+    [190, 205, 225],
+    [95, 110, 135],
+  ],
+  [
+    [45, 200, 150],
+    [20, 90, 110],
+  ],
+  [
+    [220, 55, 120],
+    [90, 30, 180],
+  ],
+  [
+    [65, 140, 255],
+    [150, 50, 235],
+  ],
+  [
+    [245, 85, 50],
+    [150, 25, 20],
+  ],
+  [
+    [250, 180, 40],
+    [200, 50, 90],
+  ],
 ];
 
+const RIBBONS = [
+  { freq1: 3.5, freq2: 2.0, speed1: 1.0, speed2: -0.7, amp: 52, thick: 48, primary: true, alpha: 0.75 },
+  { freq1: 2.8, freq2: 4.2, speed1: -0.8, speed2: 1.1, amp: 64, thick: 55, primary: false, alpha: 0.65 },
+  { freq1: 4.5, freq2: 1.5, speed1: 1.3, speed2: 0.5, amp: 40, thick: 36, primary: true, alpha: 0.5 },
+  { freq1: 2.2, freq2: 3.1, speed1: -1.1, speed2: -0.9, amp: 70, thick: 42, primary: false, alpha: 0.45 },
+];
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function hashString(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function fallbackPaletteForKey(key: string): Palette {
+  const idx = hashString(key) % FALLBACK_PALETTES.length;
+  return FALLBACK_PALETTES[idx];
+}
+
+/**
+ * Для чтения пикселей на скрытом canvas прогоняем любые внешние http(s) URL
+ * (включая avatars.yandex.net) через локальный прокси vessel-img.localhost,
+ * у которого гарантированно выставлен Access-Control-Allow-Origin: *.
+ */
+function corsSafeArtworkUrl(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  if (
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("http://vessel-img.localhost") ||
+    trimmed.startsWith("http://localhost") ||
+    trimmed.startsWith("http://127.0.0.1")
+  ) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return `http://vessel-img.localhost/?url=${encodeURIComponent(trimmed)}`;
+  }
+  return resolveArtworkUrl(trimmed) ?? null;
+}
+
+function extractPaletteFromImage(
+  img: HTMLImageElement,
+  colorCtx: CanvasRenderingContext2D,
+): Palette | null {
+  try {
+    colorCtx.clearRect(0, 0, 16, 16);
+    colorCtx.drawImage(img, 0, 0, 16, 16);
+    const data = colorCtx.getImageData(0, 0, 16, 16).data;
+    let r1 = 0,
+      g1 = 0,
+      b1 = 0,
+      count1 = 0;
+    let r2 = 0,
+      g2 = 0,
+      b2 = 0,
+      count2 = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const brightness = (r + g + b) / 3;
+      if (brightness > 30 && brightness < 235) {
+        if (i < data.length / 2) {
+          r1 += r;
+          g1 += g;
+          b1 += b;
+          count1++;
+        } else {
+          r2 += r;
+          g2 += g;
+          b2 += b;
+          count2++;
+        }
+      }
+    }
+
+    if (count1 > 5 && count2 > 5) {
+      return [
+        [
+          Math.min(255, (r1 / count1) * 1.25),
+          Math.min(255, (g1 / count1) * 1.25),
+          Math.min(255, (b1 / count1) * 1.25),
+        ],
+        [
+          Math.min(255, (r2 / count2) * 1.25),
+          Math.min(255, (g2 / count2) * 1.25),
+          Math.min(255, (b2 / count2) * 1.25),
+        ],
+      ];
+    }
+  } catch {
+    // CORS или декодирование — используем запасную палитру
+  }
+  return null;
+}
+
 export function WaveSection() {
-  const { lang, showToast, playTracks, setWaveTracks, setIsWaveActive } = useApp();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [selectedProviders, setSelectedProviders] = useState<string[] | null>(null);
-  const [allProviders, setAllProviders] = useState(true);
+  const {
+    state,
+    lang,
+    playTracks,
+    waveTracks,
+    isWaveActive,
+    setIsWaveActive,
+    waveLoading,
+    regenerateWave,
+  } = useApp();
 
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [switchingKey, setSwitchingKey] = useState<string | null>(null);
+
+  const widgetRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
-  const buildingRef = useRef(false);
+  const paletteCacheRef = useRef<Map<string, Palette>>(new Map());
+  const colorCanvasRef = useRef<CanvasRenderingContext2D | null>(null);
+  const switchTimerRef = useRef<number | null>(null);
+  const wheelLockRef = useRef<boolean>(false);
 
-  // 1. Загрузка сохранённых провайдеров волны
+  // Рефы состояния для 60fps цикла шёлковой волны без перезапуска useEffect
+  const isPlayingRef = useRef<boolean>(false);
+  const targetColor1Ref = useRef<RGB>([...FALLBACK_PALETTES[0][0]]);
+  const targetColor2Ref = useRef<RGB>([...FALLBACK_PALETTES[0][1]]);
+
+  const nowKey = state?.now_playing ? trackKey(state.now_playing) : null;
+  const nowIndexInWave = useMemo(() => {
+    if (!nowKey || waveTracks.length === 0) return -1;
+    return waveTracks.findIndex((t) => trackKey(t) === nowKey);
+  }, [nowKey, waveTracks]);
+
+  const isWaveTrackCurrent = isWaveActive && nowIndexInWave >= 0;
+  const isPlayerPlaying = state?.player?.status === "playing";
+  const isPlayerBuffering = state?.player?.status === "buffering";
+  const isWavePlaying = isWaveTrackCurrent && (isPlayerPlaying || isPlayerBuffering);
+
   useEffect(() => {
+    isPlayingRef.current = isWavePlaying;
+  }, [isWavePlaying]);
+
+  // Синхронизируем индекс дуги, если трек переключили в Очереди / мини-плеере / автопереходом
+  useEffect(() => {
+    if (isWaveActive && nowIndexInWave >= 0) {
+      setCurrentIndex(nowIndexInWave);
+    }
+  }, [isWaveActive, nowIndexInWave]);
+
+  // Защита индекса при перегенерации списка треков
+  useEffect(() => {
+    if (waveTracks.length === 0) {
+      setCurrentIndex(0);
+    } else if (currentIndex >= waveTracks.length) {
+      setCurrentIndex(0);
+    }
+  }, [waveTracks.length, currentIndex]);
+
+  const safeIndex = waveTracks.length > 0 ? Math.min(currentIndex, waveTracks.length - 1) : 0;
+  const activeTrack: TrackRef | null = waveTracks[safeIndex] ?? null;
+  const activeTrackKey = activeTrack ? trackKey(activeTrack) : null;
+
+  // Применяем палитру активного трека и извлекаем цвета из его обложки
+  useEffect(() => {
+    if (!activeTrack || !activeTrackKey) {
+      targetColor1Ref.current = [...FALLBACK_PALETTES[0][0]];
+      targetColor2Ref.current = [...FALLBACK_PALETTES[0][1]];
+      return;
+    }
+
+    const cached = paletteCacheRef.current.get(activeTrackKey);
+    if (cached) {
+      targetColor1Ref.current = [...cached[0]];
+      targetColor2Ref.current = [...cached[1]];
+      return;
+    }
+
+    const fallback = fallbackPaletteForKey(activeTrackKey);
+    targetColor1Ref.current = [...fallback[0]];
+    targetColor2Ref.current = [...fallback[1]];
+
+    const corsUrl = corsSafeArtworkUrl(activeTrack.artwork_url);
+    if (!corsUrl) return;
+
+    if (!colorCanvasRef.current) {
+      const c = document.createElement("canvas");
+      c.width = 16;
+      c.height = 16;
+      colorCanvasRef.current = c.getContext("2d", { willReadFrequently: true });
+    }
+    const colorCtx = colorCanvasRef.current;
+    if (!colorCtx) return;
+
     let cancelled = false;
-    const applyVal = (val: string) => {
-      if (val === "all") {
-        setAllProviders(true);
-        setSelectedProviders(PROVIDER_OPTIONS.map((o) => o.key));
-      } else if (!val) {
-        setAllProviders(false);
-        setSelectedProviders([]);
-      } else {
-        const list = val.split(",").filter((k) => PROVIDER_OPTIONS.some((o) => o.key === k));
-        setAllProviders(list.length === PROVIDER_OPTIONS.length);
-        setSelectedProviders(list);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (cancelled) return;
+      const extracted = extractPaletteFromImage(img, colorCtx);
+      if (extracted) {
+        paletteCacheRef.current.set(activeTrackKey, extracted);
+        targetColor1Ref.current = [...extracted[0]];
+        targetColor2Ref.current = [...extracted[1]];
       }
     };
+    img.src = corsUrl;
 
-    void (async () => {
-      try {
-        const val = await api.getWaveProviders();
-        if (cancelled) return;
-        applyVal(val);
-      } catch {
-        if (!cancelled) setAllProviders(true);
-      }
-    })();
-
-    const onWaveChanged = (e: any) => {
-      applyVal(e.detail || "all");
-    };
-    window.addEventListener("vessel:wave-providers-changed", onWaveChanged);
     return () => {
       cancelled = true;
-      window.removeEventListener("vessel:wave-providers-changed", onWaveChanged);
     };
-  }, []);
+  }, [activeTrack, activeTrackKey]);
 
-  // 2. Закрытие поповера настроек при клике снаружи или Escape
+  // Заранее извлекаем цвета соседних обложек в дуге, чтобы при переключении фон реагировал мгновенно
   useEffect(() => {
-    if (!settingsOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setSettingsOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSettingsOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [settingsOpen]);
+    if (waveTracks.length === 0) return;
+    if (!colorCanvasRef.current) {
+      const c = document.createElement("canvas");
+      c.width = 16;
+      c.height = 16;
+      colorCanvasRef.current = c.getContext("2d", { willReadFrequently: true });
+    }
+    const colorCtx = colorCanvasRef.current;
+    if (!colorCtx) return;
 
-  // 3. HTML5 Canvas: 3 плавные синусоидальные волны с наложением (opacity: 0.12, 0.22, 0.35)
+    const total = waveTracks.length;
+    const offsets = [-2, -1, 1, 2];
+    let cancelled = false;
+
+    for (const off of offsets) {
+      const idx = ((safeIndex + off) % total + total) % total;
+      const tr = waveTracks[idx];
+      if (!tr) continue;
+      const key = trackKey(tr);
+      if (paletteCacheRef.current.has(key)) continue;
+      const corsUrl = corsSafeArtworkUrl(tr.artwork_url);
+      if (!corsUrl) continue;
+
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        if (cancelled) return;
+        const extracted = extractPaletteFromImage(img, colorCtx);
+        if (extracted) {
+          paletteCacheRef.current.set(key, extracted);
+        }
+      };
+      img.src = corsUrl;
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [waveTracks, safeIndex]);
+
+  // Движок многослойной шёлковой волны (Canvas Silk Ribbons, 1-в-1 с референсом, энергия «Спокойная» 0.6)
   useEffect(() => {
     const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
+    const widget = widgetRef.current;
+    if (!canvas || !widget) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animId: number;
-    let step = 0;
-    let width = 0;
-    let height = 0;
-
-    const updateSize = () => {
-      const rect = container.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = rect.width;
-      height = rect.height;
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const resizeCanvas = () => {
+      canvas.width = Math.max(1, Math.floor(canvas.offsetWidth / 2));
+      canvas.height = Math.max(1, Math.floor(canvas.offsetHeight / 2));
     };
+    resizeCanvas();
 
-    updateSize();
+    const resizeObserver = new ResizeObserver(resizeCanvas);
+    resizeObserver.observe(widget);
 
-    const resizeObserver = new ResizeObserver(() => {
-      updateSize();
-    });
-    resizeObserver.observe(container);
+    let inView = true;
+    const intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        inView = entries[0]?.isIntersecting ?? true;
+      },
+      { threshold: 0.02 },
+    );
+    intersectionObserver.observe(widget);
 
-    const drawWave = (
-      y0: number,
-      amp: number,
-      freq: number,
-      phase: number,
-      color: string
-    ) => {
-      ctx.beginPath();
-      ctx.moveTo(0, height);
-      for (let x = 0; x <= width; x += 4) {
-        const y = y0 + amp * Math.sin(x * freq + phase);
-        ctx.lineTo(x, y);
+    const currentColor1: RGB = [...targetColor1Ref.current];
+    const currentColor2: RGB = [...targetColor2Ref.current];
+    let time = 0;
+    let currentAmp = 0.65 * WAVE_ENERGY;
+    let animId = 0;
+
+    const renderWaves = () => {
+      animId = requestAnimationFrame(renderWaves);
+      if (document.hidden || !inView) return;
+
+      const target1 = targetColor1Ref.current;
+      const target2 = targetColor2Ref.current;
+      for (let i = 0; i < 3; i++) {
+        currentColor1[i] = lerp(currentColor1[i], target1[i], 0.035);
+        currentColor2[i] = lerp(currentColor2[i], target2[i], 0.035);
       }
-      ctx.lineTo(width, height);
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
+
+      const playing = isPlayingRef.current;
+      const targetAmp = (playing ? 1.0 : 0.45) * WAVE_ENERGY;
+      currentAmp = lerp(currentAmp, targetAmp, 0.04);
+
+      const speed = (playing ? 0.028 : 0.009) * WAVE_ENERGY;
+      time += speed;
+
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.globalCompositeOperation = "screen";
+
+      const rgb1 = currentColor1.map(Math.round).join(",");
+      const rgb2 = currentColor2.map(Math.round).join(",");
+
+      // 1. Центральное мягкое свечение позади главной обложки
+      const centerGlow = ctx.createRadialGradient(
+        w * 0.5,
+        h * 0.55,
+        5,
+        w * 0.5,
+        h * 0.55,
+        w * 0.35,
+      );
+      centerGlow.addColorStop(0, `rgba(${rgb1}, 0.55)`);
+      centerGlow.addColorStop(0.5, `rgba(${rgb2}, 0.25)`);
+      centerGlow.addColorStop(1, "transparent");
+      ctx.fillStyle = centerGlow;
+      ctx.fillRect(0, 0, w, h);
+
+      // 2. 4 переплетающиеся энергетические ленты (волны)
+      for (let idx = 0; idx < RIBBONS.length; idx++) {
+        const r = RIBBONS[idx];
+        const color = r.primary ? rgb1 : rgb2;
+        ctx.beginPath();
+
+        const step = 10;
+        const topPoints: { x: number; y: number }[] = [];
+        const bottomPoints: { x: number; y: number }[] = [];
+
+        for (let x = 0; x <= w; x += step) {
+          const nx = x / w;
+          const envelope = Math.pow(Math.sin(nx * Math.PI), 1.6);
+          const diagonalTilt = (0.5 - nx) * 35;
+          const waveY =
+            Math.sin(nx * r.freq1 + time * r.speed1 + idx) * r.amp * currentAmp +
+            Math.cos(nx * r.freq2 + time * r.speed2) * (r.amp * 0.6) * currentAmp;
+
+          const centerY = h * 0.52 + diagonalTilt * envelope + waveY * envelope;
+          const halfThickness =
+            r.thick * currentAmp * envelope * (0.7 + 0.3 * Math.sin(time * 2 + nx * 6));
+
+          topPoints.push({ x, y: centerY - halfThickness });
+          bottomPoints.push({ x, y: centerY + halfThickness });
+        }
+
+        if (topPoints.length === 0) continue;
+        ctx.moveTo(topPoints[0].x, topPoints[0].y);
+        for (let i = 1; i < topPoints.length; i++) {
+          ctx.lineTo(topPoints[i].x, topPoints[i].y);
+        }
+        for (let i = bottomPoints.length - 1; i >= 0; i--) {
+          ctx.lineTo(bottomPoints[i].x, bottomPoints[i].y);
+        }
+        ctx.closePath();
+
+        const grad = ctx.createLinearGradient(w * 0.1, 0, w * 0.9, 0);
+        grad.addColorStop(0, "transparent");
+        grad.addColorStop(0.25, `rgba(${color}, ${r.alpha * 0.6})`);
+        grad.addColorStop(0.5, `rgba(${color}, ${r.alpha})`);
+        grad.addColorStop(0.75, `rgba(${color}, ${r.alpha * 0.6})`);
+        grad.addColorStop(1, "transparent");
+
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
     };
 
-    const render = () => {
-      step += 0.005;
-      ctx.clearRect(0, 0, width, height);
-
-      // Слой 1: дальний (opacity: 0.12)
-      drawWave(
-        height * 0.55,
-        28 + 7 * Math.sin(step * 0.28),
-        0.0036,
-        step * 0.4,
-        "rgba(255, 255, 255, 0.12)"
-      );
-
-      // Слой 2: средний (opacity: 0.22)
-      drawWave(
-        height * 0.67,
-        32 + 8 * Math.sin(step * 0.38 + 1.2),
-        0.0048,
-        step * 0.65 + 2.1,
-        "rgba(255, 255, 255, 0.22)"
-      );
-
-      // Слой 3: передний (opacity: 0.35)
-      drawWave(
-        height * 0.79,
-        26 + 6 * Math.sin(step * 0.32 + 2.8),
-        0.0062,
-        step * 0.9 + 4.3,
-        "rgba(255, 255, 255, 0.35)"
-      );
-
-      animId = requestAnimationFrame(render);
-    };
-
-    animId = requestAnimationFrame(render);
+    animId = requestAnimationFrame(renderWaves);
 
     return () => {
       cancelAnimationFrame(animId);
       resizeObserver.disconnect();
+      intersectionObserver.disconnect();
     };
   }, []);
 
-  const providerFilter = useCallback(() => {
-    if (allProviders) return "all";
-    if (!selectedProviders || selectedProviders.length === 0) return "";
-    return selectedProviders.join(",");
-  }, [allProviders, selectedProviders]);
+  // Очистка таймера спиннера переключения
+  useEffect(() => {
+    return () => {
+      if (switchTimerRef.current) window.clearTimeout(switchTimerRef.current);
+    };
+  }, []);
 
-  const activeProviders = (allProviders || !selectedProviders)
-    ? PROVIDER_OPTIONS.map((o) => o.key)
-    : selectedProviders;
+  const triggerSwitchSpinner = useCallback((key: string) => {
+    setSwitchingKey(key);
+    if (switchTimerRef.current) window.clearTimeout(switchTimerRef.current);
+    switchTimerRef.current = window.setTimeout(() => {
+      setSwitchingKey(null);
+    }, 480);
+  }, []);
 
-  // 4. Сборка волны (каждый клик собирает свежую очередь заново)
-  const buildWave = async () => {
-    if (buildingRef.current) return;
-    buildingRef.current = true;
-    try {
-      const filter = providerFilter();
-      const tracks = await api.getWaveRecommendations("favorites", 50, null, filter);
-      setWaveTracks(tracks);
-      if (tracks.length > 0) {
-        setIsWaveActive(true);
-        playTracks(tracks, 0);
-      } else {
-        showToast(
-          lang === "ru" ? "В выбранных сервисах нет треков" : "No tracks found in selected services",
-          true
-        );
+  // Выбор и запуск трека из дуги
+  const selectTrack = useCallback(
+    (index: number) => {
+      if (waveTracks.length === 0) return;
+      const normalized = ((index % waveTracks.length) + waveTracks.length) % waveTracks.length;
+      const chosen = waveTracks[normalized];
+      if (!chosen) return;
+      const chosenKey = trackKey(chosen);
+
+      // Повторный клик по уже играющей центральной обложке — пауза / продолжить
+      if (normalized === safeIndex && isWaveTrackCurrent) {
+        void api.togglePlayback();
+        return;
       }
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      buildingRef.current = false;
-    }
-  };
 
-  const handlePlayWave = () => {
-    if (activeProviders.length === 0) {
-      showToast(
-        lang === "ru" ? "Выберите хотя бы один сервис для Моей волны" : "Please select at least one service",
-        true
-      );
+      setCurrentIndex(normalized);
+      triggerSwitchSpinner(chosenKey);
+      setIsWaveActive(true);
+      void playTracks(waveTracks, normalized);
+    },
+    [waveTracks, safeIndex, isWaveTrackCurrent, triggerSwitchSpinner, setIsWaveActive, playTracks],
+  );
+
+  // Центральная кнопка Play / Pause
+  const handlePlayButtonClick = useCallback(() => {
+    if (waveTracks.length === 0) {
+      void regenerateWave({ force: true, autoplay: true });
       return;
     }
-    // Каждый клик (первый или повторный) собирает волну заново
-    void buildWave();
-  };
-
-  // 5. Переключение платформы по круглой иконке
-  const handleTogglePlatform = async (key: string) => {
-    const allKeys = PROVIDER_OPTIONS.map((o) => o.key);
-    const current = selectedProviders ?? (allProviders ? allKeys : []);
-    let next: string[];
-
-    if (current.includes(key)) {
-      next = current.filter((k) => k !== key);
-    } else {
-      next = [...current, key];
+    if (isWaveTrackCurrent) {
+      void api.togglePlayback();
+      return;
     }
+    const chosen = waveTracks[safeIndex];
+    if (chosen) {
+      triggerSwitchSpinner(trackKey(chosen));
+    }
+    setIsWaveActive(true);
+    void playTracks(waveTracks, safeIndex);
+  }, [
+    waveTracks,
+    safeIndex,
+    isWaveTrackCurrent,
+    regenerateWave,
+    triggerSwitchSpinner,
+    setIsWaveActive,
+    playTracks,
+  ]);
 
-    const isAll = next.length === allKeys.length;
-    setAllProviders(isAll);
-    setSelectedProviders(next);
+  // Горизонтальное пролистывание дуги (Shift+wheel или горизонтальный трекпад/колесо),
+  // не перехватывая вертикальный скролл Главной страницы
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      if (waveTracks.length < 2) return;
+      const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey;
+      if (!isHorizontal) return;
+      e.preventDefault();
+      if (wheelLockRef.current) return;
+      wheelLockRef.current = true;
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (delta > 0) selectTrack(safeIndex + 1);
+      else selectTrack(safeIndex - 1);
+      window.setTimeout(() => {
+        wheelLockRef.current = false;
+      }, 280);
+    },
+    [waveTracks.length, safeIndex, selectTrack],
+  );
 
-    const filter = isAll ? "all" : next.join(",");
-    try {
-      await api.setWaveProviders(filter);
-    } catch {}
+  // Видимое окно обложек вокруг активного индекса (-4..+4), чтобы не рендерить все 50 сразу
+  const visibleCovers = useMemo(() => {
+    const total = waveTracks.length;
+    if (total === 0) return [];
+    const half = Math.floor(total / 2);
+    const items: { track: TrackRef; index: number; offset: number; key: string }[] = [];
 
-    window.dispatchEvent(new CustomEvent("vessel:wave-providers-changed", { detail: filter }));
-  };
+    for (let i = 0; i < total; i++) {
+      let offset = i - safeIndex;
+      if (offset > half) offset -= total;
+      if (offset < -half) offset += total;
+      if (Math.abs(offset) <= 4) {
+        items.push({
+          track: waveTracks[i],
+          index: i,
+          offset,
+          key: trackKey(waveTracks[i]),
+        });
+      }
+    }
+    return items;
+  }, [waveTracks, safeIndex]);
+
+  const isActiveBuffering =
+    (waveLoading && waveTracks.length === 0) ||
+    (activeTrackKey !== null && switchingKey === activeTrackKey) ||
+    (isWaveTrackCurrent && isPlayerBuffering);
+
+  const subtitleText = useMemo(() => {
+    if (waveLoading && waveTracks.length === 0) {
+      return lang === "ru" ? "Настраиваем под вас…" : "Tuning for you…";
+    }
+    if (isWavePlaying && activeTrack) {
+      const artists = artistLabel(activeTrack.artists);
+      return artists ? `${artists} — ${activeTrack.title}` : activeTrack.title;
+    }
+    return lang === "ru" ? "Настроена под вас" : "Tuned for you";
+  }, [waveLoading, waveTracks.length, isWavePlaying, activeTrack, lang]);
 
   return (
-    <div className="amoled-wave-banner" ref={containerRef}>
-      {/* 3 синусоидальные волны на Canvas */}
-      <canvas ref={canvasRef} className="amoled-wave-canvas" />
+    <div
+      className="wave-stream-widget"
+      ref={widgetRef}
+      onWheel={handleWheel}
+    >
+      <canvas ref={canvasRef} className="wave-stream-canvas" />
+      <div className="wave-stream-vignette" />
 
-      {/* Центральный блок: Заголовок "▷ Моя волна" + кнопка "Настроить" */}
-      <div className="amoled-wave-center">
+      <div className="wave-stream-header">
+        <h1>{lang === "ru" ? "Моя волна" : "My Wave"}</h1>
+        <p className="wave-stream-subtitle" title={subtitleText}>
+          {subtitleText}
+        </p>
+      </div>
+
+      {/* Параболическая дуга обложек */}
+      <div className="wave-covers-track">
+        {visibleCovers.length > 0
+          ? visibleCovers.map(({ track, index, offset, key }) => {
+              const absOff = Math.abs(offset);
+              const isCenter = offset === 0;
+              const x = offset * 128;
+              const y = -Math.pow(absOff, 1.42) * 29 + (isCenter ? 24 : 0);
+              const scale = isCenter ? 1.18 : Math.max(0.5, 0.86 - absOff * 0.12);
+              const opacity = absOff > 3 ? 0 : Math.max(0.18, 1 - absOff * 0.22);
+              const zIndex = 20 - absOff;
+              const filter = isCenter ? "brightness(1.03)" : "brightness(0.6)";
+              const coverSrc = resolveArtworkUrl(track.artwork_url);
+              const itemLoading = isCenter && isActiveBuffering;
+
+              return (
+                <div
+                  key={key}
+                  className={`wave-cover-item${isCenter ? " active" : ""}${itemLoading ? " loading" : ""}`}
+                  style={{
+                    transform: `translate3d(${x}px, ${y}px, 0) scale(${scale})`,
+                    zIndex,
+                    opacity,
+                    pointerEvents: absOff > 3 ? "none" : "auto",
+                    filter,
+                  }}
+                  onClick={() => selectTrack(index)}
+                  title={`${artistLabel(track.artists)} — ${track.title}`}
+                >
+                  {coverSrc ? (
+                    <img src={coverSrc} alt={track.title} decoding="async" draggable={false} />
+                  ) : (
+                    <div className="wave-cover-fallback">
+                      {track.title.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="wave-cover-loader">
+                    <div className="wave-cover-spinner" />
+                  </div>
+                </div>
+              );
+            })
+          : // Плейсхолдер-дуга на время первичной фоновой генерации при запуске
+            [-3, -2, -1, 0, 1, 2, 3].map((offset) => {
+              const absOff = Math.abs(offset);
+              const isCenter = offset === 0;
+              const x = offset * 128;
+              const y = -Math.pow(absOff, 1.42) * 29 + (isCenter ? 24 : 0);
+              const scale = isCenter ? 1.18 : Math.max(0.5, 0.86 - absOff * 0.12);
+              const opacity = Math.max(0.14, 0.55 - absOff * 0.13);
+              const zIndex = 20 - absOff;
+              return (
+                <div
+                  key={offset}
+                  className={`wave-cover-item wave-cover-placeholder${isCenter ? " active" : ""}${isCenter && waveLoading ? " loading" : ""}`}
+                  style={{
+                    transform: `translate3d(${x}px, ${y}px, 0) scale(${scale})`,
+                    zIndex,
+                    opacity,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <div className="wave-cover-loader">
+                    <div className="wave-cover-spinner" />
+                  </div>
+                </div>
+              );
+            })}
+      </div>
+
+      {/* Центральная кнопка Play / Pause */}
+      <div className="wave-stream-controls">
         <button
           type="button"
-          className="amoled-wave-title-btn"
-          onClick={handlePlayWave}
-          title={lang === "ru" ? "Запустить Мою волну" : "Launch My Wave"}
+          className={`wave-stream-play-btn${isActiveBuffering ? " loading" : ""}`}
+          onClick={handlePlayButtonClick}
+          title={
+            isWavePlaying
+              ? lang === "ru"
+                ? "Пауза"
+                : "Pause"
+              : lang === "ru"
+                ? "Запустить Мою волну"
+                : "Launch My Wave"
+          }
         >
-          <span className="amoled-wave-play-icon">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
-          </span>
-          <span className="amoled-wave-title-text">{lang === "ru" ? "Моя волна" : "My Wave"}</span>
+          <div className="wave-btn-spinner" />
+          <svg viewBox="0 0 24 24">
+            {isWavePlaying ? (
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+            ) : (
+              <path d="M8 5v14l11-7z" />
+            )}
+          </svg>
         </button>
-
-        <div className="amoled-wave-tune-container" ref={popoverRef}>
-          <button
-            type="button"
-            className={`amoled-wave-tune-btn ${settingsOpen ? "active" : ""}`}
-            onClick={() => setSettingsOpen((prev) => !prev)}
-            title={lang === "ru" ? "Настроить платформы" : "Configure platforms"}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="4" y1="21" x2="4" y2="14" />
-              <line x1="4" y1="10" x2="4" y2="3" />
-              <line x1="12" y1="21" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12" y2="3" />
-              <line x1="20" y1="21" x2="20" y2="16" />
-              <line x1="20" y1="12" x2="20" y2="3" />
-              <line x1="1" y1="14" x2="7" y2="14" />
-              <line x1="9" y1="8" x2="15" y2="8" />
-              <line x1="17" y1="16" x2="23" y2="16" />
-            </svg>
-            <span>{lang === "ru" ? "Настроить" : "Tune"}</span>
-          </button>
-
-          {/* Всплывающий ряд круглых иконок платформ (в точности как на референсе) */}
-          {settingsOpen && (
-            <div className="amoled-wave-popover">
-              {PROVIDER_OPTIONS.map((p) => {
-                const isSelected = activeProviders.includes(p.key);
-                return (
-                  <button
-                    key={p.key}
-                    type="button"
-                    className={`amoled-wave-platform-circle ${isSelected ? "active" : "inactive"}`}
-                    onClick={() => void handleTogglePlatform(p.key)}
-                    title={`${p.label} (${
-                      isSelected
-                        ? lang === "ru"
-                          ? "Включено"
-                          : "Enabled"
-                        : lang === "ru"
-                        ? "Выключено"
-                        : "Disabled"
-                    })`}
-                    style={isSelected ? { boxShadow: `0 0 12px ${p.color}35` } : undefined}
-                  >
-                    <PlatformIcon
-                      kind={p.key as any}
-                      size={18}
-                      color={isSelected ? p.color : "rgba(255, 255, 255, 0.3)"}
-                      style={
-                        p.key === "yandex"
-                          ? {
-                              filter: isSelected ? "none" : "grayscale(100%)",
-                              opacity: isSelected ? 1 : 0.32,
-                            }
-                          : undefined
-                      }
-                    />
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

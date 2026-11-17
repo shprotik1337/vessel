@@ -175,14 +175,14 @@ async fn run(
     if !has_explicit && !provider_priority.contains(&primary_provider) {
         provider_priority.insert(0, primary_provider);
     }
-    provider_priority.retain(|kind| providers.get(*kind).is_some());
+    provider_priority.retain(|kind| *kind != ProviderKind::Spotify && providers.get(*kind).is_some());
     if !has_explicit {
         provider_priority.sort_by_key(|kind| match kind {
             ProviderKind::SoundCloud => 0,
             ProviderKind::YandexMusic => 1,
             ProviderKind::Deezer => 2,
-            ProviderKind::Spotify => 3,
-            ProviderKind::YouTubeMusic => 4,
+            ProviderKind::YouTubeMusic => 3,
+            ProviderKind::Spotify => 99,
         });
     }
 
@@ -235,7 +235,11 @@ async fn run(
     .await;
 
     RecommendationResult {
-        tracks: result.tracks,
+        tracks: result
+            .tracks
+            .into_iter()
+            .filter(|t| t.provider != ProviderKind::Spotify)
+            .collect(),
         failures: result.failures,
     }
 }
@@ -278,8 +282,8 @@ fn pick_primary_provider(providers: &ProviderRegistry) -> ProviderKind {
         ProviderKind::SoundCloud
     } else if providers.get(ProviderKind::Deezer).is_some() {
         ProviderKind::Deezer
-    } else if providers.get(ProviderKind::Spotify).is_some() {
-        ProviderKind::Spotify
+    } else if providers.get(ProviderKind::YouTubeMusic).is_some() {
+        ProviderKind::YouTubeMusic
     } else {
         ProviderKind::SoundCloud
     }

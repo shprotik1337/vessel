@@ -186,6 +186,11 @@ impl ProviderRegistry {
     ) -> Vec<(ProviderKind, Result<SearchPage>)> {
         let mut pending = FuturesUnordered::new();
         for provider in self.providers.values().filter(|provider| {
+            // Spotify используется исключительно для импорта треков и переноса лайков,
+            // в общем поиске и подборах он не участвует.
+            if provider.kind() == ProviderKind::Spotify {
+                return false;
+            }
             selection
                 .provider()
                 .is_none_or(|kind| kind == provider.kind())

@@ -267,6 +267,7 @@ mod tests {
             storage: crate::storage::Storage::new(std::path::PathBuf::from("unused.sqlite3")),
             current_track: None,
             current_track_started: false,
+            guest_providers: Vec::new(),
         };
         assert_eq!(runtime.select_wave_primary_provider(), None);
     }

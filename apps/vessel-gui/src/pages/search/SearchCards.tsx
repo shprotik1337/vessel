@@ -1,6 +1,4 @@
 import { Artwork } from "../../components/Artwork";
-import { PlatformIcon } from "../../components/PlatformIcon";
-import { providerLabel } from "../../lib/utils";
 import type { CollectionItem } from "../../api/types";
 
 interface SearchArtistCardProps {
@@ -23,11 +21,6 @@ export function SearchArtistCard({ item, onSelect }: SearchArtistCardProps) {
           square={true}
           className="search-artist-avatar-img"
         />
-        {item.provider && (
-          <span className="search-artist-badge" title={providerLabel(item.provider)}>
-            <PlatformIcon kind={item.provider} size={13} />
-          </span>
-        )}
       </div>
       <div className="search-artist-name">{item.title}</div>
     </div>
@@ -48,7 +41,7 @@ export function SearchCollectionCard({
   const isAlbum = item.kind === "album";
   const yearMatch = item.subtitle?.match(/\b(19\d\d|20\d\d)\b/);
   const year = yearMatch ? yearMatch[1] : "";
-  let formattedSub = item.subtitle || providerLabel(item.provider);
+  let formattedSub = item.subtitle || "Плейлист";
   if (isAlbum) {
     formattedSub = year ? `Альбом • ${year}` : (item.subtitle || "Альбом");
   }
@@ -67,11 +60,6 @@ export function SearchCollectionCard({
           square={true}
           className="search-collection-art"
         />
-        {item.provider && (
-          <span className="search-collection-badge" title={providerLabel(item.provider)}>
-            <PlatformIcon kind={item.provider} size={13} />
-          </span>
-        )}
       </div>
       <div className="search-collection-title">{item.title}</div>
       <div className="search-collection-sub">{formattedSub}</div>

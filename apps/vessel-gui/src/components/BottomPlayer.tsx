@@ -2,12 +2,14 @@ import { useRef, useState, useEffect } from "react";
 
 import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
-import { formatTime, providerLabel, isFavorite, filterValidArtists } from "../lib/utils";
+import { formatTime, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import { IconSparkle } from "./Icons";
 import { EqualizerPopover } from "./player/EqualizerPopover";
 import { loadStoredEqualizer, isEqActive } from "./player/equalizerData";
+import { PlayerContextMenu, type ContextMenuState } from "../pages/player";
+import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
 
@@ -117,6 +119,8 @@ export function BottomPlayer() {
   const lastVolumeRef = useRef<number | null>(null);
   const [isEqOpen, setIsEqOpen] = useState(false);
   const eqBtnRef = useRef<HTMLButtonElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
 
   const isVertical = config.player?.position === "left" || config.player?.position === "right";
   const isProgressFill = config.player?.style === "progress_fill";
@@ -402,7 +406,64 @@ export function BottomPlayer() {
 
     // 4. Fallback на профиль артиста
     if (primaryArtist) {
-      navigateTo("artist", { artist: primaryArtist, provider: track.provider });
+      navigateTo("artist", { artist: primaryArtist, provider: track.provider === "spotify" ? "deezer" : track.provider });
+    }
+  };
+
+  const handleTrackContextMenu = (e: React.MouseEvent) => {
+    if (!track) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const isTopDock = config.player?.position === "top";
+    const footerRect = footerRef.current?.getBoundingClientRect();
+    if (isTopDock) {
+      setCtxMenu({
+        track,
+        index: -1,
+        x: e.clientX,
+        y: footerRect ? footerRect.bottom + 10 : e.clientY + 10,
+        placement: "down",
+      });
+    } else {
+      setCtxMenu({
+        track,
+        index: -1,
+        x: e.clientX,
+        y: footerRect ? footerRect.top - 10 : e.clientY - 10,
+        placement: "up",
+      });
+    }
+  };
+
+  const handleCtxPlayNext = async (targetTrack: TrackRef) => {
+    setCtxMenu(null);
+    try {
+      await api.playNext(targetTrack);
+      showToast(`${t(lang, "trackrow.playNextToast")} ${targetTrack.title}`);
+      await refresh();
+    } catch (e) {
+      showToast(String(e), true);
+    }
+  };
+
+  const handleCtxToggleFav = async (targetTrack: TrackRef) => {
+    setCtxMenu(null);
+    try {
+      await api.toggleFavorite(targetTrack);
+      await refresh();
+    } catch (e) {
+      showToast(String(e), true);
+    }
+  };
+
+  const handleCtxCache = async (targetTrack: TrackRef) => {
+    setCtxMenu(null);
+    try {
+      showToast(lang === "ru" ? "Сохранение в кэш…" : "Saving to cache…");
+      await api.downloadTrackToCache(targetTrack);
+      showToast(lang === "ru" ? "Сохранено в кэш" : "Saved to cache");
+    } catch (e) {
+      showToast(String(e), true);
     }
   };
 
@@ -415,6 +476,7 @@ export function BottomPlayer() {
     : null;
   return (
     <footer
+      ref={footerRef}
       onPointerDown={onPlayerBarPointerDown}
       className={`player ${failed ? "playback-error" : ""} ${
         config.player?.position === "top"
@@ -472,6 +534,7 @@ export function BottomPlayer() {
         {track ? (
           <div
             onClick={() => navigateTo("player")}
+            onContextMenu={handleTrackContextMenu}
             style={{ cursor: "pointer", flexShrink: 0 }}
             title={lang === "ru" ? "Открыть плеер" : "Open player"}
           >
@@ -485,7 +548,7 @@ export function BottomPlayer() {
         ) : (
           <div className="pl-art" style={{ background: "var(--elev)" }} />
         )}
-        <div className="pl-meta">
+        <div className="pl-meta" onContextMenu={handleTrackContextMenu}>
           <span
             className="ttl pl-title-link"
             title={track?.title ?? ""}
@@ -504,7 +567,7 @@ export function BottomPlayer() {
                       className="pl-artist-link"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigateTo("artist", { artist, provider: track.provider });
+                        navigateTo("artist", { artist, provider: track.provider === "spotify" ? "deezer" : track.provider });
                       }}
                     >
                       {artist}
@@ -532,11 +595,6 @@ export function BottomPlayer() {
               HEART_SVG
             )}
           </button>
-          {track && (
-            <span className="pl-src-badge" title={track.provider}>
-              {providerLabel(track.provider)}
-            </span>
-          )}
         </div>
       </div>
       <div className="pl-center">
@@ -695,6 +753,16 @@ export function BottomPlayer() {
           anchorRef={eqBtnRef}
         />
       )}
+
+      <PlayerContextMenu
+        menu={ctxMenu}
+        onClose={() => setCtxMenu(null)}
+        onPlayNext={(t) => void handleCtxPlayNext(t)}
+        onToggleFavorite={(t) => void handleCtxToggleFav(t)}
+        onCacheTrack={(t) => void handleCtxCache(t)}
+        isFav={Boolean(ctxMenu && state && isFavorite(state.library, ctxMenu.track))}
+        lang={lang}
+      />
     </footer>
   );
 }

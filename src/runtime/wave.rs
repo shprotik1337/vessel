@@ -55,11 +55,32 @@ pub(super) fn spawn_wave(
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|duration| duration.as_millis() as i64)
             .unwrap_or_default();
+        let primary_provider = if primary_provider == ProviderKind::Spotify {
+            if providers.get(ProviderKind::YouTubeMusic).is_some() {
+                ProviderKind::YouTubeMusic
+            } else if providers.get(ProviderKind::Deezer).is_some() {
+                ProviderKind::Deezer
+            } else if providers.get(ProviderKind::SoundCloud).is_some() {
+                ProviderKind::SoundCloud
+            } else {
+                ProviderKind::YandexMusic
+            }
+        } else {
+            primary_provider
+        };
+        let mut provider_priority: Vec<ProviderKind> = providers
+            .kinds()
+            .filter(|k| *k != ProviderKind::Spotify)
+            .collect();
+        if !provider_priority.contains(&primary_provider) {
+            provider_priority.insert(0, primary_provider);
+        }
         let result = generate_wave(
             &providers,
             WaveGenerationRequest {
                 settings: WaveSettings {
                     primary_provider,
+                    provider_priority,
                     ..WaveSettings::default()
                 },
                 history,
@@ -72,9 +93,14 @@ pub(super) fn spawn_wave(
             },
         )
         .await;
+        let filtered_tracks: Vec<_> = result
+            .tracks
+            .into_iter()
+            .filter(|t| t.provider != ProviderKind::Spotify)
+            .collect();
         let _ = sender.send(RuntimeMessage::WaveFinished {
             generation,
-            tracks: result.tracks,
+            tracks: filtered_tracks,
             failures: result.failures,
         });
     })

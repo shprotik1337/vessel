@@ -25,11 +25,11 @@ interface SettingsNavProps {
 }
 
 const SERVICE_TABS = [
-  { id: "service_spotify" as const, name: "Spotify", kind: "spotify" as const, brandColor: "#1ED760" },
   { id: "service_yandex" as const, name: "Yandex", kind: "yandex" as const, brandColor: "#FFCC00" },
   { id: "service_youtube_music" as const, name: "YouTube", kind: "youtube_music" as const, brandColor: "#FF0000" },
   { id: "service_soundcloud" as const, name: "SoundCloud", kind: "soundcloud" as const, brandColor: "#FF5500" },
   { id: "service_deezer" as const, name: "Deezer", kind: "deezer" as const, brandColor: "#A238FF" },
+  { id: "service_spotify" as const, name: "Spotify", kind: "spotify" as const, brandColor: "#1ED760" },
   { id: "service_lyrics" as const, name: "Тексты", kind: "lyrics" as const, brandColor: "var(--accent)" },
 ];
 
@@ -79,7 +79,7 @@ export function SettingsNav({
           className={`sett-cat-btn ${category === "services" ? "active" : ""}`}
           onClick={() => {
             setCategory("services");
-            setActiveTab("service_spotify");
+            setActiveTab("service_yandex");
           }}
         >
           {lang === "ru" ? "Сервисы" : "Services"}

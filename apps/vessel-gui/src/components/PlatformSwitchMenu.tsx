@@ -25,7 +25,6 @@ interface PlatformItem {
 
 const PLATFORMS: PlatformItem[] = [
   { id: "youtube_music", label: "YouTube Music", color: "#ff0000" },
-  { id: "spotify", label: "Spotify", color: "#1ed760" },
   { id: "soundcloud", label: "SoundCloud", color: "#ff5500" },
   { id: "yandex", label: "Яндекс Музыка", color: "#fc3f1d" },
   { id: "deezer", label: "Deezer", color: "#a238ff" },
@@ -130,8 +129,10 @@ export function PlatformSwitchMenu({
       const isRelevant = (t: TrackRef) =>
         titleMatches(cleanTitle, t.title) || titleMatches(rawTitle, t.title);
 
-      // Шаг 1: Поиск по "Чистое название + Основной артист"
-      const query1 = `${cleanTitle || rawTitle} ${primaryArtist}`.trim();
+      // Шаг 1: Поиск строго по "Исполнитель + Трек"
+      const query1 = primaryArtist
+        ? `${primaryArtist} ${rawTitle}`.trim()
+        : rawTitle.trim();
       let outcome = await api.search(query1, platformId).catch(() => null);
       if (outcome?.tracks && outcome.tracks.length > 0) {
         const valid = outcome.tracks.filter(isRelevant);
@@ -140,31 +141,12 @@ export function PlatformSwitchMenu({
         }
       }
 
-      // Шаг 2 (если не найдено): Ищем ТОЛЬКО по чистому названию трека (особенно важно для SoundCloud)
-      if (candidateTracks.length === 0 && cleanTitle.length > 1) {
-        outcome = await api.search(cleanTitle, platformId).catch(() => null);
-        if (outcome?.tracks && outcome.tracks.length > 0) {
-          const valid = outcome.tracks.filter(isRelevant);
-          if (valid.length > 0) {
-            // Если среди результатов есть трек, где автор или заголовок содержит имя артиста — отдаем приоритет
-            const normArtist = primaryArtist.toLowerCase();
-            const matchWithArtist =
-              normArtist && !normArtist.includes("unknown")
-                ? valid.find((t) => {
-                    const inTitle = t.title.toLowerCase().includes(normArtist);
-                    const inArtists = t.artists?.some((a) => a.toLowerCase().includes(normArtist));
-                    return inTitle || inArtists;
-                  })
-                : null;
-            // Если есть трек с упоминанием артиста — берём его первым, иначе первый качественный результат
-            candidateTracks = matchWithArtist ? [matchWithArtist, ...valid] : valid;
-          }
-        }
-      }
-
-      // Шаг 3 (фоллбэк): Пробуем оригинальное сырое название со скобками
-      if (candidateTracks.length === 0) {
-        outcome = await api.search(rawTitle, platformId).catch(() => null);
+      // Шаг 2 (если название содержало лишние теги в скобках): "Исполнитель + Чистое название"
+      if (candidateTracks.length === 0 && cleanTitle.length > 1 && cleanTitle !== rawTitle) {
+        const query2 = primaryArtist
+          ? `${primaryArtist} ${cleanTitle}`.trim()
+          : cleanTitle.trim();
+        outcome = await api.search(query2, platformId).catch(() => null);
         if (outcome?.tracks && outcome.tracks.length > 0) {
           const valid = outcome.tracks.filter(isRelevant);
           if (valid.length > 0) {

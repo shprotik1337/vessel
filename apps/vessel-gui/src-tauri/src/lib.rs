@@ -75,7 +75,10 @@ pub struct ProviderStatus {
     pub connected: bool,
     pub has_credentials: bool,
     pub enabled: bool,
-    /// "local" РёР»Рё "server:<РЅР°Р·РІР°РЅРёРµ>" вЂ” РіРґРµ СЂРµР°Р»СЊРЅРѕ РёСЃРїРѕР»РЅСЏРµС‚СЃСЏ РїСЂРѕРІР°Р№РґРµСЂ.
+    /// true, если сервис работает через проверенный публичный гостевой доступ сервера
+    /// (активно только для онлайн-аккаунтов Vessel при отсутствии личных ключей).
+    pub guest: bool,
+    /// "local" или "server:<название>" — где реально исполняется провайдер.
     pub origin: String,
 }
 
@@ -107,6 +110,7 @@ fn state_hash(core: &GuiCore) -> u64 {
         track.provider_key().hash(&mut hasher);
     }
     format!("{:?}", core.account_state).hash(&mut hasher);
+    core.runtime.guest_providers().hash(&mut hasher);
     hasher.finish()
 }
 
@@ -145,15 +149,16 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::Spotify => credentials.spotify,
             vessel_core::model::ProviderKind::YouTubeMusic => credentials.youtube,
         };
+        let guest = core.account_state.is_authenticated()
+            && core.runtime.is_guest_provider(kind)
+            && !has_credentials;
         let connected = match kind {
             // YouTube Music работает анонимно — всегда connected, если enabled
             vessel_core::model::ProviderKind::YouTubeMusic => {
                 registry.get(kind).is_some() && enabled
             }
-            // Остальные — показываем «подключено» только если пользователь
-            // явно сохранил ключ/cookie (иначе на свежей установке SoundCloud
-            // авто-дискавери показывает зелёный бейдж хотя никто не входил)
-            _ => registry.get(kind).is_some() && enabled && has_credentials,
+            // Остальные — «подключено», если есть личные ключи ИЛИ активен проверенный гостевой доступ сервера
+            _ => registry.get(kind).is_some() && enabled && (has_credentials || guest),
         };
         let origin = match core
             .config
@@ -169,6 +174,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
                     .map(|s| format!("server:{}", s.name))
                     .unwrap_or_else(|| "local".to_string())
             }
+            _ if guest => "server:Vessel Server".to_string(),
             _ => "local".to_string(),
         };
         statuses.push(ProviderStatus {
@@ -177,6 +183,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             connected,
             has_credentials,
             enabled,
+            guest,
             origin,
         });
     }
@@ -186,8 +193,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
 pub fn build_full_state(core: &GuiCore) -> FullState {
     let player = core.app.player.clone();
     let image_proxy = {
-        // Проксируем изображения только для провайдеров, которые ЯВНО переключены на «Сервер».
-        // В чисто локальном режиме VPS не используется вообще (image_proxy = None).
+        // Проксируем изображения для провайдеров на «Сервере» и для активных гостевых провайдеров.
         let mut routed_providers = Vec::new();
         let mut active_server_id = None;
 
@@ -196,6 +202,23 @@ pub fn build_full_state(core: &GuiCore) -> FullState {
                 routed_providers.push(provider_segment.clone());
                 if active_server_id.is_none() {
                     active_server_id = Some(server_id.to_string());
+                }
+            }
+        }
+        if core.account_state.is_authenticated() {
+            for kind in [
+                vessel_core::model::ProviderKind::Deezer,
+                vessel_core::model::ProviderKind::SoundCloud,
+            ] {
+                if core.runtime.is_guest_provider(kind) {
+                    let seg = vessel_core::protocol::kind_segment(kind).to_string();
+                    if !routed_providers.contains(&seg) {
+                        routed_providers.push(seg);
+                    }
+                    if active_server_id.is_none() {
+                        active_server_id =
+                            Some(vessel_core::config::OFFICIAL_SERVER_ID.to_string());
+                    }
                 }
             }
         }
@@ -1130,24 +1153,41 @@ pub fn run() -> anyhow::Result<()> {
                                     // Синхронизация учетных данных провайдеров из облачного Vault
                                     let secrets = SecretStore::new(secrets_file);
                                     let gen = vessel_core::vault_sync::next_account_generation();
-                                    if let Ok(()) = vessel_core::vault_sync::sync_credentials_on_login(
+                                    let _ = vessel_core::vault_sync::sync_credentials_on_login(
                                         &client,
                                         &token,
                                         &session_resp.user.id,
                                         gen,
                                         &secrets,
                                     )
-                                    .await
+                                    .await;
+
+                                    // Получаем проверенные сервером гостевые провайдеры (Deezer, SoundCloud)
+                                    let guest_provs = client
+                                        .info()
+                                        .await
+                                        .map(|info| info.guest_providers)
+                                        .unwrap_or_default();
                                     {
                                         let mut core =
                                             core_session.lock().unwrap_or_else(|p| p.into_inner());
-                                        core.runtime.reload_providers();
                                         let creds =
                                             core.runtime.credential_state().unwrap_or_default();
+                                        let has_guest_dz =
+                                            guest_provs.iter().any(|g| g == "deezer");
+                                        let has_guest_sc =
+                                            guest_provs.iter().any(|g| g == "soundcloud");
                                         core.app.spotify_enabled = creds.spotify;
                                         core.app.yandex_enabled = creds.yandex;
-                                        core.app.deezer_enabled = creds.deezer;
-                                        core.app.soundcloud_enabled = creds.soundcloud;
+                                        core.app.deezer_enabled = creds.deezer || has_guest_dz;
+                                        core.app.soundcloud_enabled =
+                                            creds.soundcloud || has_guest_sc;
+                                        core.config.deezer_enabled = core.app.deezer_enabled;
+                                        core.config.soundcloud_enabled =
+                                            core.app.soundcloud_enabled;
+                                        let cfg = core.config.clone();
+                                        core.runtime.sync_config(&cfg);
+                                        core.runtime.set_guest_providers(guest_provs);
                                         core.app.config_dirty = true;
                                     }
                                 }
@@ -1180,6 +1220,7 @@ pub fn run() -> anyhow::Result<()> {
                                         }
                                         let mut core =
                                             core_session.lock().unwrap_or_else(|p| p.into_inner());
+                                        core.runtime.set_guest_providers(Vec::new());
                                         core.runtime.reload_providers();
                                         let creds =
                                             core.runtime.credential_state().unwrap_or_default();

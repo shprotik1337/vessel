@@ -119,6 +119,15 @@ pub fn build_registry(
     secrets: &SecretStore,
     allow_remote: bool,
 ) -> ProviderSetup {
+    build_registry_with_guests(config, secrets, allow_remote, &[])
+}
+
+pub fn build_registry_with_guests(
+    config: &AppConfig,
+    secrets: &SecretStore,
+    allow_remote: bool,
+    guest_providers: &[String],
+) -> ProviderSetup {
     let mut registry = ProviderRegistry::default();
     let mut notices = Vec::new();
 
@@ -192,7 +201,7 @@ pub fn build_registry(
     }
 
     if allow_remote {
-        apply_provider_routing(&mut registry, config, secrets, &mut notices);
+        apply_provider_routing(&mut registry, config, secrets, guest_providers, &mut notices);
     }
 
     ProviderSetup { registry, notices }
@@ -200,12 +209,17 @@ pub fn build_registry(
 
 /// Подмена локальных реализаций на `ServerProvider` по `config.provider_routing`
 /// (`spotify` → `"server:<id>" | "local"`). Ключ карты — сегмент из protocol.
+/// Дополнительно для авторизованных онлайн-аккаунтов Vessel (наличие `vessel-user-session`),
+/// если у пользователя нет личных credentials Deezer/SoundCloud, автоматически подключает
+/// проверенные гостевые аккаунты с официального Vessel Server.
 fn apply_provider_routing(
     registry: &mut ProviderRegistry,
     config: &AppConfig,
     secrets: &SecretStore,
+    guest_providers: &[String],
     notices: &mut Vec<String>,
 ) {
+    let mut server_routed: Vec<ProviderKind> = Vec::new();
     for (segment, target) in &config.provider_routing {
         let Some(kind) = kind_from_segment(segment) else {
             notices.push(format!(
@@ -262,13 +276,85 @@ fn apply_provider_routing(
                     server_url
                 );
                 let preferred = if kind == ProviderKind::Spotify {
-                    config.spotify_playback_source.clone()
+                    Some("auto".to_string())
                 } else {
                     None
                 };
                 registry.register(ServerProvider::with_preferred_source(kind, client, preferred));
+                server_routed.push(kind);
             }
             Err(error) => notices.push(format!("Vessel Server «{server_id}»: {error}")),
+        }
+    }
+
+    // Автоматическое подключение проверенных гостевых аккаунтов Deezer и SoundCloud
+    // ТОЛЬКО для авторизованных онлайн-аккаунтов Vessel (не распространяется на оффлайн-аккаунты).
+    let has_online_session = secrets
+        .get_named("vessel-user-session")
+        .ok()
+        .flatten()
+        .is_some_and(|s| !s.trim().is_empty());
+    if !has_online_session || guest_providers.is_empty() {
+        return;
+    }
+
+    for kind in [ProviderKind::Deezer, ProviderKind::SoundCloud] {
+        let segment = crate::protocol::kind_segment(kind);
+        if !guest_providers.iter().any(|g| g == segment) {
+            continue;
+        }
+        // Если уже успешно зарегистрирован серверный маршрут в основном цикле — не дублируем
+        if server_routed.contains(&kind) {
+            continue;
+        }
+        // Если у пользователя уже есть личные ключи — работает личный аккаунт, гость не нужен
+        let has_personal = match kind {
+            ProviderKind::Deezer => secrets
+                .get(SecretKey::DeezerArl)
+                .ok()
+                .flatten()
+                .is_some_and(|s| !s.trim().is_empty()),
+            ProviderKind::SoundCloud => {
+                secrets
+                    .get(SecretKey::SoundCloudOAuthToken)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|s| !s.trim().is_empty())
+                    || secrets
+                        .get(SecretKey::SoundCloudClientIdOverride)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|s| !s.trim().is_empty())
+            }
+            _ => true,
+        };
+        if has_personal {
+            continue;
+        }
+
+        let server_url = config
+            .vessel_servers
+            .iter()
+            .find(|s| s.id == crate::config::OFFICIAL_SERVER_ID)
+            .filter(|s| !s.url.trim().is_empty())
+            .map(|s| s.url.as_str())
+            .unwrap_or(crate::config::OFFICIAL_SERVER_URL);
+        let token = secrets
+            .get_named(&format!("vessel-server:{}", crate::config::OFFICIAL_SERVER_ID))
+            .ok()
+            .flatten()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| crate::config::OFFICIAL_SERVER_TOKEN.to_string());
+        if token.trim().is_empty() {
+            continue;
+        }
+        if let Ok(client) = ServerClient::with_secrets(server_url, &token, Some(secrets.clone())) {
+            crate::dlog!(
+                "[guest-routing] {} -> Guest ServerProvider ({})",
+                kind.label(),
+                server_url
+            );
+            registry.register(ServerProvider::with_preferred_source(kind, client, None));
         }
     }
 }

@@ -22,7 +22,7 @@ export function Playlists() {
   const [importStep, setImportStep] = useState<ImportStep>("none");
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
-  const [likesProvider, setLikesProvider] = useState<"soundcloud" | "deezer" | "spotify">("deezer");
+  const [likesProvider, setLikesProvider] = useState<"soundcloud" | "deezer" | "spotify">("spotify");
   const [likesProfileUrl, setLikesProfileUrl] = useState("");
   const [likesTarget, setLikesTarget] = useState<"favorites" | "playlist">("favorites");
   const [likesPlaylistTitle, setLikesPlaylistTitle] = useState("");

@@ -197,7 +197,6 @@ fn auto_chain_is_ytm_then_deezer_manual_is_single() {
         vec![
             PlaybackSourceKind::YouTubeMusic,
             PlaybackSourceKind::Deezer,
-            PlaybackSourceKind::SoundCloud,
         ]
     );
     assert_eq!(

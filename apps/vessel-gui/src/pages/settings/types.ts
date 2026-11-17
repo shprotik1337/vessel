@@ -93,7 +93,6 @@ export const BROWSER_LOGIN: Record<
 export const UNIFIED_PLATFORMS = [
   { key: "youtube_music", label: "YouTube Music", color: "#FF0000" },
   { key: "soundcloud", label: "SoundCloud", color: "#FF5500" },
-  { key: "spotify", label: "Spotify", color: "#1ED760" },
   { key: "yandex", label: "Yandex Music", color: "#FFCC00" },
   { key: "deezer", label: "Deezer", color: "#A238FF" },
 ];

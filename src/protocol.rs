@@ -111,6 +111,10 @@ pub struct ServerInfo {
     /// Сегменты провайдеров, доступных на этом сервере прямо сейчас.
     #[serde(default)]
     pub providers: Vec<String>,
+    /// Сегменты провайдеров с активными проверенными гостевыми аккаунтами на сервере
+    /// (только для авторизованных онлайн-аккаунтов Vessel).
+    #[serde(default)]
+    pub guest_providers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]

@@ -59,6 +59,8 @@ export interface AppStore {
   setWaveTracks: (tracks: TrackRef[]) => void;
   isWaveActive: boolean;
   setIsWaveActive: (active: boolean) => void;
+  waveLoading: boolean;
+  regenerateWave: (opts?: { force?: boolean; autoplay?: boolean }) => Promise<TrackRef[]>;
   activeMixContext: MixContext | null;
   setActiveMixContext: (ctx: MixContext | null) => void;
   externalPlaylist: Playlist | null;

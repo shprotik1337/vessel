@@ -29,7 +29,12 @@ pub async fn search(
         Some("soundcloud") => SearchProvider::SoundCloud,
         Some("yandex") => SearchProvider::YandexMusic,
         Some("deezer") => SearchProvider::Deezer,
-        Some("spotify") => SearchProvider::Spotify,
+        Some("spotify") => {
+            return Ok(crate::SearchOutcome {
+                tracks: Vec::new(),
+                failures: Vec::new(),
+            });
+        }
         Some("youtube_music") => SearchProvider::YouTubeMusic,
         Some(other) => return Err(format!("неизвестный провайдер: {other}")),
     };
@@ -79,14 +84,13 @@ pub async fn search_collections(
         None => None,
     };
     let all_kinds = [
-        vessel_core::model::ProviderKind::Spotify,
         vessel_core::model::ProviderKind::SoundCloud,
         vessel_core::model::ProviderKind::Deezer,
         vessel_core::model::ProviderKind::YandexMusic,
         vessel_core::model::ProviderKind::YouTubeMusic,
     ];
     let kinds: Vec<vessel_core::model::ProviderKind> = if let Some(tk) = target_kind {
-        if registry.get(tk).is_some() {
+        if tk != vessel_core::model::ProviderKind::Spotify && registry.get(tk).is_some() {
             vec![tk]
         } else {
             return Ok(Vec::new());
@@ -95,7 +99,7 @@ pub async fn search_collections(
         match filter_kinds {
             Some(explicit) => explicit
                 .into_iter()
-                .filter(|k| registry.get(*k).is_some())
+                .filter(|k| *k != vessel_core::model::ProviderKind::Spotify && registry.get(*k).is_some())
                 .collect(),
             _ => all_kinds
                 .into_iter()

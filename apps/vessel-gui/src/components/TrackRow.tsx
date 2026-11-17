@@ -10,12 +10,10 @@ import {
   trackKey,
   canPlay,
   resolveArtworkUrl,
-  providerLabel,
 } from "../lib/utils";
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import { Artwork } from "./Artwork";
-import { PlatformIcon } from "./PlatformIcon";
 import * as api from "../api/commands";
 
 interface TrackRowProps {
@@ -238,7 +236,10 @@ function TrackRowComponent({
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (onArtistClick) onArtistClick(artist, track.provider);
+                          if (onArtistClick) {
+                            const targetProv = track.provider === "spotify" ? "deezer" : track.provider;
+                            onArtistClick(artist, targetProv);
+                          }
                         }}
                       >
                         {artist}
@@ -251,12 +252,6 @@ function TrackRowComponent({
           </span>
         </div>
         {showAlbum && <span className="c-album">—</span>}
-        <span className="c-platform" title={providerLabel(track.provider)}>
-          <span className="platform-icon-wrap">
-            <PlatformIcon kind={track.provider as any} size={15} />
-          </span>
-          <span className="platform-name">{providerLabel(track.provider)}</span>
-        </span>
         <span className="c-src">
           <span className="row-actions">
             <button

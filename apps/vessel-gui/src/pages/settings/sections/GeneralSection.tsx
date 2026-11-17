@@ -46,11 +46,15 @@ export function GeneralSection({ onResetApp }: GeneralSectionProps) {
     setSelectedRecProviders(nextList);
     try {
       const val = nextAll ? "all" : nextList.join(",");
-      await api.setRecommendationProviders(val);
+      await Promise.all([
+        api.setRecommendationProviders(val),
+        api.setWaveProviders(val),
+      ]);
       clearExploreCache();
       clearPersonalMixesCache();
       window.dispatchEvent(new CustomEvent("vessel:providers-changed", { detail: val }));
-      showToast(lang === "ru" ? "Платформы рекомендаций обновлены" : "Recommendation platforms updated");
+      window.dispatchEvent(new CustomEvent("vessel:wave-providers-changed", { detail: val }));
+      showToast(lang === "ru" ? "Платформы обновлены" : "Platforms updated");
     } catch (e) {
       showToast(String(e), true);
     }
@@ -82,11 +86,15 @@ export function GeneralSection({ onResetApp }: GeneralSectionProps) {
     setSelectedRecProviders(next);
     try {
       const val = isAll ? "all" : next.join(",");
-      await api.setRecommendationProviders(val);
+      await Promise.all([
+        api.setRecommendationProviders(val),
+        api.setWaveProviders(val),
+      ]);
       clearExploreCache();
       clearPersonalMixesCache();
       window.dispatchEvent(new CustomEvent("vessel:providers-changed", { detail: val }));
-      showToast(lang === "ru" ? "Платформы рекомендаций обновлены" : "Recommendation platforms updated");
+      window.dispatchEvent(new CustomEvent("vessel:wave-providers-changed", { detail: val }));
+      showToast(lang === "ru" ? "Платформы обновлены" : "Platforms updated");
     } catch (e) {
       showToast(String(e), true);
     }
@@ -172,8 +180,8 @@ export function GeneralSection({ onResetApp }: GeneralSectionProps) {
             </div>
             <div className="sett-card-desc">
               {lang === "ru"
-                ? "Используется на главной странице для персональных миксов и рекомендаций"
-                : "Used on the main page for personal mixes and recommendations"}
+                ? "Используется на главной странице для Моей волны, персональных миксов и рекомендаций"
+                : "Used on the main page for My Wave, personal mixes and recommendations"}
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

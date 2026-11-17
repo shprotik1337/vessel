@@ -1,8 +1,7 @@
 import { Artwork } from "../../components/Artwork";
-import { PlatformIcon } from "../../components/PlatformIcon";
 import { filterValidArtists, trackKey } from "../../lib/utils";
 import type { TrackRef } from "../../api/types";
-import { formatDuration, getProviderLabel } from "./HomeHelpers";
+import { formatDuration } from "./HomeHelpers";
 
 export function LibraryBlockContent({
   library,
@@ -57,7 +56,7 @@ export function LibraryBlockContent({
                         className="pl-artist-link"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigateTo("artist", { artist, provider: track.provider });
+                          navigateTo("artist", { artist, provider: track.provider === "spotify" ? "deezer" : track.provider });
                         }}
                       >
                         {artist}
@@ -66,10 +65,6 @@ export function LibraryBlockContent({
                     </span>
                   ))}
                 </div>
-              </div>
-              <div className="home-lib-badge">
-                <PlatformIcon kind={track.provider as any} size={14} />
-                <span>{getProviderLabel(track.provider)}</span>
               </div>
               <div className="home-lib-duration">
                 {formatDuration(track.duration_ms)}

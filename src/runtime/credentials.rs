@@ -29,10 +29,14 @@ impl Runtime {
             SecretKey::SoundCloudClientIdOverride
             | SecretKey::SoundCloudClientId
             | SecretKey::SoundCloudOAuthToken => {
-                self.config.soundcloud_enabled = false;
+                // Если доступен гостевой (публичный) доступ через сервер, оставляем сервис активным
+                self.config.soundcloud_enabled =
+                    self.is_guest_provider(ProviderKind::SoundCloud);
             }
             SecretKey::YandexToken => self.config.yandex_enabled = false,
-            SecretKey::DeezerArl => self.config.deezer_enabled = false,
+            SecretKey::DeezerArl => {
+                self.config.deezer_enabled = self.is_guest_provider(ProviderKind::Deezer);
+            }
             SecretKey::SpotifySpDc => self.config.spotify_enabled = false,
             SecretKey::YouTubeCookie | SecretKey::YouTubeOAuthRefresh => {}
             _ => {}

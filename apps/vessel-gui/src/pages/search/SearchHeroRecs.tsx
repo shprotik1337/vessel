@@ -1,6 +1,4 @@
 import { Artwork } from "../../components/Artwork";
-import { PlatformIcon } from "../../components/PlatformIcon";
-import { providerLabel } from "../../lib/utils";
 import type { TrackRef } from "../../api/types";
 
 interface SearchHeroRecsProps {
@@ -54,11 +52,6 @@ export function SearchHeroRecs({
                   square={true}
                   className="search-hero-rec-art"
                 />
-                {track.provider && (
-                  <span className="search-hero-rec-badge" title={providerLabel(track.provider)}>
-                    <PlatformIcon kind={track.provider} size={12} />
-                  </span>
-                )}
               </div>
               <div className="search-hero-rec-title">{track.title}</div>
               <div className="search-hero-rec-artist">{artistStr}</div>

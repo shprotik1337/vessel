@@ -22,7 +22,22 @@ export function useAutoplayAndQueue({
   setHasEverPlayed,
 }: UseAutoplayAndQueueProps) {
   const [waveTracks, setWaveTracks] = useState<TrackRef[]>([]);
-  const [isWaveActive, setIsWaveActive] = useState<boolean>(false);
+  const [isWaveActive, setIsWaveActiveState] = useState<boolean>(false);
+  const [waveLoading, setWaveLoading] = useState<boolean>(false);
+  const waveActivatedAtRef = useRef<number>(0);
+  const waveInitializedRef = useRef<boolean>(false);
+  const waveBuildingRef = useRef<boolean>(false);
+  const waveDirtyRef = useRef<boolean>(false);
+  const lastLibrarySigRef = useRef<string | null>(null);
+  const waveRegenTimerRef = useRef<number | null>(null);
+  const waveRequestIdRef = useRef<number>(0);
+
+  const setIsWaveActive = useCallback((active: boolean) => {
+    if (active) {
+      waveActivatedAtRef.current = Date.now();
+    }
+    setIsWaveActiveState(active);
+  }, []);
   const [activeMixContext, setActiveMixContext] = useState<MixContext | null>(null);
   const [externalPlaylist, setExternalPlaylist] = useState<Playlist | null>(null);
   const [smartTrackKeys, setSmartTrackKeys] = useState<Set<string>>(() => new Set());
@@ -89,7 +104,9 @@ export function useAutoplayAndQueue({
       expandingQueueRef.current = true;
       lastExpandedTimeRef.current = Date.now();
       try {
-        const rawProviders = await api.getWaveProviders().catch(() => "all");
+        const rawProviders = await api
+          .getRecommendationProviders()
+          .catch(() => api.getWaveProviders().catch(() => "all"));
         const fresh = await api.getState().catch(() => state);
         const currentQueue = fresh?.queue ?? state?.queue ?? [];
         const currentIndex = fresh?.queue_index ?? state?.queue_index ?? 0;
@@ -452,11 +469,190 @@ export function useAutoplayAndQueue({
     [refresh, showToast, smartShuffle, state?.player?.shuffle, state?.queue, setHasEverPlayed],
   );
 
+  const regenerateWave = useCallback(
+    async (opts?: { force?: boolean; autoplay?: boolean }): Promise<TrackRef[]> => {
+      const force = opts?.force ?? false;
+      const autoplay = opts?.autoplay ?? false;
+      if (waveBuildingRef.current && !force) return [];
+
+      const reqId = ++waveRequestIdRef.current;
+      waveBuildingRef.current = true;
+      setWaveLoading(true);
+      try {
+        const rawProviders = await api
+          .getRecommendationProviders()
+          .catch(() => api.getWaveProviders().catch(() => "all"));
+        const filter = rawProviders && rawProviders.trim().length > 0 ? rawProviders : "all";
+        const tracks = await api
+          .getWaveRecommendations("favorites", 50, null, filter)
+          .catch(() => [] as TrackRef[]);
+
+        // Игнорируем устаревший ответ, если за это время стартовала более новая генерация
+        if (reqId !== waveRequestIdRef.current) {
+          return tracks;
+        }
+
+        const unique = dedupe(tracks);
+        setWaveTracks(unique);
+        waveInitializedRef.current = true;
+        waveDirtyRef.current = false;
+
+        if (autoplay) {
+          if (unique.length > 0) {
+            setIsWaveActive(true);
+            await playTracks(unique, 0, true);
+          } else {
+            showToast(
+              lang === "ru"
+                ? "В выбранных сервисах нет треков для Моей волны"
+                : "No tracks found for My Wave in selected services",
+              true,
+            );
+          }
+        }
+        return unique;
+      } catch (err) {
+        if (autoplay) {
+          showToast(String(err), true);
+        }
+        return [];
+      } finally {
+        if (reqId === waveRequestIdRef.current) {
+          waveBuildingRef.current = false;
+          setWaveLoading(false);
+        }
+      }
+    },
+    [lang, playTracks, setIsWaveActive, showToast],
+  );
+
+  // Сигнатура подключённых провайдеров (чтобы дождаться авторизации / гостевого доступа при старте)
+  const connectedProvidersSig = state?.providers
+    ? state.providers
+        .filter((p) => p.connected)
+        .map((p) => p.kind)
+        .sort()
+        .join(",")
+    : "";
+  const lastConnectedSigRef = useRef<string>("");
+
+  // 1. Автоматическая предгенерация Моей волны при запуске приложения (без автозапуска воспроизведения)
+  useEffect(() => {
+    if (!state || !connectedProvidersSig) return;
+    if (!waveInitializedRef.current && !waveBuildingRef.current) {
+      lastConnectedSigRef.current = connectedProvidersSig;
+      void regenerateWave({ force: false, autoplay: false });
+      return;
+    }
+    // Если после старта подтянулись новые провайдеры (например, гостевой доступ или вход в аккаунт)
+    // и волна ещё не играет — мягко перегенерируем её с учётом всех доступных сервисов
+    if (
+      lastConnectedSigRef.current &&
+      lastConnectedSigRef.current !== connectedProvidersSig &&
+      !isWaveActive
+    ) {
+      lastConnectedSigRef.current = connectedProvidersSig;
+      if (waveRegenTimerRef.current) window.clearTimeout(waveRegenTimerRef.current);
+      waveRegenTimerRef.current = window.setTimeout(() => {
+        void regenerateWave({ force: true, autoplay: false });
+      }, 600);
+    }
+  }, [state, connectedProvidersSig, isWaveActive, regenerateWave]);
+
+  // 2. Автоперегенерация при лайке / снятии лайка / изменении плейлистов
+  const librarySig = state
+    ? `${state.library.length}|${state.library
+        .slice(0, 6)
+        .map(trackKey)
+        .join(",")}|${state.library
+        .slice(-4)
+        .map(trackKey)
+        .join(",")}|${state.playlists.map((p) => `${p.id}:${p.tracks.length}`).join(",")}`
+    : null;
+
+  useEffect(() => {
+    if (!librarySig) return;
+    if (lastLibrarySigRef.current === null) {
+      lastLibrarySigRef.current = librarySig;
+      return;
+    }
+    if (lastLibrarySigRef.current === librarySig) return;
+    lastLibrarySigRef.current = librarySig;
+
+    const isWavePlayingNow =
+      isWaveActive &&
+      (state?.player?.status === "playing" || state?.player?.status === "buffering");
+
+    if (isWavePlayingNow) {
+      // Не обрываем текущий играющий трек волны — пересоберём, как только волна перестанет играть
+      waveDirtyRef.current = true;
+      return;
+    }
+
+    if (waveRegenTimerRef.current) window.clearTimeout(waveRegenTimerRef.current);
+    waveRegenTimerRef.current = window.setTimeout(() => {
+      void regenerateWave({ force: true, autoplay: false });
+    }, 1500);
+  }, [librarySig, isWaveActive, state?.player?.status, regenerateWave]);
+
+  // 3. Отложенная перегенерация, если лайк был поставлен во время активного воспроизведения волны
+  useEffect(() => {
+    if (!waveDirtyRef.current) return;
+    const isWavePlayingNow =
+      isWaveActive &&
+      (state?.player?.status === "playing" || state?.player?.status === "buffering");
+    if (isWavePlayingNow) return;
+
+    waveDirtyRef.current = false;
+    if (waveRegenTimerRef.current) window.clearTimeout(waveRegenTimerRef.current);
+    waveRegenTimerRef.current = window.setTimeout(() => {
+      void regenerateWave({ force: true, autoplay: false });
+    }, 800);
+  }, [isWaveActive, state?.player?.status, regenerateWave]);
+
+  // 4. Перегенерация при изменении платформ в Настройках → Общие → Платформа
+  useEffect(() => {
+    const onProvidersChanged = () => {
+      if (waveRegenTimerRef.current) window.clearTimeout(waveRegenTimerRef.current);
+      waveRegenTimerRef.current = window.setTimeout(() => {
+        void regenerateWave({ force: true, autoplay: false });
+      }, 450);
+    };
+    window.addEventListener("vessel:providers-changed", onProvidersChanged);
+    window.addEventListener("vessel:wave-providers-changed", onProvidersChanged);
+    return () => {
+      window.removeEventListener("vessel:providers-changed", onProvidersChanged);
+      window.removeEventListener("vessel:wave-providers-changed", onProvidersChanged);
+    };
+  }, [regenerateWave]);
+
+  // 5. Автосброс флага isWaveActive, если пользователь переключился на трек вне Моей волны
+  useEffect(() => {
+    if (!isWaveActive || !state?.now_playing || waveTracks.length === 0) return;
+    if (Date.now() - waveActivatedAtRef.current < 2500) return;
+    const nowKey = trackKey(state.now_playing);
+    const inWave = waveTracks.some((t) => trackKey(t) === nowKey);
+    if (!inWave) {
+      setIsWaveActiveState(false);
+    }
+  }, [isWaveActive, state?.now_playing, waveTracks]);
+
+  // Очистка таймера при размонтировании
+  useEffect(() => {
+    return () => {
+      if (waveRegenTimerRef.current) {
+        window.clearTimeout(waveRegenTimerRef.current);
+      }
+    };
+  }, []);
+
   return {
     waveTracks,
     setWaveTracks,
     isWaveActive,
     setIsWaveActive,
+    waveLoading,
+    regenerateWave,
     activeMixContext,
     setActiveMixContext,
     externalPlaylist,

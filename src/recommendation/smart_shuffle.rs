@@ -70,6 +70,9 @@ pub async fn apply_smart_shuffle(
                 crate::app::shuffle_slice(&mut lib);
                 let mut seen_lib = HashSet::new();
                 for mut t in lib {
+                    if t.provider == crate::model::ProviderKind::Spotify {
+                        continue;
+                    }
                     let sk = track_semantic_key(&t);
                     if seen_lib.insert(sk) && Some(&t) != current_track.as_ref() {
                         t.origin = crate::model::TrackOrigin::SmartShuffle;
@@ -135,6 +138,9 @@ pub async fn apply_smart_shuffle(
             crate::app::shuffle_slice(&mut lib);
             let mut seen_lib = HashSet::new();
             for mut t in lib {
+                if t.provider == crate::model::ProviderKind::Spotify {
+                    continue;
+                }
                 let sk = track_semantic_key(&t);
                 if seen_lib.insert(sk.clone())
                     && !unplayed_shuffled

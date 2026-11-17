@@ -164,10 +164,12 @@ impl SecretStore {
     }
 
     pub fn remove_named(&self, name: &str) -> Result<()> {
-        if self.system_enabled
-            && let Ok(entry) = Entry::new(SERVICE_NAME, name)
-        {
-            let _ = entry.delete_credential();
+        if self.system_enabled {
+            for service in [SERVICE_NAME, OLD_SERVICE_NAME] {
+                if let Ok(entry) = Entry::new(service, name) {
+                    let _ = entry.delete_credential();
+                }
+            }
         }
         self.remove_named_file_value(name)
     }

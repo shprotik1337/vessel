@@ -1,8 +1,7 @@
 import type { TrackRef, PlayerState } from "../../api/types";
-import { formatTime, providerLabel, filterValidArtists } from "../../lib/utils";
+import { formatTime, filterValidArtists } from "../../lib/utils";
 import { t, type Lang } from "../../i18n";
 import { Artwork } from "../../components/Artwork";
-import { PlatformIcon } from "../../components/PlatformIcon";
 import { PlatformSwitchMenu } from "../../components/PlatformSwitchMenu";
 import { IconSparkle } from "../../components/Icons";
 import {
@@ -16,7 +15,6 @@ import {
   VOLUME_SVG,
   MUTE_SVG,
   EXPAND_SVG,
-  getPlatformColor,
 } from "./playerIcons";
 
 interface PlayerNowPlayingCardProps {
@@ -157,22 +155,6 @@ export function PlayerNowPlayingCard({
       >
         {track ? (
           <>
-            {/* Platform badge */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <PlatformIcon kind={track.provider as any} size={16} />
-              <span
-                style={{
-                  color: getPlatformColor(track.provider),
-                  fontSize: 12,
-                  fontWeight: 800,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                }}
-              >
-                {providerLabel(track.provider)}
-              </span>
-            </div>
-
             {/* Title */}
             <div
               style={{

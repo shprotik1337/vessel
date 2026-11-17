@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useApp } from "../store";
 import { WaveSection } from "../components/WaveSection";
-import { QuickAccessSection } from "../components/QuickAccessSection";
 import { PageAmbientBackdrop } from "../components/PageAmbientBackdrop";
 import { trackKey, resolveArtworkUrl } from "../lib/utils";
 import type { MixItem } from "../api/types";
@@ -68,14 +67,7 @@ export function Home() {
           </div>
         </div>
 
-        {/* 2. Quick Access Section */}
-        <div className="home-row-line">
-          <div className="home-block-wrapper" data-block-id="quick-access" data-width="full">
-            <QuickAccessSection />
-          </div>
-        </div>
-
-        {/* 3. Recommendations Section */}
+        {/* 2. Recommendations Section */}
         <div className="home-row-line">
           <div className="home-block-wrapper" data-block-id="recommendations" data-width="full">
             <RecommendationsBlockContent

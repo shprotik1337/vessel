@@ -102,6 +102,27 @@ pub async fn auth_register(
     let _ = secrets.set_named("vessel-user-username", &resp.user.username);
     let _ = secrets.set_named("vessel-user-id", &resp.user.id);
 
+    // Новый онлайн-пользователь сразу получает доступ к проверенным гостевым провайдерам сервера
+    let guest_provs = client
+        .info()
+        .await
+        .map(|info| info.guest_providers)
+        .unwrap_or_default();
+    if !guest_provs.is_empty() {
+        let mut core = lock(&core);
+        let creds = core.runtime.credential_state().unwrap_or_default();
+        let has_guest_dz = guest_provs.iter().any(|g| g == "deezer");
+        let has_guest_sc = guest_provs.iter().any(|g| g == "soundcloud");
+        core.app.deezer_enabled = creds.deezer || has_guest_dz;
+        core.app.soundcloud_enabled = creds.soundcloud || has_guest_sc;
+        core.config.deezer_enabled = core.app.deezer_enabled;
+        core.config.soundcloud_enabled = core.app.soundcloud_enabled;
+        let cfg = core.config.clone();
+        core.runtime.sync_config(&cfg);
+        core.runtime.set_guest_providers(guest_provs);
+        core.app.config_dirty = true;
+    }
+
     Ok(AuthResult {
         user: resp.user,
         has_local_data,
@@ -184,22 +205,35 @@ pub async fn auth_login(core: CoreState<'_>, req: LoginRequest) -> Result<AuthRe
 
     // Синхронизация учетных данных музыкальных провайдеров из серверного Vault (Этап 6.5.1.D)
     let gen = vessel_core::vault_sync::next_account_generation();
-    if let Ok(()) = vessel_core::vault_sync::sync_credentials_on_login(
+    let _ = vessel_core::vault_sync::sync_credentials_on_login(
         &client,
         &resp.token,
         &resp.user.id,
         gen,
         &secrets,
     )
-    .await
+    .await;
+
+    // Подключаем проверенные гостевые провайдеры с сервера (Deezer / SoundCloud)
+    let guest_provs = client
+        .info()
+        .await
+        .map(|info| info.guest_providers)
+        .unwrap_or_default();
     {
         let mut core = lock(&core);
-        core.runtime.reload_providers();
         let creds = core.runtime.credential_state().unwrap_or_default();
+        let has_guest_dz = guest_provs.iter().any(|g| g == "deezer");
+        let has_guest_sc = guest_provs.iter().any(|g| g == "soundcloud");
         core.app.spotify_enabled = creds.spotify;
         core.app.yandex_enabled = creds.yandex;
-        core.app.deezer_enabled = creds.deezer;
-        core.app.soundcloud_enabled = creds.soundcloud;
+        core.app.deezer_enabled = creds.deezer || has_guest_dz;
+        core.app.soundcloud_enabled = creds.soundcloud || has_guest_sc;
+        core.config.deezer_enabled = core.app.deezer_enabled;
+        core.config.soundcloud_enabled = core.app.soundcloud_enabled;
+        let cfg = core.config.clone();
+        core.runtime.sync_config(&cfg);
+        core.runtime.set_guest_providers(guest_provs);
         core.app.config_dirty = true;
     }
 
@@ -225,6 +259,7 @@ pub async fn auth_logout(core: CoreState<'_>) -> Result<(), String> {
         let _ = secrets.remove_named("vessel-user-session");
         let _ = secrets.remove_named("vessel-user-username");
         let _ = secrets.remove_named("vessel-user-id");
+        core.runtime.set_guest_providers(Vec::new());
         (token, user_id)
     };
 
@@ -240,6 +275,7 @@ pub async fn auth_logout(core: CoreState<'_>) -> Result<(), String> {
         };
         vessel_core::vault_sync::clear_account_local_secrets(&uid, &secrets);
         let mut core = lock(&core);
+        core.runtime.set_guest_providers(Vec::new());
         core.runtime.reload_providers();
         let creds = core.runtime.credential_state().unwrap_or_default();
         core.app.spotify_enabled = creds.spotify;
@@ -269,6 +305,7 @@ pub async fn auth_continue_guest(core: CoreState<'_>) -> Result<(), String> {
     core.app.playlists = core.storage.list_playlists().unwrap_or_default();
     let secrets = SecretStore::new(core.paths.secrets_file.clone());
     let _ = secrets.remove_named("vessel-user-session");
+    core.runtime.set_guest_providers(Vec::new());
     Ok(())
 }
 

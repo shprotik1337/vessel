@@ -1,8 +1,7 @@
 import React from "react";
 import type { TrackRef } from "../../api/types";
-import { formatTime, providerLabel, filterValidArtists } from "../../lib/utils";
+import { formatTime, filterValidArtists } from "../../lib/utils";
 import { Artwork } from "../../components/Artwork";
-import { PlatformIcon } from "../../components/PlatformIcon";
 import { TRASH_SVG } from "./playerIcons";
 
 interface PlayerQueueCardProps {
@@ -194,43 +193,6 @@ export function PlayerQueueCard({
                     {validArtists.join(", ")}
                   </div>
                 </div>
-                <span
-                  className="c-platform"
-                  title={providerLabel(qTrack.provider)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 12,
-                    color: "rgba(255, 255, 255, 0.55)",
-                    userSelect: "none",
-                    marginRight: 12,
-                    flexShrink: 0,
-                  }}
-                >
-                  <span
-                    className="platform-icon-wrap"
-                    style={{
-                      width: 16,
-                      height: 16,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <PlatformIcon kind={qTrack.provider} size={15} />
-                  </span>
-                  <span
-                    className="platform-name"
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {providerLabel(qTrack.provider)}
-                  </span>
-                </span>
                 <span
                   style={{
                     fontSize: 12,

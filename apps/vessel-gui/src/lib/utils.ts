@@ -510,16 +510,16 @@ export function normalizeProvider(provider: string | null | undefined): string {
 
 export function parseActiveProviders(
   pref: string | null | undefined,
-  defaultProviders: string[] = ["spotify", "soundcloud", "deezer", "youtube_music", "yandex"]
+  defaultProviders: string[] = ["soundcloud", "deezer", "youtube_music", "yandex"]
 ): string[] {
   if (!pref || pref.trim() === "" || pref === "all") {
-    return defaultProviders.map(normalizeProvider);
+    return defaultProviders.map(normalizeProvider).filter((p) => p !== "spotify");
   }
   const parts = pref
     .split(",")
     .map(normalizeProvider)
-    .filter(Boolean);
-  return parts.length > 0 ? parts : defaultProviders.map(normalizeProvider);
+    .filter((p) => Boolean(p) && p !== "spotify");
+  return parts.length > 0 ? parts : defaultProviders.map(normalizeProvider).filter((p) => p !== "spotify");
 }
 
 export function balanceProvidersRoundRobin(tracks: TrackRef[], targetCount: number): TrackRef[] {

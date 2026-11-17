@@ -21,7 +21,6 @@ export function AudioSection({
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(() => localStorage.getItem("vessel_crossfade_enabled") === "true");
   const [crossfadeSec, setCrossfadeSec] = useState(() => Number(localStorage.getItem("vessel_crossfade_sec") || 5));
   const [autoCache, setAutoCache] = useState(() => localStorage.getItem("vessel_auto_cache") !== "false");
-  const [autoFallback, setAutoFallback] = useState(() => localStorage.getItem("vessel_auto_fallback") !== "false");
 
   const toggleAutoSimilar = (val: boolean) => {
     setAutoSimilar(val);
@@ -60,27 +59,12 @@ export function AudioSection({
       setAutoCache(val);
       localStorage.setItem("vessel_auto_cache", String(val));
     }).catch(() => {});
-    void api.getAutoFallback().then((val) => {
-      setAutoFallback(val);
-      localStorage.setItem("vessel_auto_fallback", String(val));
-    }).catch(() => {});
   }, []);
 
   const toggleAutoCache = (val: boolean) => {
     setAutoCache(val);
     localStorage.setItem("vessel_auto_cache", String(val));
     void api.setAutoCache(val);
-  };
-
-  const toggleAutoFallback = (val: boolean) => {
-    setAutoFallback(val);
-    localStorage.setItem("vessel_auto_fallback", String(val));
-    void api.setAutoFallback(val);
-    showToast(
-      val
-        ? (lang === "ru" ? "Автопоиск на платформах включен" : "Cross-platform auto-search enabled")
-        : (lang === "ru" ? "Автопоиск отключен" : "Cross-platform search disabled")
-    );
   };
 
   return (
@@ -255,29 +239,6 @@ export function AudioSection({
               type="checkbox"
               checked={autoCache}
               onChange={(e) => toggleAutoCache(e.target.checked)}
-            />
-            <span className="sett-slider" />
-          </label>
-        </div>
-      </div>
-
-      <div className="sett-card">
-        <div className="sett-card-row">
-          <div className="sett-card-info">
-            <div className="sett-card-title">
-              {lang === "ru" ? "Автоматический поиск на других платформах" : "Cross-Platform Fallback"}
-            </div>
-            <div className="sett-card-desc">
-              {lang === "ru"
-                ? "Если трек недоступен или выдаёт ошибку, Vessel автоматически найдёт и воспроизведёт его."
-                : "If a track is unavailable or errors out, Vessel will automatically find and play it."}
-            </div>
-          </div>
-          <label className="sett-switch">
-            <input
-              type="checkbox"
-              checked={autoFallback}
-              onChange={(e) => toggleAutoFallback(e.target.checked)}
             />
             <span className="sett-slider" />
           </label>

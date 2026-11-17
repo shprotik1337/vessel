@@ -91,11 +91,11 @@ impl PlaybackSourceKind {
         }
     }
 
-    /// Цепочка probing'а: Auto = YouTube Music → Deezer → SoundCloud;
+    /// Цепочка probing'а: Auto = YouTube Music → Deezer;
     /// ручные режимы — только выбранный источник.
     pub fn chain(self) -> Vec<Self> {
         match self {
-            Self::Auto => vec![Self::YouTubeMusic, Self::Deezer, Self::SoundCloud],
+            Self::Auto => vec![Self::YouTubeMusic, Self::Deezer],
             other => vec![other],
         }
     }

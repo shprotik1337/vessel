@@ -148,21 +148,20 @@ impl PlaybackResolver {
             bail!("источник воспроизведения {} не подключён", source.as_str());
         };
 
-        // 3. Поиск в чужом каталоге: 3-шаговый каскад (как в PlatformSwitchMenu)
-        // Шаг 1: с артистом со скобочками
-        // Шаг 2: со скобочками без артиста
-        // Шаг 3: без скобочек и без артиста
+        // 3. Поиск в чужом каталоге: ВСЕГДА с исполнителем (Исполнитель + Трек).
+        // Поиск без исполнителя убран, чтобы исключить ложные совпадения с чужими треками.
         let artist = primary_artist(track);
         let raw_title = track.title.trim();
         let clean_title = strip_all_brackets(raw_title);
 
         let mut queries = Vec::new();
         if !artist.is_empty() {
-            queries.push(format!("{raw_title} {artist}"));
-        }
-        queries.push(raw_title.to_string());
-        if !clean_title.is_empty() && clean_title != raw_title {
-            queries.push(clean_title.clone());
+            queries.push(format!("{artist} {raw_title}"));
+            if !clean_title.is_empty() && clean_title != raw_title {
+                queries.push(format!("{artist} {clean_title}"));
+            }
+        } else if !raw_title.is_empty() {
+            queries.push(raw_title.to_string());
         }
 
         let mut candidates: Vec<MatchCandidate> = Vec::new();

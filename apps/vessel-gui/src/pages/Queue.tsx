@@ -1,12 +1,12 @@
 import { useState, useRef } from "react";
 
 import { useApp } from "../store";
-import { artistLabel, formatTime, trackKey, providerLabel } from "../lib/utils";
+import { artistLabel, formatTime, trackKey, isFavorite } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "../components/Artwork";
-import { PlatformIcon } from "../components/PlatformIcon";
 import { VirtualTrackList } from "../components/VirtualTrackList";
 import { IconSparkle, IconInfinity, IconWaveStream } from "../components/Icons";
+import { PlayerContextMenu, type ContextMenuState } from "./player";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
 
@@ -15,6 +15,7 @@ export function Queue() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragStartRef = useRef<{ index: number; startY: number; isDragging: boolean } | null>(null);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
 
   const renderOriginBadge = (t: TrackRef) => {
     const isSmart = t.origin === "smart_shuffle" || smartTrackKeys?.has(trackKey(t));
@@ -177,7 +178,7 @@ export function Queue() {
 
   const qrowStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "40px 1fr 140px 50px 22px",
+    gridTemplateColumns: "40px 1fr 50px 22px",
     gap: 12,
     alignItems: "center",
     height: 48,
@@ -185,6 +186,44 @@ export function Queue() {
     borderRadius: 5,
     cursor: "default",
     border: "1px solid transparent",
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, targetTrack: TrackRef, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ track: targetTrack, index, x: e.clientX, y: e.clientY });
+  };
+
+  const handlePlayNext = async (targetTrack: TrackRef) => {
+    setMenu(null);
+    try {
+      await api.playNext(targetTrack);
+      showToast(`${t(lang, "trackrow.playNextToast")} ${targetTrack.title}`);
+      await refresh();
+    } catch (e) {
+      showToast(String(e), true);
+    }
+  };
+
+  const handleToggleFav = async (targetTrack: TrackRef) => {
+    setMenu(null);
+    try {
+      await api.toggleFavorite(targetTrack);
+      await refresh();
+    } catch (e) {
+      showToast(String(e), true);
+    }
+  };
+
+  const handleCacheTrack = async (targetTrack: TrackRef) => {
+    setMenu(null);
+    try {
+      showToast(lang === "ru" ? "Сохранение в кэш…" : "Saving to cache…");
+      await api.downloadTrackToCache(targetTrack);
+      showToast(lang === "ru" ? "Сохранено в кэш" : "Saved to cache");
+    } catch (e) {
+      showToast(String(e), true);
+    }
   };
 
   const renderRow = (track: TrackRef, realIndex: number) => (
@@ -197,6 +236,7 @@ export function Queue() {
       onDrop={(e) => handleDrop(e, realIndex)}
       onDragEnd={handleDragEnd}
       onPointerDown={(e) => handlePointerDown(e, realIndex)}
+      onContextMenu={(e) => handleContextMenu(e, track, realIndex)}
       style={{
         ...qrowStyle,
         cursor: dragIndex !== null ? "grabbing" : "grab",
@@ -230,12 +270,6 @@ export function Queue() {
         </div>
         <span className="sub">{artistLabel(track.artists)}</span>
       </div>
-      <span className="c-platform" title={providerLabel(track.provider)}>
-        <span className="platform-icon-wrap">
-          <PlatformIcon kind={track.provider} size={15} />
-        </span>
-        <span className="platform-name">{providerLabel(track.provider)}</span>
-      </span>
       <span className="c-time">{formatTime(track.duration_ms)}</span>
       <span
         className="qx"
@@ -280,9 +314,10 @@ export function Queue() {
             </div>
             {current ? (
               <div
+                onContextMenu={(e) => handleContextMenu(e, current, currentIndex ?? -1)}
                 style={{
                   ...qrowStyle,
-                  gridTemplateColumns: "40px 1fr 140px 50px",
+                  gridTemplateColumns: "40px 1fr 50px",
                   background: "var(--elev)",
                   boxShadow: "inset 2px 0 0 0 var(--text)",
                   borderRadius: 6,
@@ -307,12 +342,6 @@ export function Queue() {
                   </div>
                   <span className="sub">{artistLabel(current.artists)}</span>
                 </div>
-                <span className="c-platform" title={providerLabel(current.provider)}>
-                  <span className="platform-icon-wrap">
-                    <PlatformIcon kind={current.provider} size={15} />
-                  </span>
-                  <span className="platform-name">{providerLabel(current.provider)}</span>
-                </span>
                 <span className="c-time">{formatTime(current.duration_ms)}</span>
               </div>
             ) : (
@@ -341,6 +370,20 @@ export function Queue() {
           </div>
         </>
       )}
+
+      <PlayerContextMenu
+        menu={menu}
+        onClose={() => setMenu(null)}
+        onPlayNext={(t) => void handlePlayNext(t)}
+        onToggleFavorite={(t) => void handleToggleFav(t)}
+        onCacheTrack={(t) => void handleCacheTrack(t)}
+        onRemoveTrack={(idx) => {
+          setMenu(null);
+          void removeAt(idx);
+        }}
+        isFav={Boolean(menu && state && isFavorite(state.library, menu.track))}
+        lang={lang}
+      />
     </div>
   );
 }
