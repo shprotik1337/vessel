@@ -287,14 +287,9 @@ fn apply_provider_routing(
         }
     }
 
-    // Автоматическое подключение проверенных гостевых аккаунтов Deezer и SoundCloud
-    // ТОЛЬКО для авторизованных онлайн-аккаунтов Vessel (не распространяется на оффлайн-аккаунты).
-    let has_online_session = secrets
-        .get_named("vessel-user-session")
-        .ok()
-        .flatten()
-        .is_some_and(|s| !s.trim().is_empty());
-    if !has_online_session || guest_providers.is_empty() {
+    // Автоматическое подключение проверенных гостевых аккаунтов Deezer и SoundCloud с официального Vessel Server,
+    // если у пользователя нет личных credentials Deezer/SoundCloud.
+    if guest_providers.is_empty() {
         return;
     }
 

@@ -439,18 +439,9 @@ impl Runtime {
     }
 
     /// Проверяет, работает ли провайдер в гостевом (публичном) режиме через сервер.
-    /// Возвращает `false` для оффлайн-аккаунтов и если у пользователя заданы личные ключи.
+    /// Возвращает `false`, если у пользователя заданы личные ключи.
     pub fn is_guest_provider(&self, kind: ProviderKind) -> bool {
         if !matches!(kind, ProviderKind::Deezer | ProviderKind::SoundCloud) {
-            return false;
-        }
-        let has_online_session = self
-            .secrets
-            .get_named("vessel-user-session")
-            .ok()
-            .flatten()
-            .is_some_and(|s| !s.trim().is_empty());
-        if !has_online_session {
             return false;
         }
         let seg = crate::protocol::kind_segment(kind);
