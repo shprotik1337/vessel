@@ -252,7 +252,9 @@ pub struct CaptchaSolution {
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
+    #[serde(default)]
     pub captcha_id: String,
+    #[serde(default)]
     pub captcha_clicks: Vec<usize>,
     #[serde(default)]
     pub installation_id: Option<String>,

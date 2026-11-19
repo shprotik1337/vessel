@@ -323,7 +323,7 @@ function AppContent() {
         isGlass ? "glass-active" : ""
       } ${!showBottomPlayer ? "no-player" : ""}`}
     >
-      {hasWallpaper && (
+      {hasWallpaper && view !== "auth" && (
         <div
           className="vessel-wallpaper-layer"
           style={{

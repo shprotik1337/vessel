@@ -25,6 +25,7 @@ pub(super) async fn resolve_and_play_chain(
     auto_cache: bool,
     session: String,
     origin_failed_provider: Option<ProviderKind>,
+    preserve_origin_track: bool,
 ) {
     let mut failures: Vec<String> = Vec::new();
     let mut any_candidates_found = false;
@@ -77,7 +78,9 @@ pub(super) async fn resolve_and_play_chain(
         let Some(foreign) = providers.get(source.provider_kind()) else {
             continue;
         };
-        let video_only_notice = if let Some(origin) = origin_failed_provider {
+        let video_only_notice = if preserve_origin_track {
+            None
+        } else if let Some(origin) = origin_failed_provider {
             Some(format!(
                 "Воспроизведение через {} (трек недоступен в {})",
                 source.label(),
@@ -129,7 +132,11 @@ pub(super) async fn resolve_and_play_chain(
                         generation,
                         source: source_stream,
                         video_only_notice: video_only_notice.clone(),
-                        replaced_track: Some(foreign_track.clone()),
+                        replaced_track: if preserve_origin_track {
+                            None
+                        } else {
+                            Some(foreign_track.clone())
+                        },
                     });
                     return;
                 }
@@ -207,13 +214,14 @@ pub(super) fn spawn_playback(
                     "[Playback][{session}] native playback failed for {}: {error}",
                     track.provider.label()
                 );
-                // Кросс-платформенный фоллбэк нужен ТОЛЬКО для Spotify (у него нет нативного аудио).
-                // Все остальные платформы воспроизводят треки нативно; при ошибке срабатывает автоскип.
+                // Если родной провайдер не смог отдать поток:
+                // 1) Для Spotify — пробуем Deezer (YTM уже опрашивался сервером).
+                // 2) Для SoundCloud (DRM cbc/ctr-encrypted-hls, недоступные треки) и других
+                //    не-YouTube провайдеров — ищем точное совпадение на YouTube Music (stand-in),
+                //    сохраняя оригинальные метаданные и обложку трека.
                 let _ = auto_fallback;
                 if track.provider == ProviderKind::Spotify {
                     let origin = track.provider;
-                    // Классический фоллбэк Spotify: YouTube Music → Deezer
-                    // (при ошибке серверного Spotify YTM уже опрашивался, пробуем Deezer)
                     let base_chain = vec![PlaybackSourceKind::Deezer];
                     let chain: Vec<_> = base_chain
                         .into_iter()
@@ -236,10 +244,34 @@ pub(super) fn spawn_playback(
                             auto_cache,
                             session,
                             Some(origin),
+                            false,
                         )
                         .await;
                         return;
                     }
+                } else if track.provider != ProviderKind::YouTubeMusic
+                    && resolver.source_available(PlaybackSourceKind::YouTubeMusic)
+                {
+                    let origin = track.provider;
+                    crate::dlog!(
+                        "[Playback][{session}] {} не отдал поток — ищем YouTube Music stand-in для «{}»",
+                        origin.label(),
+                        track.title
+                    );
+                    resolve_and_play_chain(
+                        vec![PlaybackSourceKind::YouTubeMusic],
+                        track,
+                        resolver,
+                        providers,
+                        sender,
+                        generation,
+                        auto_cache,
+                        session,
+                        Some(origin),
+                        true,
+                    )
+                    .await;
+                    return;
                 }
 
                 let _ = sender.send(RuntimeMessage::PlaybackFailed {
@@ -461,6 +493,7 @@ impl Runtime {
                     auto_cache,
                     session,
                     None,
+                    false,
                 )
                 .await;
             }));

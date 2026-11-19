@@ -104,4 +104,6 @@ export function applyThemeVariables(activeConfig: CustomizationConfig): void {
   root.style.setProperty("--glass-border", hexToRgba(theme.textColor, 0.12));
   root.style.setProperty("--app-bg", theme.appBgColor);
   root.style.setProperty("--titlebar-bg", "transparent");
+  const waveBgAlpha = isGlass ? alpha : 1;
+  root.style.setProperty("--wave-bg-alpha", `${waveBgAlpha}`);
 }

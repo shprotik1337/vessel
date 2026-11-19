@@ -144,8 +144,8 @@ export interface AuthResult {
 export interface RegisterRequest {
   username: string;
   password: string;
-  captcha_id: string;
-  captcha_clicks: number[];
+  captcha_id?: string;
+  captcha_clicks?: number[];
   installation_id?: string;
 }
 

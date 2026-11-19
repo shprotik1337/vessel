@@ -12,26 +12,26 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 }) => {
   return (
     <div
+      className="auth-page-root"
       style={{
+        position: "absolute",
+        inset: 0,
         width: "100%",
-        minHeight: "calc(100vh - 36px)",
-        height: "calc(100vh - 36px)",
+        height: "100%",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "flex-start",
-        background: "transparent",
-        padding: "24px 16px",
+        background: "#000000",
+        padding: 0,
+        margin: 0,
         boxSizing: "border-box",
-        overflowY: "auto",
-        position: "relative",
+        overflow: "hidden",
         zIndex: 10,
       }}
     >
       <AuthForm
         onSuccess={onSuccess}
         onContinueGuest={onContinueGuest}
-        requireCaptchaForLogin={true}
+        requireCaptchaForLogin={false}
       />
     </div>
   );

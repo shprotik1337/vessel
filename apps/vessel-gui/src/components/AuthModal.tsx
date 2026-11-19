@@ -22,28 +22,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         position: "fixed",
         inset: 0,
         zIndex: 60000,
-        background: "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
+        background: "rgba(0, 0, 0, 0.78)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        justifyContent: "flex-start",
+        justifyContent: "center",
         padding: "24px 16px",
-        overflowY: "auto",
         boxSizing: "border-box",
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <AuthForm
-        onSuccess={(hasLocalData, isRegister) => {
-          onSuccess(hasLocalData, isRegister);
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "920px",
+          height: "min(620px, 90vh)",
+          borderRadius: "24px",
+          overflow: "hidden",
+          boxShadow: "0 30px 90px rgba(0, 0, 0, 0.95)",
+          position: "relative",
+          background: "#000000",
         }}
-        onContinueGuest={onContinueGuest}
-        requireCaptchaForLogin={false}
-      />
+      >
+        <AuthForm
+          onSuccess={(hasLocalData, isRegister) => {
+            onSuccess(hasLocalData, isRegister);
+            onClose();
+          }}
+          onContinueGuest={() => {
+            onContinueGuest();
+            onClose();
+          }}
+          requireCaptchaForLogin={false}
+        />
+      </div>
     </div>
   );
 };

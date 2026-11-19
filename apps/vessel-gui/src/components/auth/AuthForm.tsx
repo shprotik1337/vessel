@@ -1,322 +1,515 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import { useAuthForm } from "../../hooks/useAuthForm";
-import { CaptchaChallenge } from "./CaptchaChallenge";
-import { IconEye, IconEyeOff } from "./authUtils";
+import { TopographyCanvas, TopographyCanvasHandle } from "./TopographyCanvas";
+import "./auth.css";
 
 export interface AuthFormProps {
   onSuccess: (hasLocalData: boolean, isRegister: boolean) => void;
-  onContinueGuest: () => void;
+  onContinueGuest?: () => void;
   requireCaptchaForLogin?: boolean;
+}
+
+interface ToastMessage {
+  id: number;
+  text: string;
+  isWarn: boolean;
+  isVisible: boolean;
 }
 
 export const AuthForm: React.FC<AuthFormProps> = ({
   onSuccess,
-  onContinueGuest,
-  requireCaptchaForLogin = false,
 }) => {
+  const topoRef = useRef<TopographyCanvasHandle>(null);
+
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const nextToastId = useRef(1);
+
+  // Field error shake states
+  const [invalidFields, setInvalidFields] = useState<Record<string, boolean>>({});
+
+  const showToast = (text: string, isWarn = false) => {
+    const id = nextToastId.current++;
+    setToasts((prev) => [...prev, { id, text, isWarn, isVisible: false }]);
+
+    requestAnimationFrame(() => {
+      setToasts((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, isVisible: true } : t))
+      );
+    });
+
+    setTimeout(() => {
+      setToasts((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, isVisible: false } : t))
+      );
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 300);
+    }, 3200);
+  };
+
   const {
     mode,
     setMode,
-    toggleMode,
     username,
     setUsername,
+    nickname,
+    setNickname,
     password,
     setPassword,
     showPassword,
     toggleShowPassword,
-    challenge,
-    selectedClicks,
     loading,
-    errorMsg,
-    fetchCaptcha,
-    handleSymbolClick,
-    handleResetClicks,
-    isCaptchaSolved,
-    canSubmit,
     handleSubmit,
-  } = useAuthForm({ onSuccess, requireCaptchaForLogin });
+  } = useAuthForm({
+    onSuccess: (hasLocalData, isRegister) => {
+      topoRef.current?.triggerPulse(1, 0.9);
+      onSuccess(hasLocalData, isRegister);
+    },
+  });
+
+  const handleTabSwitch = (newMode: "login" | "register") => {
+    if (mode === newMode) return;
+    setMode(newMode);
+    setInvalidFields({});
+    topoRef.current?.triggerPulse(newMode === "register" ? 1 : -1, 1.15);
+  };
+
+  const clearInvalid = (fieldKey: string) => {
+    if (invalidFields[fieldKey]) {
+      setInvalidFields((prev) => ({ ...prev, [fieldKey]: false }));
+    }
+  };
+
+  const onSubmitLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUser = username.trim();
+    const newInvalid: Record<string, boolean> = {};
+
+    if (!cleanUser) newInvalid.loginUser = true;
+    if (!password) newInvalid.loginPass = true;
+
+    if (Object.keys(newInvalid).length > 0) {
+      setInvalidFields(newInvalid);
+      showToast("Заполните все поля", true);
+      return;
+    }
+
+    if (password.length < 8) {
+      setInvalidFields({ loginPass: true });
+      showToast("Пароль должен содержать не менее 8 символов", true);
+      return;
+    }
+
+    const ok = await handleSubmit();
+    if (!ok) {
+      showToast("Неверное имя пользователя или пароль", true);
+    }
+  };
+
+  const onSubmitRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUser = username.trim();
+    const cleanNick = nickname.trim();
+    const newInvalid: Record<string, boolean> = {};
+
+    if (!cleanNick) newInvalid.regNick = true;
+    if (!cleanUser) newInvalid.regUser = true;
+    if (!password) newInvalid.regPass = true;
+
+    if (Object.keys(newInvalid).length > 0) {
+      setInvalidFields(newInvalid);
+      showToast("Заполните все поля", true);
+      return;
+    }
+
+    if (password.length < 8) {
+      setInvalidFields({ regPass: true });
+      showToast("Пароль должен содержать не менее 8 символов", true);
+      return;
+    }
+
+    const ok = await handleSubmit();
+    if (!ok) {
+      showToast("Ошибка регистрации. Попробуйте другой юзернейм", true);
+    }
+  };
 
   return (
-    <div
-      style={{
-        width: "100%",
-        maxWidth: "460px",
-        margin: "auto 0",
-        flexShrink: 0,
-        background: "var(--card-bg, #000000)",
-        backdropFilter: "blur(24px) saturate(160%)",
-        WebkitBackdropFilter: "blur(24px) saturate(160%)",
-        border: "1px solid var(--border)",
-        borderRadius: "20px",
-        padding: "24px 28px",
-        boxShadow: "0 24px 64px rgba(0, 0, 0, 0.85)",
-        color: "var(--text)",
-        fontFamily: "inherit",
-        display: "flex",
-        flexDirection: "column",
-        gap: "14px",
-        position: "relative",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* Top Header: Vessel text + Tabs */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div
-          style={{
-            fontSize: "20px",
-            fontWeight: 800,
-            letterSpacing: "-0.02em",
-            color: "var(--text)",
-          }}
-        >
-          Vessel
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            background: "var(--elev)",
-            borderRadius: "10px",
-            padding: "3px",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setMode("login")}
-            style={{
-              background: mode === "login" ? "var(--accent)" : "transparent",
-              color: mode === "login" ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
-              border: "none",
-              borderRadius: "8px",
-              padding: "6px 14px",
-              fontSize: "12.5px",
-              fontWeight: mode === "login" ? 700 : 500,
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
+    <div className="auth-layout-root">
+      {/* Toast Notification Stack in bottom-left */}
+      <div id="toast-stack" className="toast-stack" aria-live="polite">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`toast-item${t.isWarn ? " is-warn" : ""}${
+              t.isVisible ? " is-visible" : ""
+            }`}
           >
-            Вход
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("register")}
-            style={{
-              background: mode === "register" ? "var(--accent)" : "transparent",
-              color: mode === "register" ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
-              border: "none",
-              borderRadius: "8px",
-              padding: "6px 14px",
-              fontSize: "12.5px",
-              fontWeight: mode === "register" ? 700 : 500,
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
-          >
-            Регистрация
-          </button>
-        </div>
+            <span className="toast-dot" />
+            <span>{t.text}</span>
+          </div>
+        ))}
       </div>
 
-      {/* Title & Subtitle */}
-      <div>
-        <h2 style={{ margin: "0 0 6px 0", fontSize: "24px", fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text)" }}>
-          {mode === "login" ? "Вход" : "Регистрация"}
-        </h2>
-        <p style={{ margin: 0, fontSize: "13px", color: "var(--text3)", lineHeight: 1.4 }}>
-          {mode === "login"
-            ? "Войди в профиль или продолжи гостем для локального режима."
-            : "Создай профиль или продолжи гостем для локального режима."}
-        </p>
-      </div>
-
-      {/* Error notification if any */}
-      {errorMsg && (
-        <div
-          style={{
-            padding: "10px 14px",
-            borderRadius: "10px",
-            background: "rgba(239, 68, 68, 0.1)",
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            color: "#f87171",
-            fontSize: "12.5px",
-            lineHeight: 1.4,
-          }}
-        >
-          {errorMsg}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        {/* Username */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <label
-            style={{
-              fontSize: "10.5px",
-              fontWeight: 700,
-              color: "var(--text3)",
-              letterSpacing: "0.06em",
-            }}
+      {/* LEFT PANEL: AUTH FORM (44%) */}
+      <section className="auth-left">
+        <div className="auth-card">
+          {/* Segmented Pill Tab Switcher */}
+          <div
+            id="tab-switcher"
+            className="tab-switcher"
+            role="tablist"
+            aria-label="Переключение между входом и регистрацией"
+            data-active={mode}
           >
-            <span>НИК</span>
-          </label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Имя пользователя"
-            autoFocus
-            style={{
-              background: "var(--elev)",
-              border: "1px solid var(--border)",
-              borderRadius: "10px",
-              padding: "11px 14px",
-              color: "var(--text)",
-              fontSize: "13.5px",
-              outline: "none",
-              transition: "border 0.15s ease",
-            }}
-          />
-        </div>
-
-        {/* Password */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <label
-            style={{
-              fontSize: "10.5px",
-              fontWeight: 700,
-              color: "var(--text3)",
-              letterSpacing: "0.06em",
-            }}
-          >
-            <span>ПАРОЛЬ</span>
-          </label>
-          <div style={{ position: "relative" }}>
-            <input
-              type={showPassword ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Минимум 8 символов"
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: "var(--elev)",
-                border: "1px solid var(--border)",
-                borderRadius: "10px",
-                padding: "11px 40px 11px 14px",
-                color: "var(--text)",
-                fontSize: "13.5px",
-                outline: "none",
-                transition: "border 0.15s ease",
-              }}
-            />
+            <div className="tab-pill" aria-hidden="true" />
             <button
+              id="tab-login"
+              className={`tab-btn${mode === "login" ? " is-active" : ""}`}
               type="button"
-              onClick={toggleShowPassword}
-              style={{
-                position: "absolute",
-                right: "10px",
-                top: "50%",
-                transform: "translateY(-50%)",
-                background: "none",
-                border: "none",
-                color: "var(--text3)",
-                cursor: "pointer",
-                padding: "4px",
-                display: "flex",
-                alignItems: "center",
-              }}
+              role="tab"
+              aria-selected={mode === "login"}
+              aria-controls="panel-login"
+              onClick={() => handleTabSwitch("login")}
             >
-              {showPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+              Вход
+            </button>
+            <button
+              id="tab-register"
+              className={`tab-btn${mode === "register" ? " is-active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={mode === "register"}
+              aria-controls="panel-register"
+              onClick={() => handleTabSwitch("register")}
+            >
+              Регистрация
             </button>
           </div>
+
+          {/* Form Viewport with smooth transitions */}
+          <div id="form-viewport" className="form-viewport">
+            {/* TAB 1: LOGIN */}
+            {mode === "login" && (
+              <div
+                id="panel-login"
+                className="form-panel is-entering"
+                role="tabpanel"
+                aria-labelledby="tab-login"
+              >
+                <h1 className="form-title">С возвращением!</h1>
+                <p className="form-subtitle">
+                  Введите свои данные для входа в аккаунт
+                </p>
+
+                <form
+                  id="login-form"
+                  className="auth-form"
+                  noValidate
+                  onSubmit={onSubmitLogin}
+                >
+                  {/* Username */}
+                  <div
+                    className={`auth-field${
+                      invalidFields.loginUser ? " is-invalid" : ""
+                    }`}
+                  >
+                    <svg
+                      className="auth-field-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M20 21a8 8 0 0 0-16 0" />
+                      <circle cx="12" cy="8" r="4" />
+                    </svg>
+                    <input
+                      id="login-username"
+                      className="auth-field-input"
+                      type="text"
+                      name="username"
+                      autoComplete="username"
+                      placeholder="Юзернейм"
+                      value={username}
+                      onChange={(e) => {
+                        setUsername(e.target.value);
+                        clearInvalid("loginUser");
+                      }}
+                      required
+                    />
+                  </div>
+
+                  {/* Password */}
+                  <div
+                    className={`auth-field${
+                      invalidFields.loginPass ? " is-invalid" : ""
+                    }`}
+                  >
+                    <svg
+                      className="auth-field-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="4" y="11" width="16" height="10" rx="2.5" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                    <input
+                      id="login-password"
+                      className="auth-field-input has-toggle"
+                      type={showPassword ? "text" : "password"}
+                      name="password"
+                      autoComplete="current-password"
+                      placeholder="Пароль"
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        clearInvalid("loginPass");
+                      }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="toggle-pass-btn"
+                      onClick={toggleShowPassword}
+                      aria-label="Показать или скрыть пароль"
+                    >
+                      {!showPassword ? (
+                        <svg
+                          className="eye-open"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="eye-closed"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c6.2 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19" />
+                          <path d="M6.61 6.61A18.5 18.5 0 0 0 2 12s3.8 8 10 8a10.7 10.7 0 0 0 5.39-1.61" />
+                          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                          <line x1="2" y1="2" x2="22" y2="22" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="auth-submit-btn"
+                    disabled={loading}
+                  >
+                    {loading ? "Вход..." : "Войти"}
+                  </button>
+
+
+                </form>
+              </div>
+            )}
+
+            {/* TAB 2: REGISTER */}
+            {mode === "register" && (
+              <div
+                id="panel-register"
+                className="form-panel is-entering"
+                role="tabpanel"
+                aria-labelledby="tab-register"
+              >
+                <h1 className="form-title">Регистрация</h1>
+                <p className="form-subtitle">
+                  Введите свои данные для создания аккаунта
+                </p>
+
+                <form
+                  id="register-form"
+                  className="auth-form"
+                  noValidate
+                  onSubmit={onSubmitRegister}
+                >
+                  {/* Nickname & Username Row */}
+                  <div className="input-row-2">
+                    <div
+                      className={`auth-field${
+                        invalidFields.regNick ? " is-invalid" : ""
+                      }`}
+                    >
+                      <svg
+                        className="auth-field-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M20 21a8 8 0 0 0-16 0" />
+                        <circle cx="12" cy="8" r="4" />
+                      </svg>
+                      <input
+                        id="reg-nickname"
+                        className="auth-field-input"
+                        type="text"
+                        name="nickname"
+                        autoComplete="nickname"
+                        placeholder="Ваш никнейм"
+                        value={nickname}
+                        onChange={(e) => {
+                          setNickname(e.target.value);
+                          clearInvalid("regNick");
+                        }}
+                        required
+                      />
+                    </div>
+
+                    <div
+                      className={`auth-field${
+                        invalidFields.regUser ? " is-invalid" : ""
+                      }`}
+                    >
+                      <svg
+                        className="auth-field-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+                      </svg>
+                      <input
+                        id="reg-username"
+                        className="auth-field-input"
+                        type="text"
+                        name="reg_username"
+                        autoComplete="username"
+                        placeholder="Ваш юзернейм"
+                        value={username}
+                        onChange={(e) => {
+                          setUsername(e.target.value);
+                          clearInvalid("regUser");
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div
+                    className={`auth-field${
+                      invalidFields.regPass ? " is-invalid" : ""
+                    }`}
+                  >
+                    <svg
+                      className="auth-field-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="4" y="11" width="16" height="10" rx="2.5" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                    <input
+                      id="reg-password"
+                      className="auth-field-input has-toggle"
+                      type={showPassword ? "text" : "password"}
+                      name="reg_password"
+                      autoComplete="new-password"
+                      placeholder="Пароль"
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        clearInvalid("regPass");
+                      }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="toggle-pass-btn"
+                      onClick={toggleShowPassword}
+                      aria-label="Показать или скрыть пароль"
+                    >
+                      {!showPassword ? (
+                        <svg
+                          className="eye-open"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7-10-7-10-7Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="eye-closed"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c6.2 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19" />
+                          <path d="M6.61 6.61A18.5 18.5 0 0 0 2 12s3.8 8 10 8a10.7 10.7 0 0 0 5.39-1.61" />
+                          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                          <line x1="2" y1="2" x2="22" y2="22" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="auth-submit-btn"
+                    disabled={loading}
+                  >
+                    {loading ? "Создание..." : "Создать"}
+                  </button>
+
+
+                </form>
+              </div>
+            )}
+          </div>
         </div>
+      </section>
 
-        {/* Interactive CAPTCHA */}
-        <CaptchaChallenge
-          challenge={challenge}
-          selectedClicks={selectedClicks}
-          onSymbolClick={handleSymbolClick}
-          onResetClicks={handleResetClicks}
-          onRefreshCaptcha={fetchCaptcha}
-          isSolved={isCaptchaSolved}
-        />
-
-        {/* Primary Submit Button */}
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          style={{
-            marginTop: "4px",
-            width: "100%",
-            padding: "13px",
-            background: canSubmit ? "var(--accent)" : "var(--elev)",
-            color: canSubmit ? "var(--accent-contrast-text, #ffffff)" : "var(--text3)",
-            border: "none",
-            borderRadius: "12px",
-            fontSize: "14px",
-            fontWeight: 700,
-            cursor: canSubmit ? "pointer" : "not-allowed",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px",
-            transition: "all 0.15s ease",
-          }}
-        >
-          {loading ? (
-            <span>Обработка...</span>
-          ) : mode === "login" ? (
-            <>
-              <span>Войти в аккаунт</span>
-              <span>→</span>
-            </>
-          ) : (
-            <>
-              <span>Создать аккаунт</span>
-              <span>→</span>
-            </>
-          )}
-        </button>
-
-        {/* Secondary Buttons Row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "2px" }}>
-          <button
-            type="button"
-            onClick={onContinueGuest}
-            style={{
-              background: "var(--elev)",
-              border: "1px solid var(--border)",
-              borderRadius: "11px",
-              padding: "11px",
-              color: "var(--text)",
-              fontSize: "12.5px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "background 0.15s ease",
-            }}
-          >
-            Продолжить гостем
-          </button>
-          <button
-            type="button"
-            onClick={toggleMode}
-            style={{
-              background: "var(--elev)",
-              border: "1px solid var(--border)",
-              borderRadius: "11px",
-              padding: "11px",
-              color: "var(--text)",
-              fontSize: "12.5px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "background 0.15s ease",
-            }}
-          >
-            {mode === "login" ? "Нет профиля? Создать" : "Есть профиль? Войти"}
-          </button>
-        </div>
-      </form>
+      {/* RIGHT PANEL: GENERATIVE 3D TOPOGRAPHY (56%) */}
+      <TopographyCanvas ref={topoRef} />
     </div>
   );
 };
