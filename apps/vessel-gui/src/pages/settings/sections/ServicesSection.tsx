@@ -76,11 +76,11 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
   const isPublicAccess = isYt || isGuest;
   const isConnected = isPublicAccess ? true : (providerStatus?.connected ?? false);
   const segment = api.PROVIDER_SEGMENT[serviceKey] ?? serviceKey;
-  const route = routes[segment] ?? "local";
+  const route = routes[segment] ?? (segment === "lyrics" ? "server:official" : "local");
 
   const toggleRoute = async (sKey: string) => {
     const seg = api.PROVIDER_SEGMENT[sKey] ?? sKey;
-    const currentRoute = routes[seg] ?? "local";
+    const currentRoute = routes[seg] ?? (seg === "lyrics" ? "server:official" : "local");
     const nextRoute = currentRoute === "local" ? "server:official" : "local";
 
     try {

@@ -234,6 +234,10 @@ impl Default for AppConfig {
                     "youtube_music".to_string(),
                     format!("server:{OFFICIAL_SERVER_ID}"),
                 );
+                map.insert(
+                    "lyrics".to_string(),
+                    format!("server:{OFFICIAL_SERVER_ID}"),
+                );
                 map
             },
             discord_rpc: true,
@@ -301,6 +305,10 @@ impl AppConfig {
                 *target = format!("server:{OFFICIAL_SERVER_ID}");
             }
         }
+        // Тексты песен по умолчанию направляются на сервер
+        self.provider_routing
+            .entry("lyrics".to_string())
+            .or_insert_with(|| format!("server:{OFFICIAL_SERVER_ID}"));
         self
     }
 }
