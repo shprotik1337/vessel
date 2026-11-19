@@ -118,6 +118,25 @@ export async function loadImageAsDataUrl(path: string): Promise<string> {
   return invoke<string>("load_image_as_data_url", { path });
 }
 
+export async function saveCustomWallpaper(sourcePath: string): Promise<string> {
+  return invoke<string>("save_custom_wallpaper", { sourcePath });
+}
+
+export async function getCustomization(): Promise<any | null> {
+  return invoke<any | null>("get_customization");
+}
+
+export async function getUserPresets(): Promise<any[] | null> {
+  return invoke<any[] | null>("get_user_presets");
+}
+
+export async function saveCustomization(customization: any, userPresets?: any): Promise<void> {
+  return invoke("save_customization", {
+    customization,
+    userPresets: userPresets ?? null,
+  });
+}
+
 export async function downloadTrack(track: TrackRef): Promise<string> {
   return invoke<string>("download_track", { track });
 }

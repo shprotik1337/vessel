@@ -259,7 +259,6 @@ pub async fn auth_logout(core: CoreState<'_>) -> Result<(), String> {
         let _ = secrets.remove_named("vessel-user-session");
         let _ = secrets.remove_named("vessel-user-username");
         let _ = secrets.remove_named("vessel-user-id");
-        core.runtime.set_guest_providers(Vec::new());
         (token, user_id)
     };
 
@@ -275,14 +274,28 @@ pub async fn auth_logout(core: CoreState<'_>) -> Result<(), String> {
         };
         vessel_core::vault_sync::clear_account_local_secrets(&uid, &secrets);
         let mut core = lock(&core);
-        core.runtime.set_guest_providers(Vec::new());
         core.runtime.reload_providers();
         let creds = core.runtime.credential_state().unwrap_or_default();
         core.app.spotify_enabled = creds.spotify;
         core.app.yandex_enabled = creds.yandex;
-        core.app.deezer_enabled = creds.deezer;
-        core.app.soundcloud_enabled = creds.soundcloud;
         core.app.config_dirty = true;
+    }
+
+    // Сохраняем и обновляем публичные гостевые провайдеры (Deezer, SoundCloud)
+    if let Ok(client) = official_client() {
+        if let Ok(info) = client.info().await {
+            let mut core = lock(&core);
+            let has_guest_dz = info.guest_providers.iter().any(|g| g == "deezer");
+            let has_guest_sc = info.guest_providers.iter().any(|g| g == "soundcloud");
+            core.app.deezer_enabled = has_guest_dz;
+            core.app.soundcloud_enabled = has_guest_sc;
+            core.config.deezer_enabled = core.app.deezer_enabled;
+            core.config.soundcloud_enabled = core.app.soundcloud_enabled;
+            let cfg = core.config.clone();
+            core.runtime.sync_config(&cfg);
+            core.runtime.set_guest_providers(info.guest_providers);
+            core.app.config_dirty = true;
+        }
     }
 
     if let Some(token) = token_opt {
@@ -299,13 +312,31 @@ pub async fn auth_logout(core: CoreState<'_>) -> Result<(), String> {
 #[tauri::command]
 pub async fn auth_continue_guest(core: CoreState<'_>) -> Result<(), String> {
     let _ = vessel_core::vault_sync::next_account_generation();
-    let mut core = lock(&core);
-    core.account_state = AccountState::Guest;
-    core.app.library = core.storage.library_tracks().unwrap_or_default();
-    core.app.playlists = core.storage.list_playlists().unwrap_or_default();
-    let secrets = SecretStore::new(core.paths.secrets_file.clone());
-    let _ = secrets.remove_named("vessel-user-session");
-    core.runtime.set_guest_providers(Vec::new());
+    {
+        let mut core = lock(&core);
+        core.account_state = AccountState::Guest;
+        core.app.library = core.storage.library_tracks().unwrap_or_default();
+        core.app.playlists = core.storage.list_playlists().unwrap_or_default();
+        let secrets = SecretStore::new(core.paths.secrets_file.clone());
+        let _ = secrets.remove_named("vessel-user-session");
+    }
+
+    if let Ok(client) = official_client() {
+        if let Ok(info) = client.info().await {
+            let mut core = lock(&core);
+            let has_guest_dz = info.guest_providers.iter().any(|g| g == "deezer");
+            let has_guest_sc = info.guest_providers.iter().any(|g| g == "soundcloud");
+            core.app.deezer_enabled = has_guest_dz;
+            core.app.soundcloud_enabled = has_guest_sc;
+            core.config.deezer_enabled = core.app.deezer_enabled;
+            core.config.soundcloud_enabled = core.app.soundcloud_enabled;
+            let cfg = core.config.clone();
+            core.runtime.sync_config(&cfg);
+            core.runtime.set_guest_providers(info.guest_providers);
+            core.app.config_dirty = true;
+        }
+    }
+
     Ok(())
 }
 

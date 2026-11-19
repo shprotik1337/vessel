@@ -159,6 +159,12 @@ pub struct AppConfig {
     /// Автоматический кросс-платформенный поиск (YouTube Music -> Deezer -> SoundCloud) при недоступности трека
     #[serde(default = "default_auto_fallback")]
     pub auto_fallback: bool,
+    /// Кастомная конфигурация темы (шрифты, цвета, положение панелей, обои)
+    #[serde(default)]
+    pub customization: Option<serde_json::Value>,
+    /// Пользовательские сохраненные пресеты тем (слоты 1..3)
+    #[serde(default)]
+    pub user_presets: Option<serde_json::Value>,
 }
 
 fn default_auto_fallback() -> bool {
@@ -236,6 +242,8 @@ impl Default for AppConfig {
             excluded_recommendation_playlist_ids: Vec::new(),
             auto_cache: true,
             auto_fallback: true,
+            customization: None,
+            user_presets: None,
         }
     }
 }

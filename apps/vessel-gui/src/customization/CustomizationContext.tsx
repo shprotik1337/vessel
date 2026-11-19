@@ -14,6 +14,7 @@ import type {
 import { DEFAULT_CUSTOMIZATION, STORAGE_KEY, USER_PRESETS_KEY } from "./defaults";
 import { sanitizeConfig } from "./configSanitizer";
 import { applyThemeVariables } from "./cssVariables";
+import * as api from "../api/commands";
 
 // Re-export all types, utilities, constants, and themes for complete backward compatibility
 export * from "./types";
@@ -81,6 +82,30 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     applyThemeVariables(activeConfig);
   }, [activeConfig]);
 
+  // Загружаем сохраненную кастомизацию из Rust config.toml как надежный первоисточник
+  useEffect(() => {
+    api.getCustomization().then((rustConfig) => {
+      if (rustConfig) {
+        const sanitized = sanitizeConfig(rustConfig);
+        setSavedConfig(sanitized);
+        setDraftConfig(sanitized);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+        } catch {}
+      }
+    }).catch(() => {});
+
+    api.getUserPresets().then((presets) => {
+      if (Array.isArray(presets) && presets.length > 0) {
+        const sliced = presets.slice(0, 3);
+        setUserPresets(sliced);
+        try {
+          localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(sliced));
+        } catch {}
+      }
+    }).catch(() => {});
+  }, []);
+
   // Synchronize remote customization when received from cloud
   useEffect(() => {
     const handleRemoteSettings = (event: Event) => {
@@ -94,6 +119,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
         } catch {}
+        void api.saveCustomization(sanitized, remote.user_presets).catch(() => {});
       }
       if (Array.isArray(remote.user_presets)) {
         setUserPresets(remote.user_presets.slice(0, 3));
@@ -122,6 +148,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("Failed to save customization config to localStorage", e);
     }
+    void api.saveCustomization(draftConfig, userPresets).catch(() => {});
     setIsEditMode(false);
   };
 
@@ -141,6 +168,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       setSavedConfig((prev) => {
         const next = sanitizeConfig(updater(prev));
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
+        void api.saveCustomization(next, userPresets).catch(() => {});
         return next;
       });
       setDraftConfig((prev) => sanitizeConfig(updater(prev)));
@@ -800,6 +828,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(nextPresets));
     } catch {}
+    void api.saveCustomization(savedConfig, nextPresets).catch(() => {});
   };
 
   const deleteUserSlot = (slotIndex: number) => {
@@ -810,6 +839,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(nextPresets));
     } catch {}
+    void api.saveCustomization(savedConfig, nextPresets).catch(() => {});
   };
 
   const loadFromUserSlot = (slotIndex: number) => {

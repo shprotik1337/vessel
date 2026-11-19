@@ -749,9 +749,61 @@ pub fn run() -> anyhow::Result<()> {
 
             let uri = request.uri();
             let query = uri.query().unwrap_or_default().to_string();
+
+            // Поддержка прямого чтения локальных файлов (обои, локальные ассеты)
+            let file_param = url::form_urlencoded::parse(query.as_bytes())
+                .find(|(k, _)| k == "file")
+                .map(|(_, v)| v.into_owned());
+
             let mut target_url = url::form_urlencoded::parse(query.as_bytes())
                 .find(|(k, _)| k == "url")
                 .map(|(_, v)| v.into_owned());
+
+            if let Some(local_path) = file_param.or_else(|| {
+                target_url.as_ref().and_then(|u| u.strip_prefix("file://")).map(|s| s.to_string())
+            }) {
+                tauri::async_runtime::spawn(async move {
+                    match tokio::fs::read(&local_path).await {
+                        Ok(bytes) => {
+                            let lower = local_path.to_lowercase();
+                            let mime = if lower.ends_with(".png") {
+                                "image/png"
+                            } else if lower.ends_with(".webp") {
+                                "image/webp"
+                            } else if lower.ends_with(".gif") {
+                                "image/gif"
+                            } else if lower.ends_with(".svg") {
+                                "image/svg+xml"
+                            } else if lower.ends_with(".bmp") {
+                                "image/bmp"
+                            } else {
+                                "image/jpeg"
+                            };
+                            let response = tauri::http::Response::builder()
+                                .status(200)
+                                .header("Content-Type", mime)
+                                .header("Content-Length", bytes.len().to_string())
+                                .header("Access-Control-Allow-Origin", "*")
+                                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                                .header("Access-Control-Allow-Headers", "*")
+                                .header("Cache-Control", "public, max-age=86400")
+                                .body(bytes)
+                                .unwrap();
+                            responder.respond(response);
+                        }
+                        Err(err) => {
+                            vessel_core::dlog!("[vessel-img] cannot read local file {}: {err}", local_path);
+                            let res = tauri::http::Response::builder()
+                                .status(404)
+                                .header("Access-Control-Allow-Origin", "*")
+                                .body(Vec::new())
+                                .unwrap();
+                            responder.respond(res);
+                        }
+                    }
+                });
+                return;
+            }
 
             if target_url.is_none() {
                 let path = uri.path();
@@ -996,6 +1048,10 @@ pub fn run() -> anyhow::Result<()> {
             commands::window_start_dragging,
             commands::window_set_zoom,
             commands::load_image_as_data_url,
+            commands::save_custom_wallpaper,
+            commands::get_customization,
+            commands::get_user_presets,
+            commands::save_customization,
             commands::get_artist_extras,
             commands::fetch_server_lyrics,
         ])
@@ -1036,8 +1092,8 @@ pub fn run() -> anyhow::Result<()> {
                         )
                     };
 
-                    if let Some(token) = token_opt {
-                        if let Ok(client) = commands::official_client() {
+                    if let Ok(client) = commands::official_client() {
+                        if let Some(token) = token_opt {
                             match client.auth_session(&token).await {
                                 Ok(session_resp) => {
                                     let lib = client.user_library(&token).await.ok();
@@ -1161,35 +1217,6 @@ pub fn run() -> anyhow::Result<()> {
                                         &secrets,
                                     )
                                     .await;
-
-                                    // Получаем проверенные сервером гостевые провайдеры (Deezer, SoundCloud)
-                                    let guest_provs = client
-                                        .info()
-                                        .await
-                                        .map(|info| info.guest_providers)
-                                        .unwrap_or_default();
-                                    {
-                                        let mut core =
-                                            core_session.lock().unwrap_or_else(|p| p.into_inner());
-                                        let creds =
-                                            core.runtime.credential_state().unwrap_or_default();
-                                        let has_guest_dz =
-                                            guest_provs.iter().any(|g| g == "deezer");
-                                        let has_guest_sc =
-                                            guest_provs.iter().any(|g| g == "soundcloud");
-                                        core.app.spotify_enabled = creds.spotify;
-                                        core.app.yandex_enabled = creds.yandex;
-                                        core.app.deezer_enabled = creds.deezer || has_guest_dz;
-                                        core.app.soundcloud_enabled =
-                                            creds.soundcloud || has_guest_sc;
-                                        core.config.deezer_enabled = core.app.deezer_enabled;
-                                        core.config.soundcloud_enabled =
-                                            core.app.soundcloud_enabled;
-                                        let cfg = core.config.clone();
-                                        core.runtime.sync_config(&cfg);
-                                        core.runtime.set_guest_providers(guest_provs);
-                                        core.app.config_dirty = true;
-                                    }
                                 }
                                 Err(err) => {
                                     vessel_core::dlog!("[vessel] session restore failed: {err}");
@@ -1218,20 +1245,39 @@ pub fn run() -> anyhow::Result<()> {
                                         if let Some(uid) = uid {
                                             vessel_core::vault_sync::clear_account_local_secrets(&uid, &secrets);
                                         }
-                                        let mut core =
-                                            core_session.lock().unwrap_or_else(|p| p.into_inner());
-                                        core.runtime.set_guest_providers(Vec::new());
-                                        core.runtime.reload_providers();
-                                        let creds =
-                                            core.runtime.credential_state().unwrap_or_default();
-                                        core.app.spotify_enabled = creds.spotify;
-                                        core.app.yandex_enabled = creds.yandex;
-                                        core.app.deezer_enabled = creds.deezer;
-                                        core.app.soundcloud_enabled = creds.soundcloud;
-                                        core.app.config_dirty = true;
                                     }
                                 }
                             }
+                        }
+
+                        // Получаем проверенные сервером гостевые провайдеры (Deezer, SoundCloud)
+                        // ВСЕГДА: независимо от наличия или статуса сохранённой сессии пользователя!
+                        let guest_provs = client
+                            .info()
+                            .await
+                            .map(|info| info.guest_providers)
+                            .unwrap_or_default();
+                        {
+                            let mut core =
+                                core_session.lock().unwrap_or_else(|p| p.into_inner());
+                            let creds =
+                                core.runtime.credential_state().unwrap_or_default();
+                            let has_guest_dz =
+                                guest_provs.iter().any(|g| g == "deezer");
+                            let has_guest_sc =
+                                guest_provs.iter().any(|g| g == "soundcloud");
+                            core.app.spotify_enabled = creds.spotify;
+                            core.app.yandex_enabled = creds.yandex;
+                            core.app.deezer_enabled = creds.deezer || has_guest_dz;
+                            core.app.soundcloud_enabled =
+                                creds.soundcloud || has_guest_sc;
+                            core.config.deezer_enabled = core.app.deezer_enabled;
+                            core.config.soundcloud_enabled =
+                                core.app.soundcloud_enabled;
+                            let cfg = core.config.clone();
+                            core.runtime.sync_config(&cfg);
+                            core.runtime.set_guest_providers(guest_provs);
+                            core.app.config_dirty = true;
                         }
                     }
                 });

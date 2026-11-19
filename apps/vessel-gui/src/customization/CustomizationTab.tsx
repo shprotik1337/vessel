@@ -99,8 +99,8 @@ export function CustomizationTab() {
       setLoadingWallpaper(true);
       const filePath = await api.pickFile(["png", "jpg", "jpeg", "webp", "gif", "bmp"]);
       if (!filePath) return;
-      const dataUrl = await api.loadImageAsDataUrl(filePath);
-      updateThemeDirectly({ wallpaperData: dataUrl });
+      const wallpaperUrl = await api.saveCustomWallpaper(filePath);
+      updateThemeDirectly({ wallpaperData: wallpaperUrl });
       showToast("Обои успешно установлены!");
     } catch (err) {
       showToast(`Ошибка загрузки обоев: ${err}`, true);

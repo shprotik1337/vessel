@@ -443,3 +443,75 @@ pub async fn load_image_as_data_url(path: String) -> Result<String, String> {
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{mime};base64,{b64}"))
 }
+
+/// Сохранить пользовательские обои в постоянную папку данных и вернуть URL протокола vessel-img
+#[tauri::command]
+pub async fn save_custom_wallpaper(
+    core: CoreState<'_>,
+    source_path: String,
+) -> Result<String, String> {
+    let wallpapers_dir = {
+        let core = lock(&core);
+        core.paths.data_dir.join("wallpapers")
+    };
+    tokio::fs::create_dir_all(&wallpapers_dir)
+        .await
+        .map_err(|e| format!("Не удалось создать директорию для обоев: {e}"))?;
+
+    let ext = std::path::Path::new(&source_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpg");
+
+    let file_stem = format!(
+        "wallpaper_{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        ext
+    );
+    let target_path = wallpapers_dir.join(&file_stem);
+
+    tokio::fs::copy(&source_path, &target_path)
+        .await
+        .map_err(|e| format!("Не удалось скопировать файл обоев: {e}"))?;
+
+    let path_str = target_path.to_string_lossy().to_string();
+    let encoded_path = url::form_urlencoded::byte_serialize(path_str.as_bytes()).collect::<String>();
+    Ok(format!("http://vessel-img.localhost/?file={encoded_path}"))
+}
+
+/// Получить сохраненную конфигурацию кастомизации из config.toml
+#[tauri::command]
+pub async fn get_customization(
+    core: CoreState<'_>,
+) -> Result<Option<serde_json::Value>, String> {
+    let core = lock(&core);
+    Ok(core.config.customization.clone())
+}
+
+/// Получить сохраненные слоты пресетов из config.toml
+#[tauri::command]
+pub async fn get_user_presets(
+    core: CoreState<'_>,
+) -> Result<Option<serde_json::Value>, String> {
+    let core = lock(&core);
+    Ok(core.config.user_presets.clone())
+}
+
+/// Сохранить кастомизацию и пресеты в config.toml
+#[tauri::command]
+pub async fn save_customization(
+    core: CoreState<'_>,
+    customization: serde_json::Value,
+    user_presets: Option<serde_json::Value>,
+) -> Result<(), String> {
+    let mut core = lock(&core);
+    core.config.customization = Some(customization);
+    if let Some(presets) = user_presets {
+        core.config.user_presets = Some(presets);
+    }
+    core.app.config_dirty = true;
+    Ok(())
+}
