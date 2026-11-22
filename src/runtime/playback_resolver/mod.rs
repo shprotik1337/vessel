@@ -269,15 +269,18 @@ impl PlaybackResolver {
                 match provider.playback_source(candidate).await {
                     Ok(source_stream) => return Ok((candidate.clone(), source_stream)),
                     Err(error) => {
-                        self.drop_cache(track, *source);
-                        return Err(anyhow::anyhow!(
-                            "аудио нашлось в {}, но не играется: {error:#}",
+                        crate::dlog!(
+                            "[resolver] кандидат «{}» в {} не играется: {error:#}, пробуем следующего...",
+                            candidate.title,
                             source.label()
-                        ));
+                        );
+                        self.drop_cache(track, *source);
+                        failures.push(format!("{} ({}): {error:#}", source.label(), candidate.title));
+                        continue;
                     }
                 }
             }
-            failures.push(format!("{}: нет играбельных кандидатов", source.label()));
+            failures.push(format!("{}: ни один кандидат не сыграл", source.label()));
         }
         bail!(
             "Не удалось найти аудио для «{}» в Deezer/YouTube Music ({})",

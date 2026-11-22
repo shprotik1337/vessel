@@ -237,7 +237,7 @@ fn server_client(
         if !config_server.url.trim().is_empty() {
             config_server.url.as_str()
         } else {
-            vessel_core::config::OFFICIAL_SERVER_URL
+            vessel_core::config::active_official_server_url()
         }
     } else {
         &config_server.url

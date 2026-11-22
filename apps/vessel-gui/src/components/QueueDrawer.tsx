@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useApp, usePlaybackProgress } from "../store";
 import { useCustomization } from "../customization";
 import { Artwork } from "./Artwork";
@@ -247,24 +246,6 @@ export function QueueDrawer() {
   const [dropOverIndex, setDropOverIndex] = useState<number | null>(null);
   const dragStartRef = useRef<{ index: number; startY: number; isDragging: boolean } | null>(null);
 
-  // FLIP Flight state for transitioning track into Now Playing
-  const [flying, setFlying] = useState<{
-    track: TrackRef;
-    startX: number;
-    startY: number;
-    startWidth: number;
-    startHeight: number;
-    deltaX: number;
-    deltaY: number;
-    targetWidth: number;
-    targetHeight: number;
-    phase: "initial" | "flying";
-  } | null>(null);
-  const [promotingIndex, setPromotingIndex] = useState<number | null>(null);
-  const [isExiting, setIsExiting] = useState(false);
-  const nowPlayingRef = useRef<HTMLDivElement>(null);
-  const nowPlayingSectionRef = useRef<HTMLDivElement>(null);
-
   const position = config.player?.queuePosition || "right";
 
   // Close on Escape key
@@ -361,77 +342,12 @@ export function QueueDrawer() {
     dragStartRef.current = null;
   };
 
-  const triggerFlightPlay = async (index: number, el: HTMLElement | null, track: TrackRef) => {
-    if (flying) return;
-
-    if (el) {
-      const sourceRect = el.getBoundingClientRect();
-      const targetEl = nowPlayingRef.current || nowPlayingSectionRef.current;
-      const targetRect = targetEl ? targetEl.getBoundingClientRect() : {
-        left: sourceRect.left,
-        top: Math.max(10, sourceRect.top - 200),
-        width: sourceRect.width,
-        height: sourceRect.height,
-      };
-
-      const deltaX = targetRect.left - sourceRect.left;
-      const deltaY = targetRect.top - sourceRect.top;
-
-      setFlying({
-        track,
-        startX: sourceRect.left,
-        startY: sourceRect.top,
-        startWidth: sourceRect.width,
-        startHeight: sourceRect.height,
-        deltaX,
-        deltaY,
-        targetWidth: targetRect.width,
-        targetHeight: targetRect.height,
-        phase: "initial",
-      });
-      setPromotingIndex(index);
-      setIsExiting(true);
-
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setFlying((prev) => (prev ? { ...prev, phase: "flying" } : null));
-        });
-      });
-
-      try {
-        await api.playQueueIndex(index);
-      } catch (e) {
-        showToast(String(e), true);
-      }
-
-      setTimeout(async () => {
-        setFlying(null);
-        setPromotingIndex(null);
-        setIsExiting(false);
-        await refresh();
-      }, 320);
-    } else {
-      try {
-        await api.playQueueIndex(index);
-        await refresh();
-      } catch (e) {
-        showToast(String(e), true);
-      }
-    }
-  };
-
-  const handlePlayFromQueue = async (index: number, el?: HTMLElement | null, track?: TrackRef) => {
-    const targetTrack = track || queue[index];
-    if (targetTrack) {
-      const targetEl = el || (document.querySelector(`[data-queue-abs-index="${index}"]`) as HTMLElement | null);
-      void triggerFlightPlay(index, targetEl, targetTrack);
-    } else {
-      try {
-        await api.playQueueIndex(index);
-        await refresh();
-      } catch (e) {
-        showToast(String(e), true);
-      }
+  const handlePlayFromQueue = async (index: number) => {
+    try {
+      await api.playQueueIndex(index);
+      await refresh();
+    } catch (e) {
+      showToast(String(e), true);
     }
   };
 
@@ -514,8 +430,6 @@ export function QueueDrawer() {
       showToast(String(e), true);
     }
   };
-
-  const upcomingTracks = queue.slice(currentIndex >= 0 ? currentIndex + 1 : 0);
 
   return (
     <>
@@ -619,221 +533,134 @@ export function QueueDrawer() {
           />
         ) : (
           <div className="queue-drawer-content">
-            {/* Now playing */}
-            {currentTrack && (
-              <div className="queue-section" ref={nowPlayingSectionRef}>
-                <div className="queue-section-label">
-                  {lang === "ru" ? "Сейчас играет" : "Now Playing"}
+            {queue.length === 0 ? (
+              <div className="queue-empty-state">
+                <div className="queue-empty-icon">♫</div>
+                <div className="queue-empty-text">
+                  {lang === "ru"
+                    ? "Очередь воспроизведения пуста"
+                    : "No tracks in queue"}
                 </div>
-                <div
-                  ref={nowPlayingRef}
-                  className={`queue-track-item current-track ${isExiting ? "is-exiting" : ""}`}
-                  onContextMenu={(e) => handleContextMenu(e, currentTrack, currentIndex)}
-                  style={{ cursor: "default" }}
-                >
-                  <Artwork
-                    url={currentTrack.artwork_url}
-                    alt={currentTrack.title}
-                    size={42}
-                    className="queue-track-art"
-                    onPlayClick={async () => {
-                      try { void api.togglePlayback(); } catch {}
-                    }}
-                    isPlaying={isLive}
-                  />
-                  <div className="queue-track-meta">
-                    <div className="queue-track-title" title={currentTrack.title}>
-                      <span className="queue-track-title-text">{currentTrack.title}</span>
-                    </div>
-                    <div className="queue-track-artist">
-                      {filterValidArtists(currentTrack.artists).join(", ") || "—"}
-                    </div>
-                  </div>
-                  <div className="queue-playing-indicator">
-                    <span className="queue-eq-bar" />
-                    <span className="queue-eq-bar" />
-                    <span className="queue-eq-bar" />
-                  </div>
+                <div className="queue-empty-sub">
+                  {lang === "ru"
+                    ? "Треки из плейлиста или Моей волны появятся здесь"
+                    : "Tracks will appear here during playback"}
                 </div>
+              </div>
+            ) : (
+              <div
+                className="queue-track-list"
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+              >
+                {queue.map((track, absoluteIndex) => {
+                  const isCurrent = absoluteIndex === currentIndex;
+                  const isDragging = dragIndex === absoluteIndex;
+                  const isOver = dropOverIndex === absoluteIndex && !isDragging;
+                  return (
+                    <div
+                      key={`${track.id}-${absoluteIndex}`}
+                      data-queue-abs-index={absoluteIndex}
+                      className={`queue-track-item ${isCurrent ? "current-track" : ""}`}
+                      onPointerDown={(e) => handlePointerDown(e, absoluteIndex)}
+                      onContextMenu={(e) => handleContextMenu(e, track, absoluteIndex)}
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement | null;
+                        if (target?.closest("button, a, .qx, .queue-track-remove-btn, .queue-track-more-btn, .art")) return;
+                        if (dragStartRef.current?.isDragging) return;
+                        if (isCurrent) {
+                          void api.togglePlayback();
+                        } else {
+                          void handlePlayFromQueue(absoluteIndex);
+                        }
+                      }}
+                      style={{
+                        cursor: dragIndex !== null ? "grabbing" : "pointer",
+                        userSelect: "none",
+                        opacity: isDragging ? 0.35 : 1,
+                        transform: isDragging ? "scale(1.02)" : "none",
+                        boxShadow: isOver
+                          ? "inset 0 2px 0 0 var(--accent, #e11d48)"
+                          : isDragging
+                          ? "0 8px 24px rgba(0,0,0,0.5)"
+                          : undefined,
+                        transition: isDragging ? "none" : "background 0.12s ease, opacity 0.12s ease",
+                      }}
+                    >
+                      <Artwork
+                        url={track.artwork_url}
+                        alt={track.title}
+                        size={48}
+                        className="queue-track-art"
+                        onPlayClick={async () => {
+                          if (isCurrent && isLive) {
+                            try { void api.togglePlayback(); } catch {}
+                          } else {
+                            void handlePlayFromQueue(absoluteIndex);
+                          }
+                        }}
+                        isPlaying={isCurrent && isLive}
+                      />
+                      <div className="queue-track-meta">
+                        <div className="queue-track-title" title={track.title}>
+                          <span className="queue-track-title-text">{track.title}</span>
+                          {(track.origin === "smart_shuffle" || smartTrackKeys.has(trackKey(track))) && (
+                            <span className="queue-origin-icon queue-origin-smart" title={lang === "ru" ? "Умное перемешивание" : "Smart Shuffle"}>
+                              <IconSparkle size={12} />
+                            </span>
+                          )}
+                          {track.origin === "autoplay" && (
+                            <span className="queue-origin-icon queue-origin-autoplay" title={lang === "ru" ? "Автопохожие треки" : "Autoplay"}>
+                              <IconInfinity size={13} />
+                            </span>
+                          )}
+                          {track.origin === "my_wave" && (
+                            <span className="queue-origin-icon queue-origin-wave" title={lang === "ru" ? "Моя волна" : "My Wave"}>
+                              <IconWaveStream size={12} />
+                            </span>
+                          )}
+                        </div>
+                        <div className="queue-track-artist">
+                          {filterValidArtists(track.artists).join(", ") || "—"}
+                        </div>
+                      </div>
+
+                      <div className="queue-track-duration">
+                        {track.duration_ms ? formatDuration(track.duration_ms) : ""}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="queue-track-more-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleContextMenu(e, track, absoluteIndex);
+                        }}
+                        title={lang === "ru" ? "Действия" : "Actions"}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="12" cy="5" r="2" />
+                          <circle cx="12" cy="12" r="2" />
+                          <circle cx="12" cy="19" r="2" />
+                        </svg>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="queue-track-remove-btn"
+                        onClick={(e) => handleRemove(e, absoluteIndex)}
+                        title={lang === "ru" ? "Удалить из очереди" : "Remove from queue"}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
-
-            {/* Next in Queue */}
-            <div className="queue-section">
-              <div className="queue-section-label">
-                <span>{lang === "ru" ? "Далее" : "Next up"}</span>
-                {upcomingTracks.length > 0 && (
-                  <span className="queue-upcoming-count">
-                    {upcomingTracks.length}{" "}
-                    {lang === "ru" ? "треков" : "tracks"}
-                  </span>
-                )}
-              </div>
-
-              {upcomingTracks.length === 0 ? (
-                <div className="queue-empty-state">
-                  <div className="queue-empty-icon">♫</div>
-                  <div className="queue-empty-text">
-                    {lang === "ru"
-                      ? "Очередь воспроизведения пуста"
-                      : "No more tracks in queue"}
-                  </div>
-                  <div className="queue-empty-sub">
-                    {lang === "ru"
-                      ? "Треки из плейлиста или Моей волны появятся здесь"
-                      : "Tracks will appear here during playback"}
-                  </div>
-                </div>
-              ) : (
-                <div
-                  className="queue-track-list"
-                  onPointerMove={handlePointerMove}
-                  onPointerUp={handlePointerUp}
-                >
-                  {upcomingTracks.map((track, idx) => {
-                    const absoluteIndex =
-                      (currentIndex >= 0 ? currentIndex + 1 : 0) + idx;
-                    const isDragging = dragIndex === absoluteIndex;
-                    const isOver = dropOverIndex === absoluteIndex && !isDragging;
-                    return (
-                      <div
-                        key={`${track.id}-${absoluteIndex}`}
-                        data-queue-abs-index={absoluteIndex}
-                        className={`queue-track-item ${promotingIndex === absoluteIndex ? "is-promoting" : ""}`}
-                        onPointerDown={(e) => handlePointerDown(e, absoluteIndex)}
-                        onContextMenu={(e) => handleContextMenu(e, track, absoluteIndex)}
-                        onClick={(e) => {
-                          const target = e.target as HTMLElement | null;
-                          if (target?.closest("button, a, .qx, .queue-track-remove-btn, .queue-track-more-btn, .art")) return;
-                          if (dragStartRef.current?.isDragging) return;
-                          void handlePlayFromQueue(absoluteIndex, e.currentTarget, track);
-                        }}
-                        style={{
-                          cursor: dragIndex !== null ? "grabbing" : "grab",
-                          userSelect: "none",
-                          opacity: isDragging ? 0.35 : (promotingIndex === absoluteIndex ? 0 : 1),
-                          transform: isDragging ? "scale(1.02)" : "none",
-                          boxShadow: isOver
-                            ? "inset 0 2px 0 0 var(--accent, #e11d48)"
-                            : isDragging
-                            ? "0 8px 24px rgba(0,0,0,0.5)"
-                            : undefined,
-                          transition: isDragging ? "none" : "background 0.12s ease, opacity 0.12s ease, transform 0.15s ease",
-                        }}
-                      >
-                        <Artwork
-                          url={track.artwork_url}
-                          alt={track.title}
-                          size={40}
-                          className="queue-track-art"
-                          onPlayClick={async () => {
-                            if (absoluteIndex === currentIndex && isLive) {
-                              try { void api.togglePlayback(); } catch {}
-                            } else {
-                              const rowEl = document.querySelector(`[data-queue-abs-index="${absoluteIndex}"]`) as HTMLElement | null;
-                              void handlePlayFromQueue(absoluteIndex, rowEl, track);
-                            }
-                          }}
-                          isPlaying={absoluteIndex === currentIndex && isLive}
-                        />
-                        <div className="queue-track-meta">
-                          <div className="queue-track-title" title={track.title}>
-                            <span className="queue-track-title-text">{track.title}</span>
-                            {(track.origin === "smart_shuffle" || smartTrackKeys.has(trackKey(track))) && (
-                              <span className="queue-origin-icon queue-origin-smart" title={lang === "ru" ? "Умное перемешивание" : "Smart Shuffle"}>
-                                <IconSparkle size={12} />
-                              </span>
-                            )}
-                            {track.origin === "autoplay" && (
-                              <span className="queue-origin-icon queue-origin-autoplay" title={lang === "ru" ? "Автопохожие треки" : "Autoplay"}>
-                                <IconInfinity size={13} />
-                              </span>
-                            )}
-                            {track.origin === "my_wave" && (
-                              <span className="queue-origin-icon queue-origin-wave" title={lang === "ru" ? "Моя волна" : "My Wave"}>
-                                <IconWaveStream size={12} />
-                              </span>
-                            )}
-                          </div>
-                          <div className="queue-track-artist">
-                            {filterValidArtists(track.artists).join(", ") || "—"}
-                          </div>
-                        </div>
-
-                        <div className="queue-track-duration">
-                          {track.duration_ms ? formatDuration(track.duration_ms) : ""}
-                        </div>
-
-                        <button
-                          type="button"
-                          className="queue-track-more-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleContextMenu(e, track, absoluteIndex);
-                          }}
-                          title={lang === "ru" ? "Действия" : "Actions"}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                            <circle cx="12" cy="5" r="1.5" />
-                            <circle cx="12" cy="12" r="1.5" />
-                            <circle cx="12" cy="19" r="1.5" />
-                          </svg>
-                        </button>
-
-                        <button
-                          type="button"
-                          className="queue-track-remove-btn"
-                          onClick={(e) => handleRemove(e, absoluteIndex)}
-                          title={lang === "ru" ? "Удалить из очереди" : "Remove from queue"}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </aside>
-
-      {flying && createPortal(
-        <div
-          className="queue-flying-card"
-          style={{
-            position: "fixed",
-            left: flying.startX,
-            top: flying.startY,
-            width: flying.startWidth,
-            height: flying.startHeight,
-            transform: flying.phase === "flying"
-              ? `translate3d(${flying.deltaX}px, ${flying.deltaY}px, 0)`
-              : "translate3d(0, 0, 0)",
-            zIndex: 99999,
-            pointerEvents: "none",
-          }}
-        >
-          <Artwork
-            url={flying.track.artwork_url}
-            alt={flying.track.title}
-            size={flying.phase === "flying" ? 44 : 40}
-            className="queue-track-art"
-          />
-          <div className="queue-track-meta">
-            <div className="queue-track-title" title={flying.track.title}>
-              <span className="queue-track-title-text">{flying.track.title}</span>
-            </div>
-            <div className="queue-track-artist">
-              {filterValidArtists(flying.track.artists).join(", ") || "—"}
-            </div>
-          </div>
-          <div className="queue-track-duration">
-            {flying.track.duration_ms ? formatDuration(flying.track.duration_ms) : ""}
-          </div>
-        </div>,
-        document.body
-      )}
 
       <PlayerContextMenu
         menu={menu}

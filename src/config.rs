@@ -66,7 +66,59 @@ pub struct HotkeyBindings {
 pub const OFFICIAL_SERVER_ID: &str = "official";
 pub const OFFICIAL_SERVER_NAME: &str = "Vessel Server";
 pub const OFFICIAL_SERVER_URL: &str = "https://85.208.85.254:7700";
+pub const OFFICIAL_SERVER_URL_PL: &str = "http://95.85.253.133:7700";
+pub const OFFICIAL_SERVERS: &[&str] = &[
+    "https://85.208.85.254:7700",
+    "http://95.85.253.133:7700",
+];
 pub const OFFICIAL_SERVER_TOKEN: &str = "vessel-95-k7f2d9";
+
+static ACTIVE_SERVER_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn active_official_server_url() -> &'static str {
+    let idx = ACTIVE_SERVER_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+    OFFICIAL_SERVERS.get(idx).copied().unwrap_or(OFFICIAL_SERVER_URL)
+}
+
+pub fn set_active_official_server_index(idx: usize) {
+    if idx < OFFICIAL_SERVERS.len() {
+        ACTIVE_SERVER_INDEX.store(idx, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+pub async fn resolve_best_official_server_url() -> &'static str {
+    let http = match reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_millis(1500))
+        .timeout(std::time::Duration::from_millis(2000))
+        .danger_accept_invalid_certs(true)
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return active_official_server_url(),
+    };
+
+    let current_idx = ACTIVE_SERVER_INDEX.load(std::sync::atomic::Ordering::Relaxed);
+    let current_url = OFFICIAL_SERVERS.get(current_idx).copied().unwrap_or(OFFICIAL_SERVER_URL);
+    if let Ok(resp) = http.get(format!("{current_url}/api/v1/health")).send().await {
+        if resp.status().is_success() {
+            return current_url;
+        }
+    }
+
+    for (i, &url) in OFFICIAL_SERVERS.iter().enumerate() {
+        if i == current_idx {
+            continue;
+        }
+        if let Ok(resp) = http.get(format!("{url}/api/v1/health")).send().await {
+            if resp.status().is_success() {
+                ACTIVE_SERVER_INDEX.store(i, std::sync::atomic::Ordering::Relaxed);
+                return url;
+            }
+        }
+    }
+
+    current_url
+}
 
 /// Экземпляр Vessel Server (не тип! тип всегда Vessel Server, это конфиг
 /// подключения): id — стабильный ключ в provider_routing и в SecretStore

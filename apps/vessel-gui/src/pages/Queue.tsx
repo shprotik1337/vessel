@@ -178,14 +178,15 @@ export function Queue() {
 
   const qrowStyle: React.CSSProperties = {
     display: "grid",
-    gridTemplateColumns: "40px 1fr 50px 22px",
+    gridTemplateColumns: "48px 1fr 50px 22px",
     gap: 12,
     alignItems: "center",
-    height: 48,
+    height: 56,
     padding: "0 12px",
-    borderRadius: 5,
+    borderRadius: 8,
     cursor: "default",
     border: "1px solid transparent",
+    marginBottom: 6,
   };
 
   const handleContextMenu = (e: React.MouseEvent, targetTrack: TrackRef, index: number) => {
@@ -251,7 +252,7 @@ export function Queue() {
         <Artwork
           url={track.artwork_url}
           alt={track.title}
-          size={40}
+          size={48}
           seed={realIndex}
           className="t-art"
           onPlayClick={async () => {
@@ -317,17 +318,17 @@ export function Queue() {
                 onContextMenu={(e) => handleContextMenu(e, current, currentIndex ?? -1)}
                 style={{
                   ...qrowStyle,
-                  gridTemplateColumns: "40px 1fr 50px",
-                  background: "var(--elev)",
-                  boxShadow: "inset 2px 0 0 0 var(--text)",
-                  borderRadius: 6,
+                  gridTemplateColumns: "48px 1fr 50px",
+                  background: "rgba(255, 255, 255, 0.14)",
+                  boxShadow: "none",
+                  borderRadius: 8,
                 }}
                 className="qrow now"
               >
                 <Artwork
                   url={current.artwork_url}
                   alt={current.title}
-                  size={40}
+                  size={48}
                   seed={currentIndex ?? 0}
                   className="t-art"
                   onPlayClick={async () => {
@@ -362,9 +363,9 @@ export function Queue() {
             </div>
             <VirtualTrackList
               items={queue}
-              itemHeight={50}
+              itemHeight={62}
               className="queue-tracklist"
-              style={{ display: "flex", flexDirection: "column", gap: 2 }}
+              style={{ display: "flex", flexDirection: "column" }}
               renderItem={(track, i) => (i === currentIndex ? null : renderRow(track, i))}
             />
           </div>

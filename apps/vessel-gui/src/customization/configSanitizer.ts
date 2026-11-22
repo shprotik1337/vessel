@@ -50,9 +50,9 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     ? raw.player.style
     : "progress_fill";
   const playerHeight =
-    typeof raw.player?.height === "number" && !isNaN(raw.player.height)
-      ? Math.max(68, Math.min(120, raw.player.height))
-      : 76;
+    typeof raw.player?.height === "number" && !isNaN(raw.player.height) && raw.player.height >= 58 && raw.player.height <= 90
+      ? raw.player.height
+      : 68;
   const playerWidthPercent =
     typeof raw.player?.widthPercent === "number" && !isNaN(raw.player.widthPercent)
       ? Math.max(50, Math.min(100, raw.player.widthPercent))

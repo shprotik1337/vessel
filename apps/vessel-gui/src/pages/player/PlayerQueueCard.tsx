@@ -112,16 +112,16 @@ export function PlayerQueueCard({
                   display: "flex",
                   alignItems: "center",
                   gap: 14,
-                  height: 64,
-                  padding: "0 16px",
+                  height: 56,
+                  padding: "0 12px",
                   borderRadius: 8,
                   cursor: dragIndex !== null ? "grabbing" : "grab",
                   userSelect: "none",
                   opacity: isDragging ? 0.35 : 1,
-                  background: isCur ? "var(--trow-now-bg, rgba(255, 255, 255, 0.08))" : "transparent",
-                  border: isCur ? "1px solid var(--trow-now-border, transparent)" : "1px solid transparent",
+                  background: isCur ? "rgba(255, 255, 255, 0.14)" : "transparent",
+                  border: "1px solid transparent",
                   boxShadow: isOver ? "inset 0 2px 0 0 var(--accent, #6366f1)" : "none",
-                  marginBottom: 2,
+                  marginBottom: 6,
                   transition: isDragging ? "none" : "background 0.12s ease, opacity 0.12s ease",
                 }}
                 onMouseEnter={(e) => {
@@ -169,7 +169,7 @@ export function PlayerQueueCard({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: 13.5,
+                      fontSize: 15,
                       fontWeight: 600,
                       color: isCur
                         ? (trackRowActiveStyle === "accent" ? "var(--accent, #3b82f6)" : "#ffffff")
@@ -183,7 +183,7 @@ export function PlayerQueueCard({
                   </div>
                   <div
                     style={{
-                      fontSize: 12,
+                      fontSize: 13,
                       color: "rgba(255, 255, 255, 0.7)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",

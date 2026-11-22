@@ -6,6 +6,7 @@ import { trackKey, resolveArtworkUrl } from "../lib/utils";
 import type { MixItem } from "../api/types";
 import {
   RecommendationsBlockContent,
+  CurrentlyListeningSection,
   MixesBlockContent,
   ExploreBlockContent,
   HomeMixPageView,
@@ -67,7 +68,18 @@ export function Home() {
           </div>
         </div>
 
-        {/* 2. Recommendations Section */}
+        {/* 2. Currently Listening Section (Liner Style) */}
+        <div className="home-row-line">
+          <div className="home-block-wrapper" data-block-id="currently-listening" data-width="full">
+            <CurrentlyListeningSection
+              nowKey={nowKey}
+              isLive={isLive}
+              lang={lang}
+            />
+          </div>
+        </div>
+
+        {/* 3. Recommendations Section */}
         <div className="home-row-line">
           <div className="home-block-wrapper" data-block-id="recommendations" data-width="full">
             <RecommendationsBlockContent

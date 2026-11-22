@@ -128,3 +128,11 @@ export async function applySmartShuffle(
 ): Promise<SmartShuffleResult> {
   return invoke<SmartShuffleResult>("apply_smart_shuffle", { currentQueue, currentIndex, providers });
 }
+
+export async function reportNowPlaying(track: TrackRef): Promise<void> {
+  return invoke<void>("report_now_playing", { track });
+}
+
+export async function getPlatformNowPlaying(): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("get_platform_now_playing");
+}

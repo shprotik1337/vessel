@@ -609,3 +609,37 @@ pub async fn apply_smart_shuffle(
 
     Ok(res)
 }
+
+#[tauri::command]
+pub async fn report_now_playing(
+    _core: CoreState<'_>,
+    track: TrackRef,
+) -> Result<(), String> {
+    tokio::spawn(async move {
+        let best_url = vessel_core::config::active_official_server_url();
+        if let Ok(client) = vessel_core::provider::remote::ServerClient::new(
+            best_url,
+            vessel_core::config::OFFICIAL_SERVER_TOKEN,
+        ) {
+            let _ = client.report_now_playing(&track).await;
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_platform_now_playing(
+    _core: CoreState<'_>,
+) -> Result<Vec<TrackRef>, String> {
+    let best_url = vessel_core::config::active_official_server_url();
+    let client = vessel_core::provider::remote::ServerClient::new(
+        best_url,
+        vessel_core::config::OFFICIAL_SERVER_TOKEN,
+    )
+    .map_err(|e| e.to_string())?;
+
+    client
+        .platform_now_playing()
+        .await
+        .map_err(|e| e.to_string())
+}

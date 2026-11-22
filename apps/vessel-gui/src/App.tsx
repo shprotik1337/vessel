@@ -286,20 +286,23 @@ function AppContent() {
   const isPlayerTop = config.player?.position === "top";
   const isPlaybackActive = Boolean(state?.now_playing);
   const showBottomPlayer = config.player?.showMiniPlayer !== false && view !== "player" && isPlaybackActive;
-  const isProgressFill = config.player?.style === "progress_fill";
-  const effectivePlayerHeight = showBottomPlayer ? (isProgressFill ? 76 : (config.player?.height || 96)) : 0;
+const isProgressFill = config.player?.style === "progress_fill";
+  const effectivePlayerHeight = showBottomPlayer
+    ? (isProgressFill ? 66 : 68)
+    : 0;
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
+    root.style.setProperty("--sidebar-width", isSidebarLeft ? "60px" : "0px");
     root.style.setProperty("--player-height", `${effectivePlayerHeight}px`);
     if (!showBottomPlayer) {
       root.style.setProperty("--safe-area-bottom", "24px");
     } else {
-      const bottomGap = isProgressFill ? 28 : 76;
+      const bottomGap = 24;
       root.style.setProperty("--safe-area-bottom", `${effectivePlayerHeight + 8 + bottomGap}px`);
     }
-  }, [showBottomPlayer, effectivePlayerHeight, isProgressFill]);
+  }, [showBottomPlayer, effectivePlayerHeight, isSidebarLeft]);
 
   const isIsland = config.sidebar?.style === "island" || config.sidebar?.style === "floating";
   const autoHide = Boolean(config.sidebar?.autoHide);

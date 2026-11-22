@@ -1,13 +1,37 @@
 import React, { useState, useRef, useEffect } from "react";
 import type { LyricsCandidateOption } from "../../lib/lyrics";
 
+export type VisualMode = "full" | "balanced";
+
 export interface LyricsProviderIslandProps {
   availableProviders: LyricsCandidateOption[];
   activeProvider: string;
   onSelectProvider: (provider: string) => void;
   onNext: () => void;
   onPrev: () => void;
+  visualMode?: VisualMode;
+  onSetVisualMode?: (mode: VisualMode) => void;
+  blurEnabled?: boolean;
+  onToggleBlur?: () => void;
+  lang?: string;
 }
+
+const VISUAL_MODES = [
+  {
+    key: "full" as const,
+    titleRu: "Все эффекты",
+    titleEn: "All effects",
+    hintRu: "Живой фон и мягкое размытие уходящих строк",
+    hintEn: "Live background and soft lyrics edge blur",
+  },
+  {
+    key: "balanced" as const,
+    titleRu: "Сбалансированный",
+    titleEn: "Balanced",
+    hintRu: "Живой фон с четкими краями текста",
+    hintEn: "Live background with crisp lyrics edges",
+  },
+];
 
 export function LyricsProviderIsland({
   availableProviders,
@@ -15,20 +39,28 @@ export function LyricsProviderIsland({
   onSelectProvider,
   onNext,
   onPrev,
+  visualMode = "full",
+  onSetVisualMode,
+  blurEnabled = true,
+  onToggleBlur,
+  lang = "ru",
 }: LyricsProviderIslandProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [visualQualityOpen, setVisualQualityOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!dropdownOpen) return;
+    if (!dropdownOpen && !visualQualityOpen) return;
     const onMouseDown = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
+        setVisualQualityOpen(false);
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setDropdownOpen(false);
+        setVisualQualityOpen(false);
       }
     };
     document.addEventListener("mousedown", onMouseDown);
@@ -37,7 +69,7 @@ export function LyricsProviderIsland({
       document.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [dropdownOpen]);
+  }, [dropdownOpen, visualQualityOpen]);
 
   // Filter out any stale Polaris Mono entries if any remain in cache
   const cleanProviders = (availableProviders || []).filter(
@@ -80,6 +112,31 @@ export function LyricsProviderIsland({
 
   return (
     <div ref={containerRef} className="fs-lyrics-island">
+      {(onSetVisualMode || onToggleBlur) && (
+        <>
+          <button
+            type="button"
+            className={`fs-island-blur-btn ${visualMode === "full" || blurEnabled ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onSetVisualMode) {
+                setVisualQualityOpen((prev) => !prev);
+                setDropdownOpen(false);
+              } else if (onToggleBlur) {
+                onToggleBlur();
+              }
+            }}
+            title={lang === "ru" ? "Качество визуалов" : "Visual quality"}
+            aria-label="Visual quality"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z" />
+            </svg>
+          </button>
+          <span className="fs-island-divider" />
+        </>
+      )}
+
       {hasMultiple && (
         <button
           type="button"
@@ -110,6 +167,7 @@ export function LyricsProviderIsland({
           e.stopPropagation();
           if (hasMultiple) {
             setDropdownOpen((prev) => !prev);
+            setVisualQualityOpen(false);
           }
         }}
         title="Выбрать источник текста"
@@ -160,7 +218,50 @@ export function LyricsProviderIsland({
         </button>
       )}
 
-      {/* Clean compact dropdown: only existing candidates, no badges */}
+      {/* Visual Quality Popover */}
+      {visualQualityOpen && onSetVisualMode && (
+        <div className="fs-visual-quality-popover" onClick={(e) => e.stopPropagation()} role="dialog">
+          <div className="fs-vq-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="fs-vq-icon">
+              <path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z" />
+            </svg>
+            <span className="fs-vq-title">{lang === "ru" ? "Визуальные эффекты" : "Visual effects"}</span>
+          </div>
+          <p className="fs-vq-desc">
+            {lang === "ru"
+              ? "Настройка отображения текста песни и градиентного размытия краев."
+              : "Adjust lyrics presentation and edge blur effects."}
+          </p>
+          <div className="fs-vq-options">
+            {VISUAL_MODES.map((opt) => {
+              const active = visualMode === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  className={`fs-vq-option ${active ? "active" : ""}`}
+                  onClick={() => {
+                    onSetVisualMode(opt.key);
+                    setVisualQualityOpen(false);
+                  }}
+                >
+                  <div className="fs-vq-opt-text">
+                    <span className="fs-vq-opt-title">{lang === "ru" ? opt.titleRu : opt.titleEn}</span>
+                    <span className="fs-vq-opt-hint">{lang === "ru" ? opt.hintRu : opt.hintEn}</span>
+                  </div>
+                  {active && (
+                    <svg className="fs-vq-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Clean compact provider dropdown */}
       {dropdownOpen && hasMultiple && (
         <div className="fs-island-dropdown" onClick={(e) => e.stopPropagation()}>
           {cleanProviders.map((item, idx) => {
@@ -180,7 +281,7 @@ export function LyricsProviderIsland({
                 }}
               >
                 <span className="fs-island-item-name">{label}</span>
-                {isItemActive ? (
+                {isItemActive && (
                   <svg
                     width="13"
                     height="13"
@@ -194,8 +295,6 @@ export function LyricsProviderIsland({
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                ) : (
-                  <span className="fs-island-item-num">{idx + 1}</span>
                 )}
               </button>
             );

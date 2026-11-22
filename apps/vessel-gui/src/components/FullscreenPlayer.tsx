@@ -11,6 +11,8 @@ import {
   KawarpBackground,
 } from "./fullscreen";
 
+export type VisualMode = "full" | "balanced";
+
 export function FullscreenPlayer() {
   const {
     state,
@@ -70,6 +72,30 @@ export function FullscreenPlayer() {
     lang,
     defaultProvider: config.player?.defaultLyricsProvider,
   });
+
+  const [visualMode, setVisualMode] = useState<VisualMode>(() => {
+    try {
+      const saved = localStorage.getItem("vessel_visual_mode") as VisualMode | null;
+      if (saved && (saved === "full" || saved === "balanced")) {
+        return saved;
+      }
+      const legacyBlur = localStorage.getItem("vessel_lyrics_blur_enabled");
+      if (legacyBlur === "false") return "balanced";
+      return "full";
+    } catch {
+      return "full";
+    }
+  });
+
+  const handleSetVisualMode = (mode: VisualMode) => {
+    setVisualMode(mode);
+    try {
+      localStorage.setItem("vessel_visual_mode", mode);
+      localStorage.setItem("vessel_lyrics_blur_enabled", String(mode === "full"));
+    } catch {}
+  };
+
+  const blurEnabled = visualMode === "full";
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -166,6 +192,7 @@ export function FullscreenPlayer() {
       playerStatus={player.status}
       lang={lang}
       lyrics={lyrics}
+      blurEnabled={blurEnabled}
     />
   );
 
@@ -188,6 +215,9 @@ export function FullscreenPlayer() {
         onSelectProvider={lyrics.selectProvider}
         onNextProvider={lyrics.nextProvider}
         onPrevProvider={lyrics.prevProvider}
+        visualMode={visualMode}
+        onSetVisualMode={handleSetVisualMode}
+        blurEnabled={blurEnabled}
       />
 
       {/* Main Content Layout (Split View: Controls + Lyrics) */}
