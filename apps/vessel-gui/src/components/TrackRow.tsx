@@ -14,6 +14,7 @@ import {
 import { t } from "../i18n";
 import type { TrackRef } from "../api/types";
 import { Artwork } from "./Artwork";
+import { MiniContextMenu } from "./MiniContextMenu";
 import * as api from "../api/commands";
 
 interface TrackRowProps {
@@ -50,28 +51,7 @@ function TrackRowComponent({
   const playable = canPlay(track.capability);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [plPicker, setPlPicker] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [caching, setCaching] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenu(null);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenu(null);
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menu]);
 
   useEffect(() => {
     if (!plPicker) return;
@@ -99,16 +79,6 @@ function TrackRowComponent({
     }
   };
 
-  const handleAddQueue = async () => {
-    closeAll();
-    try {
-      await api.addToQueue(track);
-      showToast(`${t(lang, "trackrow.addedToQueue")} ${track.title}`);
-    } catch (error) {
-      showToast(String(error), true);
-    }
-  };
-
   const handlePlayNext = async () => {
     closeAll();
     try {
@@ -116,34 +86,6 @@ function TrackRowComponent({
       showToast(`${t(lang, "trackrow.playNextToast")} ${track.title}`);
     } catch (error) {
       showToast(String(error), true);
-    }
-  };
-
-  const handleCache = async () => {
-    closeAll();
-    setCaching(true);
-    showToast(lang === "ru" ? `Кэширование: ${track.title}…` : `Caching: ${track.title}…`);
-    try {
-      await api.downloadTrackToCache(track);
-      showToast(lang === "ru" ? `Сохранено в кэш: ${track.title}` : `Cached: ${track.title}`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setCaching(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    closeAll();
-    setDownloading(true);
-    showToast(`${t(lang, "trackrow.downloadingTrack")} ${track.title}…`);
-    try {
-      const path = await api.downloadTrack(track);
-      showToast(`${t(lang, "trackrow.downloaded")} ${path}`);
-    } catch (error) {
-      showToast(String(error), true);
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -175,37 +117,29 @@ function TrackRowComponent({
     setMenu({ x: Math.max(10, x), y: Math.max(10, y) });
   };
 
-  const menuStyle: React.CSSProperties = {
-    position: "fixed",
-    left: menu ? menu.x : 0,
-    top: menu ? menu.y : 0,
-    zIndex: 99999,
-  };
-
   return (
     <>
       <div
         className={`trow ${playing ? "now" : ""} ${!playable ? "dim" : ""}`}
-        onClick={() => playable && onPlay(track)}
+        onClick={() => {
+          if (!playable) return;
+          if (isCurrent) {
+            void api.togglePlayback();
+          } else {
+            onPlay(track);
+          }
+        }}
         onContextMenu={handleContextMenu}
         style={playable ? { cursor: "pointer" } : undefined}
       >
         <span className="c-idx">
-          {playing ? (
-            <span className="eq">
-              <i />
-              <i />
-              <i />
-            </span>
-          ) : (
-            <span className="t-num">{index + 1}</span>
-          )}
+          <span className="t-num">{index + 1}</span>
         </span>
         <div className="t-art-wrap">
           <Artwork
             url={track.artwork_url}
             alt={track.title}
-            size={44}
+            size={48}
             seed={track.id.length}
             className="t-art"
             onPlayClick={async () => {
@@ -297,34 +231,14 @@ function TrackRowComponent({
         <span className="c-time">{formatDuration(track.duration_ms)}</span>
       </div>
 
-      {menu && createPortal(
-        <div ref={menuRef} className="ctx show" style={menuStyle}>
-          <div className="ctx-head">{track.title}</div>
-          <div className="ctx-item" onClick={handlePlayNext}>{t(lang, "trackrow.playNext")}</div>
-          <div className="ctx-item" onClick={handleAddQueue}>{t(lang, "trackrow.addToQueue")}</div>
-          <div className="ctx-item" onClick={() => { setMenu(null); setPlPicker(true); }}>
-            {t(lang, "trackrow.addToPlaylistCtx")}
-          </div>
-          <div className="ctx-item" onClick={handleCache} style={caching ? { opacity: 0.5 } : undefined}>
-            {caching
-              ? (lang === "ru" ? "Кэшируется…" : "Caching…")
-              : (lang === "ru" ? "Сохранить в кэш" : "Save to cache")}
-          </div>
-          <div className="ctx-item" onClick={handleDownload} style={downloading ? { opacity: 0.5 } : undefined}>
-            {downloading ? t(lang, "trackrow.downloading") : t(lang, "trackrow.download")}
-          </div>
-          <div className="ctx-sep" />
-          <div className="ctx-item" onClick={handleFav}>{fav ? t(lang, "trackrow.unlike") : t(lang, "trackrow.like")}</div>
-          {onRemove && (
-            <>
-              <div className="ctx-sep" />
-              <div className="ctx-item danger" onClick={() => { closeAll(); onRemove(track); }}>
-                {t(lang, "trackrow.removeFromPlaylist")}
-              </div>
-            </>
-          )}
-        </div>,
-        document.body
+      {menu && (
+        <MiniContextMenu
+          menu={{ track, x: menu.x, y: menu.y }}
+          onClose={() => setMenu(null)}
+          onPlayNext={handlePlayNext}
+          onRemoveTrack={onRemove ? () => onRemove(track) : undefined}
+          lang={lang}
+        />
       )}
 
       {plPicker && createPortal(

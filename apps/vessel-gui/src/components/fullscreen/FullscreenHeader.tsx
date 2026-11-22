@@ -18,6 +18,10 @@ export interface FullscreenHeaderProps {
   onSelectProvider?: (provider: string) => void;
   onNextProvider?: () => void;
   onPrevProvider?: () => void;
+  visualMode?: "full" | "balanced";
+  onSetVisualMode?: (mode: "full" | "balanced") => void;
+  blurEnabled?: boolean;
+  onToggleBlur?: () => void;
 }
 
 export function FullscreenHeader({
@@ -28,6 +32,10 @@ export function FullscreenHeader({
   onSelectProvider,
   onNextProvider,
   onPrevProvider,
+  visualMode = "full",
+  onSetVisualMode,
+  blurEnabled,
+  onToggleBlur,
 }: FullscreenHeaderProps) {
   const showIsland =
     availableProviders &&
@@ -47,6 +55,11 @@ export function FullscreenHeader({
             onSelectProvider={onSelectProvider}
             onNext={onNextProvider}
             onPrev={onPrevProvider}
+            visualMode={visualMode}
+            onSetVisualMode={onSetVisualMode}
+            blurEnabled={blurEnabled}
+            onToggleBlur={onToggleBlur}
+            lang={lang}
           />
         )}
       </div>

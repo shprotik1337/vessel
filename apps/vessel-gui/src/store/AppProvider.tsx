@@ -42,6 +42,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const hasCheckedAuthOnStartupRef = useRef(false);
   const hasTriggeredAutoplayRef = useRef(false);
   const lastAutoCachedTrackKeyRef = useRef<string | null>(null);
+  const listenAccumulatorRef = useRef<{
+    key: string | null;
+    accumulatedMs: number;
+    reported: boolean;
+    lastTick: number | null;
+  }>({
+    key: null,
+    accumulatedMs: 0,
+    reported: false,
+    lastTick: null,
+  });
   const lastErrorRef = useRef<string | null>(null);
   const lastNoticeRef = useRef<string | null>(null);
 
@@ -248,6 +259,77 @@ export function AppProvider({ children }: { children: ReactNode }) {
     lastAutoCachedTrackKeyRef.current = key;
     void api.downloadTrackToCache(track).catch(() => {});
   }, [state?.now_playing]);
+
+  // Live-лента платформы «Сейчас популярно в Vessel» (15-секундный порог чистого воспроизведения)
+  useEffect(() => {
+    const track = state?.now_playing;
+    const isPlaying =
+      state?.player?.status === "playing" || state?.player?.status === "buffering";
+    const posMs = state?.player?.position_ms ?? 0;
+    const currentKey = track ? `${track.provider}:${track.id}` : null;
+
+    if (!track || !currentKey) {
+      listenAccumulatorRef.current = {
+        key: null,
+        accumulatedMs: 0,
+        reported: false,
+        lastTick: null,
+      };
+      return;
+    }
+
+    // Смена трека: полный сброс аккумулятора
+    if (listenAccumulatorRef.current.key !== currentKey) {
+      listenAccumulatorRef.current = {
+        key: currentKey,
+        accumulatedMs: 0,
+        reported: false,
+        lastTick: isPlaying ? Date.now() : null,
+      };
+    } else if (listenAccumulatorRef.current.reported && posMs < 2000) {
+      // Повтор / Loop / перемотка в начало: сбрасываем флаг, чтобы учесть повторное прослушивание
+      listenAccumulatorRef.current.accumulatedMs = 0;
+      listenAccumulatorRef.current.reported = false;
+      listenAccumulatorRef.current.lastTick = isPlaying ? Date.now() : null;
+    }
+
+    if (!isPlaying) {
+      // Пауза: замораживаем таймер
+      listenAccumulatorRef.current.lastTick = null;
+      return;
+    }
+
+    // Воспроизведение: аккумулируем время звука
+    if (listenAccumulatorRef.current.lastTick === null) {
+      listenAccumulatorRef.current.lastTick = Date.now();
+    }
+
+    const interval = setInterval(() => {
+      if (!isPlaying || listenAccumulatorRef.current.reported) return;
+      const now = Date.now();
+      const last = listenAccumulatorRef.current.lastTick ?? now;
+      listenAccumulatorRef.current.lastTick = now;
+      const delta = now - last;
+      if (delta > 0 && delta < 2000) {
+        listenAccumulatorRef.current.accumulatedMs += delta;
+      }
+
+      // 15 секунд (или 50% длительности очень короткого трека)
+      const targetMs =
+        track.duration_ms && track.duration_ms < 30_000
+          ? Math.min(15_000, track.duration_ms * 0.5)
+          : 15_000;
+
+      if (listenAccumulatorRef.current.accumulatedMs >= targetMs) {
+        listenAccumulatorRef.current.reported = true;
+        void api.reportNowPlaying(track).catch(() => {});
+      }
+    }, 500);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [state?.now_playing, state?.player?.status, state?.player?.position_ms]);
 
   useEffect(() => {
     setActiveImageProxy(state?.image_proxy);

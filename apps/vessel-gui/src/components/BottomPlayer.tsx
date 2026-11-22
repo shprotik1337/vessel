@@ -124,7 +124,7 @@ export function BottomPlayer() {
 
   const isVertical = config.player?.position === "left" || config.player?.position === "right";
   const isProgressFill = config.player?.style === "progress_fill";
-  const effectiveHeight = 76;
+  const effectiveHeight = isProgressFill ? 66 : 68;
   const eqState = loadStoredEqualizer();
 
   const track = state?.now_playing ?? null;
@@ -601,13 +601,13 @@ export function BottomPlayer() {
         <div className="pl-controls">
           {!isProgressFill && (
             <button
-              className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player.shuffle ? "active" : "muted"}`}
+              className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player?.shuffle ? "active" : "muted"}`}
               style={smartShuffle ? { color: "#1db954" } : undefined}
               onClick={() => void cycleShuffleMode()}
               title={
                 smartShuffle
                   ? (lang === "ru" ? "Умное перемешивание (включено)" : "Smart Shuffle (On)")
-                  : player.shuffle
+                  : player?.shuffle
                   ? (lang === "ru" ? "Перемешивание (нажмите для Умного)" : "Shuffle (Click for Smart)")
                   : t(lang, "bottom.shuffle")
               }
@@ -628,13 +628,13 @@ export function BottomPlayer() {
           </button>
           {!isProgressFill && (
             <button
-              className={`ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
+              className={`ctrl-btn ${player?.repeat === "off" ? "muted" : "active"}`}
               onClick={handleRepeat}
               title={t(lang, "bottom.repeat")}
               aria-label="Repeat"
             >
               {REPEAT_SVG}
-              {player.repeat === "one" && <span className="rep-one">1</span>}
+              {player?.repeat === "one" && <span className="rep-one">1</span>}
             </button>
           )}
         </div>
@@ -653,13 +653,13 @@ export function BottomPlayer() {
         {isProgressFill && (
           <>
             <button
-              className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player.shuffle ? "active" : "muted"}`}
+              className={`ctrl-btn smart-shuffle ${smartShuffle ? "active" : player?.shuffle ? "active" : "muted"}`}
               style={smartShuffle ? { color: "#1db954" } : undefined}
               onClick={() => void cycleShuffleMode()}
               title={
                 smartShuffle
                   ? (lang === "ru" ? "Умное перемешивание (включено)" : "Smart Shuffle (On)")
-                  : player.shuffle
+                  : player?.shuffle
                   ? (lang === "ru" ? "Перемешивание (нажмите для Умного)" : "Shuffle (Click for Smart)")
                   : t(lang, "bottom.shuffle")
               }
@@ -669,13 +669,13 @@ export function BottomPlayer() {
               {smartShuffle && <span className="smart-sparkle-badge"><IconSparkle size={10} /></span>}
             </button>
             <button
-              className={`ctrl-btn ${player.repeat === "off" ? "muted" : "active"}`}
+              className={`ctrl-btn ${player?.repeat === "off" ? "muted" : "active"}`}
               onClick={handleRepeat}
               title={t(lang, "bottom.repeat")}
               aria-label="Repeat"
             >
               {REPEAT_SVG}
-              {player.repeat === "one" && <span className="rep-one">1</span>}
+              {player?.repeat === "one" && <span className="rep-one">1</span>}
             </button>
           </>
         )}
@@ -745,6 +745,8 @@ export function BottomPlayer() {
           </div>
         </button>
       </div>
+
+
 
       {isEqOpen && (
         <EqualizerPopover

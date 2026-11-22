@@ -1,6 +1,6 @@
 use serde::Serialize;
 use vessel_core::{
-    config::{OFFICIAL_SERVER_TOKEN, OFFICIAL_SERVER_URL},
+    config::OFFICIAL_SERVER_TOKEN,
     protocol::{
         CaptchaChallenge, LoginRequest, MigrateDataRequest, RegisterRequest, UpdateProfileRequest,
         UserInfo,
@@ -62,14 +62,21 @@ fn enrich_playlist_metadata(
     }
 }
 
+pub async fn official_client_async() -> Result<ServerClient, String> {
+    let url = vessel_core::config::resolve_best_official_server_url().await;
+    ServerClient::new(url, OFFICIAL_SERVER_TOKEN)
+        .map_err(|e| format!("Не удалось инициализировать клиент сервера: {e}"))
+}
+
 pub fn official_client() -> Result<ServerClient, String> {
-    ServerClient::new(OFFICIAL_SERVER_URL, OFFICIAL_SERVER_TOKEN)
+    let url = vessel_core::config::active_official_server_url();
+    ServerClient::new(url, OFFICIAL_SERVER_TOKEN)
         .map_err(|e| format!("Не удалось инициализировать клиент сервера: {e}"))
 }
 
 #[tauri::command]
 pub async fn auth_get_captcha() -> Result<CaptchaChallenge, String> {
-    let client = official_client()?;
+    let client = official_client_async().await?;
     client.auth_captcha().await.map_err(|e| e.to_string())
 }
 
@@ -78,7 +85,7 @@ pub async fn auth_register(
     core: CoreState<'_>,
     req: RegisterRequest,
 ) -> Result<AuthResult, String> {
-    let client = official_client()?;
+    let client = official_client_async().await?;
     let resp = client
         .auth_register(&req)
         .await
@@ -131,7 +138,7 @@ pub async fn auth_register(
 
 #[tauri::command]
 pub async fn auth_login(core: CoreState<'_>, req: LoginRequest) -> Result<AuthResult, String> {
-    let client = official_client()?;
+    let client = official_client_async().await?;
     let resp = client.auth_login(&req).await.map_err(|e| e.to_string())?;
 
     let lib = client.user_library(&resp.token).await.ok();

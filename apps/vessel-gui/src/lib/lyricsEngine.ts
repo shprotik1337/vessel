@@ -194,9 +194,9 @@ braccato-lyrics,
   background: transparent !important;
   --blyrics-font-family: inherit, system-ui, sans-serif;
   --blyrics-font-size: 28px;
-  --blyrics-font-weight: 500;
-  --blyrics-line-height: 1.38;
-  --blyrics-padding: 14px;
+  --blyrics-font-weight: 600;
+  --blyrics-line-height: 1.55;
+  --blyrics-padding: 24vh 16px;
   --blyrics-text-color: var(--text, #ffffff);
   --blyrics-lyric-active-color: var(--text, #ffffff);
   --blyrics-lyric-inactive-color: var(--text3, rgba(255, 255, 255, 0.35));
@@ -220,39 +220,53 @@ braccato-lyrics,
   --blyrics-word-wobble-transform-to: none;
 }
 
+.blyrics-container {
+  padding: 24vh 16px !important;
+  box-sizing: border-box !important;
+}
+
 .blyrics-container > div {
   background: transparent !important;
   border-radius: 8px;
-  transform: none !important;
-  font-weight: 500 !important;
+  font-size: 28px !important;
+  font-weight: 600 !important;
   opacity: 0.35 !important;
   color: var(--text3, rgba(255, 255, 255, 0.35)) !important;
-  transition: opacity 0.3s cubic-bezier(0.2, 0, 0, 1), color 0.3s cubic-bezier(0.2, 0, 0, 1);
+  padding: 4px 8px !important;
+  margin: 28px 0 !important;
+  line-height: 1.55 !important;
+  transform: none !important;
+  transition: opacity 0.45s cubic-bezier(0.86, 0, 0.2, 1), color 0.45s cubic-bezier(0.86, 0, 0.2, 1);
 }
 
 .blyrics-container > div:hover {
   background: transparent !important;
   opacity: 0.85;
-  transform: none !important;
 }
 
-/* Strict: ONLY the single currently active line is bold and fully visible */
+/* Strict: Active line stays identical font-size to prevent jumpy wrapping, bolded and full opacity */
 .blyrics-container > div.blyrics--active {
+  font-size: 28px !important;
   font-weight: 700 !important;
   opacity: 1 !important;
+  transform: none !important;
   color: var(--text, #ffffff) !important;
 }
 
 /* If multiple elements somehow receive blyrics--active, keep subsequent upcoming lines from being bold */
 .blyrics-container > div.blyrics--active ~ div.blyrics--active {
+  font-size: 28px !important;
   font-weight: 700 !important;
   opacity: 1 !important;
+  transform: none !important;
   color: var(--text, #ffffff) !important;
 }
 
 .blyrics-container > div:not(.blyrics--active) {
-  font-weight: 500 !important;
+  font-size: 28px !important;
+  font-weight: 600 !important;
   opacity: 0.35 !important;
+  transform: none !important;
   color: var(--text3, rgba(255, 255, 255, 0.35)) !important;
 }
 

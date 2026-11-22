@@ -9,6 +9,7 @@ export interface FullscreenLyricsProps {
   playerStatus: string | undefined;
   lang: Lang;
   lyrics: ReturnType<typeof useFullscreenLyrics>;
+  blurEnabled?: boolean;
 }
 
 export function FullscreenLyrics({
@@ -16,6 +17,7 @@ export function FullscreenLyrics({
   playerStatus,
   lang,
   lyrics,
+  blurEnabled = true,
 }: FullscreenLyricsProps) {
   const {
     lyricsData,
@@ -33,8 +35,10 @@ export function FullscreenLyrics({
   } = lyrics;
 
   return (
-    <div className="fs-right">
-      {loadingLyrics ? (
+    <div className={`fs-right ${blurEnabled ? "" : "no-lyrics-blur"}`}>
+      <div className="fs-lyrics-wrap">
+        {blurEnabled && <div className="fs-lyrics-blur-top" aria-hidden="true" />}
+        {loadingLyrics ? (
         <div className="fs-lyrics-container">
           <div className="fs-lyrics-status">
             <div className="fs-lyrics-spinner" />
@@ -156,6 +160,8 @@ export function FullscreenLyrics({
           </div>
         </div>
       )}
+      {blurEnabled && <div className="fs-lyrics-blur-bottom" aria-hidden="true" />}
+      </div>
     </div>
   );
 }

@@ -62,13 +62,13 @@ export function applyThemeVariables(activeConfig: CustomizationConfig): void {
   const playerRadius = player.miniPlayerShape === "capsule" ? "9999px" : "16px";
   root.style.setProperty("--radius-player", playerRadius);
   const isCompactRail = sidebar.variant === "compact";
-  const effectiveSidebarWidth = isCompactRail ? 76 : (sidebar.width || 232);
+  const effectiveSidebarWidth = isCompactRail ? 60 : (sidebar.width || 232);
   root.style.setProperty("--sidebar-width", `${effectiveSidebarWidth}px`);
   root.style.setProperty("--sidebar-height", `${sidebar.height || 64}px`);
   const isPlayerEnabled = player.showMiniPlayer !== false;
   const isProgressFill = player.style === "progress_fill";
-  const playerHeight = isPlayerEnabled ? (isProgressFill ? 76 : (player.height || 96)) : 0;
-  const safeAreaBottom = isPlayerEnabled ? Math.max(180, playerHeight + 84) : 24;
+  const playerHeight = isPlayerEnabled ? (isProgressFill ? 66 : 68) : 0;
+  const safeAreaBottom = isPlayerEnabled ? Math.max(140, playerHeight + 60) : 24;
   root.style.setProperty("--player-height", `${playerHeight}px`);
   root.style.setProperty("--safe-area-bottom", `${safeAreaBottom}px`);
   root.style.setProperty("--player-width", `${player.widthPercent || 100}%`);

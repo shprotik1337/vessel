@@ -473,6 +473,11 @@ fn load_core(paths: &AppPaths) -> anyhow::Result<GuiCore> {
         let _ = secrets.set_named(&official_secret, vessel_core::config::OFFICIAL_SERVER_TOKEN);
     }
 
+    // Фоновая проверка доступности серверов (RU redirect / Poland EU direct)
+    tauri::async_runtime::spawn(async {
+        vessel_core::config::resolve_best_official_server_url().await;
+    });
+
     let saved_session = secrets.get_named("vessel-user-session").ok().flatten();
     let saved_username = secrets.get_named("vessel-user-username").ok().flatten();
     let saved_id = secrets.get_named("vessel-user-id").ok().flatten();
@@ -573,7 +578,7 @@ pub async fn fetch_image_bytes(target_url: &str, is_server_routed: bool) -> Opti
                 url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
             let proxy_url = format!(
                 "{}/api/v1/image?url={}",
-                vessel_core::config::OFFICIAL_SERVER_URL,
+                vessel_core::config::active_official_server_url(),
                 encoded_target
             );
             client
@@ -594,7 +599,7 @@ pub async fn fetch_image_bytes(target_url: &str, is_server_routed: bool) -> Opti
             url::form_urlencoded::byte_serialize(target_url.as_bytes()).collect();
         let proxy_url = format!(
             "{}/api/v1/image?url={}",
-            vessel_core::config::OFFICIAL_SERVER_URL,
+            vessel_core::config::active_official_server_url(),
             encoded_target
         );
         let proxy_res = client
@@ -969,6 +974,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::get_home_recommendations,
             commands::get_next_autoplay_chunk,
             commands::apply_smart_shuffle,
+            commands::report_now_playing,
+            commands::get_platform_now_playing,
             commands::import_likes,
             commands::reset_settings,
             commands::reset_data,
@@ -1092,7 +1099,17 @@ pub fn run() -> anyhow::Result<()> {
                         )
                     };
 
-                    if let Ok(client) = commands::official_client() {
+                    let client = match commands::official_client_async().await {
+                        Ok(c) => c,
+                        Err(_) => match commands::official_client() {
+                            Ok(c) => c,
+                            Err(e) => {
+                                vessel_core::dlog!("[vessel] official_client failed: {e}");
+                                return;
+                            }
+                        },
+                    };
+                    if true {
                         if let Some(token) = token_opt {
                             match client.auth_session(&token).await {
                                 Ok(session_resp) => {

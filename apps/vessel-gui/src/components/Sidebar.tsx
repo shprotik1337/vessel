@@ -244,7 +244,6 @@ export function Sidebar() {
               >
                 <span className="island-nav-icon">{getNavMeta("home").icon}</span>
               </button>
-              <div className="island-sep" />
               {(["search", "player", "library", "recent", "queue"] as const).map((v) => {
                 const meta = getNavMeta(v);
                 const isActive = v === "queue" ? isQueueOpen : view === v;
@@ -262,7 +261,6 @@ export function Sidebar() {
                   </button>
                 );
               })}
-              <div className="island-sep" />
               <button
                 className={`island-nav-item ${isSettingsOpen ? "active" : ""}`}
                 onClick={openSettings}
@@ -369,13 +367,13 @@ export function Sidebar() {
         style={{
           position: "relative",
           zIndex: 50,
-          width: "68px",
+          width: "60px",
         }}
         onMouseEnter={reveal}
         onMouseLeave={scheduleHide}
       >
         {/* Top item: home */}
-        <div className="sidebar-header collapsed" style={{ display: "flex", justifyContent: "center", padding: "12px 0 8px", width: "100%" }}>
+        <div className="sidebar-header collapsed" style={{ display: "flex", justifyContent: "center", padding: "6px 0", width: "100%" }}>
           <button
             className={`nav-item icon-only ${view === "home" ? "active" : ""}`}
             onClick={() => navigateTo("home")}
@@ -387,14 +385,12 @@ export function Sidebar() {
         </div>
 
         {/* Main navigation list */}
-        <div className="nav" style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "center", width: "100%" }}>
-          {["search", "player", "library", "recent", "queue"].map((v) => {
-            return nav(v);
-          })}
+        <div className="nav" style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center", width: "100%" }}>
+          {(["search", "player", "library", "recent", "queue"] as const).map((v) => nav(v))}
         </div>
 
         {/* Bottom section: settings */}
-        <div className="sidebar-bottom-collapsed" style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "12px", width: "100%", borderTop: "1px solid var(--border)", paddingTop: "10px" }}>
+        <div className="sidebar-bottom-collapsed" style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "12px", width: "100%" }}>
           <button
             className={`nav-item icon-only ${isSettingsOpen ? "active" : ""}`}
             onClick={openSettings}

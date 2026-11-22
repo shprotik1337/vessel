@@ -736,6 +736,15 @@ impl ServerClient {
         }
         self.get_json("/lyrics", &pairs).await
     }
+
+    pub async fn report_now_playing(&self, track: &TrackRef) -> Result<()> {
+        self.post_user_empty("/platform/now-playing", None, Some(track))
+            .await
+    }
+
+    pub async fn platform_now_playing(&self) -> Result<Vec<TrackRef>> {
+        self.get_json("/platform/now-playing", &[]).await
+    }
 }
 
 fn urlencoding(value: &str) -> String {

@@ -107,9 +107,10 @@ impl ProviderKind {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlaybackCapability {
+    #[default]
     Full,
     Preview { seconds: u16 },
     Unavailable { reason: String },
@@ -149,6 +150,7 @@ pub struct TrackRef {
     pub duration_ms: Option<u64>,
     pub artwork_url: Option<Url>,
     pub web_url: Url,
+    #[serde(default)]
     pub capability: PlaybackCapability,
     #[serde(default)]
     pub genres: Vec<String>,

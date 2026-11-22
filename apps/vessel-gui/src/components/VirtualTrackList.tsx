@@ -29,7 +29,7 @@ function findScrollParent(element: HTMLElement | null): HTMLElement | Window {
 export function VirtualTrackList<T>({
   items,
   renderItem,
-  itemHeight = 64,
+  itemHeight = 62,
   overscan = 8,
   className = "tracklist",
   style,
