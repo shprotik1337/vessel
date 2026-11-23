@@ -152,29 +152,21 @@ export function isJunkArtistString(s: string): boolean {
   if (!s) return true;
   const t = s.trim().toLowerCase();
   if (t.length <= 1) return true;
+
+  if (
+    t === "undefined" ||
+    t === "null" ||
+    t === "unknown" ||
+    t === "unknown artist" ||
+    t === "неизвестный исполнитель"
+  ) {
+    return true;
+  }
+
   return (
     isPlayCountString(s) ||
-    /\b(ballsack|w9dz)\b/iu.test(t) ||
-    /(^|[\s.,_\-/])(leak|leaks|unreleased|archive|vault|reupload|snippet|snippets|uploader|reposter)([\s.,_\-/]|$)/iu.test(t) ||
-    /рифмы\s*и\s*панчи/iu.test(t) ||
-    /(^|[\s.,_\-/])рип([\s.,_\-/]|$)/iu.test(t) ||
-    /rhymes\s*&?\s*punches/iu.test(t) ||
-    /finesse\s*(music)?/iu.test(t) ||
-    /trap\s*city/iu.test(t) ||
-    /soundclout/iu.test(t) ||
-    /(^|[\s.,_\-/])repost(s)?([\s.,_\-/]|$)/iu.test(t) ||
-    /(^|[\s.,_\-/])promo([\s.,_\-/]|$)/iu.test(t) ||
-    /trustees/iu.test(t) ||
-    /(^|[\s.,_\-/])sccc([\s.,_\-/]|$)/iu.test(t) ||
-    /board\s*of/iu.test(t) ||
-    /community\s*college/iu.test(t) ||
-    /(^|[\s.,_\-/])meeting([\s.,_\-/]|$)/iu.test(t) ||
-    /audiobook/iu.test(t) ||
-    /\.(mp3|wav|flac|m4a)$/iu.test(t) ||
-    /https?:/iu.test(t) ||
-    /www\./iu.test(t) ||
-    /various\s*artists/iu.test(t) ||
-    /(^|[\s.,_\-/])va([\s.,_\-/]|$)/iu.test(t)
+    /^https?:\/\//i.test(t) ||
+    /^www\./i.test(t)
   );
 }
 
