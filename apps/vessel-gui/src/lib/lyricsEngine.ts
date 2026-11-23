@@ -193,8 +193,8 @@ braccato-lyrics,
 .blyrics-container {
   background: transparent !important;
   --blyrics-font-family: inherit, system-ui, sans-serif;
-  --blyrics-font-size: 28px;
-  --blyrics-font-weight: 600;
+  --blyrics-font-size: var(--fs-lyric-font-size, 28px);
+  --blyrics-font-weight: var(--fs-lyric-font-weight, 600);
   --blyrics-line-height: 1.55;
   --blyrics-padding: 24vh 16px;
   --blyrics-text-color: var(--text, #ffffff);
@@ -221,21 +221,22 @@ braccato-lyrics,
 }
 
 .blyrics-container {
-  padding: 24vh 16px !important;
+  padding: 24vh 16px 24vh 6px !important;
   box-sizing: border-box !important;
 }
 
 .blyrics-container > div {
   background: transparent !important;
   border-radius: 8px;
-  font-size: 28px !important;
-  font-weight: 600 !important;
+  font-size: var(--fs-lyric-font-size, 28px) !important;
+  font-weight: var(--fs-lyric-font-weight, 600) !important;
   opacity: 0.35 !important;
   color: var(--text3, rgba(255, 255, 255, 0.35)) !important;
   padding: 4px 8px !important;
-  margin: 28px 0 !important;
+  margin: var(--fs-lyric-line-gap, 28px) 0 !important;
   line-height: 1.55 !important;
   transform: none !important;
+  text-align: var(--fs-lyric-align, left) !important;
   transition: opacity 0.45s cubic-bezier(0.86, 0, 0.2, 1), color 0.45s cubic-bezier(0.86, 0, 0.2, 1);
 }
 
@@ -246,28 +247,31 @@ braccato-lyrics,
 
 /* Strict: Active line stays identical font-size to prevent jumpy wrapping, bolded and full opacity */
 .blyrics-container > div.blyrics--active {
-  font-size: 28px !important;
-  font-weight: 700 !important;
+  font-size: var(--fs-lyric-font-size, 28px) !important;
+  font-weight: var(--fs-lyric-font-weight, 700) !important;
   opacity: 1 !important;
   transform: none !important;
   color: var(--text, #ffffff) !important;
+  text-align: var(--fs-lyric-align, left) !important;
 }
 
 /* If multiple elements somehow receive blyrics--active, keep subsequent upcoming lines from being bold */
 .blyrics-container > div.blyrics--active ~ div.blyrics--active {
-  font-size: 28px !important;
-  font-weight: 700 !important;
+  font-size: var(--fs-lyric-font-size, 28px) !important;
+  font-weight: var(--fs-lyric-font-weight, 700) !important;
   opacity: 1 !important;
   transform: none !important;
   color: var(--text, #ffffff) !important;
+  text-align: var(--fs-lyric-align, left) !important;
 }
 
 .blyrics-container > div:not(.blyrics--active) {
-  font-size: 28px !important;
-  font-weight: 600 !important;
+  font-size: var(--fs-lyric-font-size, 28px) !important;
+  font-weight: var(--fs-lyric-font-weight, 600) !important;
   opacity: 0.35 !important;
   transform: none !important;
   color: var(--text3, rgba(255, 255, 255, 0.35)) !important;
+  text-align: var(--fs-lyric-align, left) !important;
 }
 
 .blyrics--word,

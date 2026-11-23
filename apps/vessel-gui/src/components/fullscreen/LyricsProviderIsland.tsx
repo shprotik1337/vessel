@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import type { LyricsCandidateOption } from "../../lib/lyrics";
+import {
+  loadLyricsTypography,
+  saveLyricsTypography,
+  applyLyricsTypography,
+  DEFAULT_LYRICS_TYPOGRAPHY,
+  type LyricsTypography,
+} from "./lyricsTypography";
 
 export type VisualMode = "full" | "balanced";
 
@@ -47,7 +54,27 @@ export function LyricsProviderIsland({
 }: LyricsProviderIslandProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [visualQualityOpen, setVisualQualityOpen] = useState(false);
+  const [typo, setTypo] = useState<LyricsTypography>(() => loadLyricsTypography());
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    applyLyricsTypography(typo);
+  }, [typo]);
+
+  const updateTypo = (patch: Partial<LyricsTypography>) => {
+    setTypo((prev) => {
+      const next = { ...prev, ...patch };
+      saveLyricsTypography(next);
+      applyLyricsTypography(next);
+      return next;
+    });
+  };
+
+  const resetTypo = () => {
+    setTypo(DEFAULT_LYRICS_TYPOGRAPHY);
+    saveLyricsTypography(DEFAULT_LYRICS_TYPOGRAPHY);
+    applyLyricsTypography(DEFAULT_LYRICS_TYPOGRAPHY);
+  };
 
   useEffect(() => {
     if (!dropdownOpen && !visualQualityOpen) return;
@@ -242,7 +269,6 @@ export function LyricsProviderIsland({
                   className={`fs-vq-option ${active ? "active" : ""}`}
                   onClick={() => {
                     onSetVisualMode(opt.key);
-                    setVisualQualityOpen(false);
                   }}
                 >
                   <div className="fs-vq-opt-text">
@@ -257,6 +283,105 @@ export function LyricsProviderIsland({
                 </button>
               );
             })}
+          </div>
+
+          {/* Divider */}
+          <div className="fs-vq-divider" />
+
+          {/* Typography Settings Section */}
+          <div className="fs-vq-header fs-vq-typo-header">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="fs-vq-icon">
+              <polyline points="4 7 4 4 20 4 20 7" />
+              <line x1="9" y1="20" x2="15" y2="20" />
+              <line x1="12" y1="4" x2="12" y2="20" />
+            </svg>
+            <span className="fs-vq-title">{lang === "ru" ? "Настройка текста" : "Lyrics typography"}</span>
+          </div>
+
+          <div className="fs-vq-typo-section">
+            {/* Font Size */}
+            <div className="fs-vq-slider-group">
+              <div className="fs-vq-slider-label-row">
+                <span>{lang === "ru" ? "Размер текста" : "Text size"}</span>
+                <span className="fs-vq-slider-val">{typo.fontSize}px</span>
+              </div>
+              <input
+                type="range"
+                min="18"
+                max="56"
+                step="1"
+                value={typo.fontSize}
+                onChange={(e) => updateTypo({ fontSize: Number(e.target.value) })}
+                className="fs-vq-slider"
+              />
+            </div>
+
+            {/* Font Weight */}
+            <div className="fs-vq-slider-group">
+              <div className="fs-vq-slider-label-row">
+                <span>{lang === "ru" ? "Толщина" : "Weight"}</span>
+                <span className="fs-vq-slider-val">{typo.fontWeight}</span>
+              </div>
+              <input
+                type="range"
+                min="300"
+                max="900"
+                step="100"
+                value={typo.fontWeight}
+                onChange={(e) => updateTypo({ fontWeight: Number(e.target.value) })}
+                className="fs-vq-slider"
+              />
+            </div>
+
+            {/* Line Spacing / Margin */}
+            <div className="fs-vq-slider-group">
+              <div className="fs-vq-slider-label-row">
+                <span>{lang === "ru" ? "Межстрочный интервал" : "Line spacing"}</span>
+                <span className="fs-vq-slider-val">{typo.lineSpacing}px</span>
+              </div>
+              <input
+                type="range"
+                min="4"
+                max="48"
+                step="2"
+                value={typo.lineSpacing}
+                onChange={(e) => updateTypo({ lineSpacing: Number(e.target.value) })}
+                className="fs-vq-slider"
+              />
+            </div>
+
+            {/* Alignment */}
+            <div className="fs-vq-slider-group">
+              <div className="fs-vq-slider-label-row">
+                <span>{lang === "ru" ? "Выравнивание текста" : "Alignment"}</span>
+              </div>
+              <div className="fs-vq-align-wrap">
+                <button
+                  type="button"
+                  className={`fs-vq-align-btn ${typo.alignment === "left" ? "active" : ""}`}
+                  onClick={() => updateTypo({ alignment: "left" })}
+                >
+                  {lang === "ru" ? "Слева" : "Left"}
+                </button>
+                <button
+                  type="button"
+                  className={`fs-vq-align-btn ${typo.alignment === "center" ? "active" : ""}`}
+                  onClick={() => updateTypo({ alignment: "center" })}
+                >
+                  {lang === "ru" ? "По центру" : "Center"}
+                </button>
+              </div>
+            </div>
+
+            {/* Reset to Default */}
+            <button
+              type="button"
+              className="fs-vq-reset-btn"
+              onClick={resetTypo}
+              title={lang === "ru" ? "Сбросить к исходным настройкам" : "Reset to defaults"}
+            >
+              {lang === "ru" ? "Сбросить" : "Reset"}
+            </button>
           </div>
         </div>
       )}

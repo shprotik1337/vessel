@@ -215,9 +215,9 @@ export function PlatformSwitchMenu({
     color: currentBrandColor,
   };
 
-  const iconSize = explicitIconSize || Math.max(22, Math.round(size * 0.6));
-  const capsuleWidth = Math.max(46, Math.max(size + 2, iconSize + 18));
-  const itemSize = Math.max(38, Math.max(size - 4, iconSize + 10));
+  const iconSize = explicitIconSize || Math.max(18, Math.round(size * 0.6));
+  const capsuleWidth = Math.max(38, Math.max(size + 2, iconSize + 14));
+  const itemSize = Math.max(28, Math.min(38, Math.max(size - 2, iconSize + 8)));
 
   return (
     <div
@@ -274,7 +274,7 @@ export function PlatformSwitchMenu({
         )}
       </button>
 
-      {/* Vertical Popover Capsule: expands directly from the button upwards (Screenshot 2 & 5) */}
+      {/* Vertical Popover Capsule: expands directly from the button upwards/downwards */}
       {isOpen && (
         <div
           className={`platform-switch-popover ${direction} ${transparent ? "transparent-glass" : ""}`}
@@ -284,12 +284,15 @@ export function PlatformSwitchMenu({
             left: "50%",
             transform: "translateX(-50%)",
             width: capsuleWidth,
+            maxHeight: "min(280px, calc(100vh - 180px))",
+            overflowY: "auto",
+            overflowX: "hidden",
             zIndex: 9999,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 8,
-            padding: "8px 3px 6px 3px",
+            gap: itemSize < 34 ? 5 : 8,
+            padding: itemSize < 34 ? "6px 2px" : "8px 3px 6px 3px",
             background: transparent ? "var(--elev, rgba(255, 255, 255, 0.08))" : "var(--card-bg, #000000)",
             backdropFilter: "blur(28px) saturate(160%)",
             WebkitBackdropFilter: "blur(28px) saturate(160%)",
@@ -302,62 +305,135 @@ export function PlatformSwitchMenu({
             animation: "platformPopoverAppear 0.18s cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
-          {/* Other platforms on top */}
-          {otherPlatforms.map((platform) => (
-            <button
-              key={platform.id}
-              type="button"
-              onClick={() => void handleSwitch(platform.id)}
-              className="platform-switch-item"
-              style={{
-                width: itemSize,
-                height: itemSize,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
-              title={platform.label}
-            >
-              <PlatformIcon kind={platform.id} size={iconSize} color={platform.color} />
-            </button>
-          ))}
+          {/* When direction is down, current platform anchors at top and others expand downwards */}
+          {direction === "down" && (
+            <>
+              {/* Current active platform at the top (anchors exactly over the trigger button) */}
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="platform-switch-item current"
+                style={{
+                  width: itemSize,
+                  height: itemSize,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+                title={`${activePlatform.label}${lang === "ru" ? " (Сейчас играет)" : " (Current)"}`}
+              >
+                <PlatformIcon kind={activePlatform.id} size={iconSize} color={activePlatform.color} />
+              </button>
 
-          {/* Subtle separator line */}
-          <div
-            style={{
-              width: 22,
-              height: 1,
-              background: "var(--border, rgba(255, 255, 255, 0.14))",
-              margin: "2px 0",
-            }}
-          />
+              {/* Subtle separator line */}
+              <div
+                style={{
+                  width: Math.min(22, itemSize - 6),
+                  height: 1,
+                  background: "var(--border, rgba(255, 255, 255, 0.14))",
+                  margin: "2px 0",
+                  flexShrink: 0,
+                }}
+              />
 
-          {/* Current active platform at the bottom (anchors exactly over the trigger button) */}
-          <button
-            type="button"
-            onClick={() => setIsOpen(false)}
-            className="platform-switch-item current"
-            style={{
-              width: itemSize,
-              height: itemSize,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
-            title={`${activePlatform.label}${lang === "ru" ? " (Сейчас играет)" : " (Current)"}`}
-          >
-            <PlatformIcon kind={activePlatform.id} size={iconSize} color={activePlatform.color} />
-          </button>
+              {/* Other platforms below */}
+              {otherPlatforms.map((platform) => (
+                <button
+                  key={platform.id}
+                  type="button"
+                  onClick={() => void handleSwitch(platform.id)}
+                  className="platform-switch-item"
+                  style={{
+                    width: itemSize,
+                    height: itemSize,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    flexShrink: 0,
+                  }}
+                  title={platform.label}
+                >
+                  <PlatformIcon kind={platform.id} size={iconSize} color={platform.color} />
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* When direction is up, other platforms on top, current platform at bottom */}
+          {direction !== "down" && (
+            <>
+              {/* Other platforms on top */}
+              {otherPlatforms.map((platform) => (
+                <button
+                  key={platform.id}
+                  type="button"
+                  onClick={() => void handleSwitch(platform.id)}
+                  className="platform-switch-item"
+                  style={{
+                    width: itemSize,
+                    height: itemSize,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    flexShrink: 0,
+                  }}
+                  title={platform.label}
+                >
+                  <PlatformIcon kind={platform.id} size={iconSize} color={platform.color} />
+                </button>
+              ))}
+
+              {/* Subtle separator line */}
+              <div
+                style={{
+                  width: Math.min(22, itemSize - 6),
+                  height: 1,
+                  background: "var(--border, rgba(255, 255, 255, 0.14))",
+                  margin: "2px 0",
+                  flexShrink: 0,
+                }}
+              />
+
+              {/* Current active platform at the bottom (anchors exactly over the trigger button) */}
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="platform-switch-item current"
+                style={{
+                  width: itemSize,
+                  height: itemSize,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+                title={`${activePlatform.label}${lang === "ru" ? " (Сейчас играет)" : " (Current)"}`}
+              >
+                <PlatformIcon kind={activePlatform.id} size={iconSize} color={activePlatform.color} />
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
