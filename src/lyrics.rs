@@ -491,6 +491,109 @@ pub async fn fetch_lrclib(
     None
 }
 
+fn format_lrc_timestamp(ms: u64) -> String {
+    let total_secs = ms / 1000;
+    let mins = total_secs / 60;
+    let secs = total_secs % 60;
+    let hundredths = (ms % 1000) / 10;
+    format!("{:02}:{:02}.{:02}", mins, secs, hundredths)
+}
+
+pub async fn fetch_wordly(
+    http: &reqwest::Client,
+    title: &str,
+    artist: &str,
+    duration_secs: Option<f64>,
+) -> Option<LyricsCandidate> {
+    let instances = [
+        "https://lyricsplus.prjktla.my.id/v2/lyrics/get",
+        "https://lyricsplus.binimum.org/v2/lyrics/get",
+        "https://lyricsplus.prjktla.workers.dev/v2/lyrics/get",
+    ];
+
+    for base_url in &instances {
+        let mut url = match url::Url::parse(base_url) {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+        {
+            let mut q = url.query_pairs_mut();
+            q.append_pair("title", title);
+            q.append_pair("artist", artist);
+            if let Some(d) = duration_secs {
+                if d > 0.0 {
+                    q.append_pair("duration", &d.round().to_string());
+                }
+            }
+        }
+
+        let resp = match http
+            .get(url)
+            .header(header::USER_AGENT, "vessel/1.5.7 (https://github.com/shprotik1337/vessel)")
+            .timeout(Duration::from_secs(4))
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            _ => continue,
+        };
+
+        if let Ok(data) = resp.json::<serde_json::Value>().await {
+            if let Some(lyrics_arr) = data.get("lyrics").and_then(|v| v.as_array()) {
+                if lyrics_arr.is_empty() {
+                    continue;
+                }
+
+                let mut lrc_lines = Vec::new();
+                let mut has_word_sync = false;
+
+                for item in lyrics_arr {
+                    let line_time_ms = item.get("time").and_then(|t| t.as_u64()).unwrap_or(0);
+                    let line_text = item.get("text").and_then(|t| t.as_str()).unwrap_or("").trim();
+                    let line_ts = format_lrc_timestamp(line_time_ms);
+
+                    if let Some(syllables) = item.get("syllabus").and_then(|s| s.as_array()) {
+                        if !syllables.is_empty() {
+                            has_word_sync = true;
+                            let mut word_parts = Vec::new();
+                            for syl in syllables {
+                                let syl_time_ms = syl.get("time").and_then(|t| t.as_u64()).unwrap_or(line_time_ms);
+                                let syl_text = syl.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                                let syl_ts = format_lrc_timestamp(syl_time_ms);
+                                word_parts.push(format!("<{}> {}", syl_ts, syl_text.trim()));
+                            }
+                            lrc_lines.push(format!("[{}] {}", line_ts, word_parts.join(" ")));
+                            continue;
+                        }
+                    }
+
+                    if !line_text.is_empty() {
+                        lrc_lines.push(format!("[{}] {}", line_ts, line_text));
+                    }
+                }
+
+                if !lrc_lines.is_empty() {
+                    let sync_level = if has_word_sync {
+                        "word_level".to_string()
+                    } else {
+                        "line_level".to_string()
+                    };
+                    return Some(LyricsCandidate {
+                        provider: "Wordly".to_string(),
+                        sync_level,
+                        format: "lrc".to_string(),
+                        content: lrc_lines.join("\n"),
+                        is_meta: None,
+                        source: None,
+                    });
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn sync_rank(sync_level: &str) -> i32 {
     match sync_level {
         "word_level" => 3,
@@ -503,6 +606,7 @@ fn sync_rank(sync_level: &str) -> i32 {
 fn provider_priority(provider: &str) -> i32 {
     match provider {
         "Musixmatch" => 10,
+        "Wordly" => 9,
         "Cadence" => 8,
         "LRCLIB" => 4,
         _ => 1,
@@ -540,13 +644,17 @@ pub async fn resolve_multi(
         .unwrap_or(title)
         .trim();
 
-    let (mxm_res, lrc_res) = tokio::join!(
+    let (mxm_res, wordly_res, lrc_res) = tokio::join!(
         fetch_musixmatch(http, clean_title, artist, duration_secs),
+        fetch_wordly(http, clean_title, artist, duration_secs),
         fetch_lrclib(http, clean_title, artist, album, duration_secs),
     );
 
     let mut found = Vec::new();
     if let Some(c) = mxm_res {
+        found.push(c);
+    }
+    if let Some(c) = wordly_res {
         found.push(c);
     }
     if let Some(c) = lrc_res {

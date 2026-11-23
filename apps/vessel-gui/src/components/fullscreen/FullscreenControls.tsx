@@ -12,11 +12,24 @@ import {
   PLAY_SVG,
   PAUSE_SVG,
   REPEAT_SVG,
-  VOLUME_SVG,
-  MUTE_SVG,
 } from "../../pages/player/playerIcons";
 import { usePlayerVolume } from "../../pages/player/usePlayerVolume";
 import { usePlayerProgress } from "../../pages/player/usePlayerProgress";
+
+const FS_VOLUME_SOLID_SVG = (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M11 5L6 9H2v6h4l5 4V5z" />
+    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+  </svg>
+);
+
+const FS_MUTE_SOLID_SVG = (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M11 5L6 9H2v6h4l5 4V5z" />
+    <line x1="22" y1="9" x2="16" y2="15" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+    <line x1="16" y1="9" x2="22" y2="15" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </svg>
+);
 
 export interface FullscreenControlsProps {
   track: TrackRef;
@@ -98,20 +111,30 @@ export function FullscreenControls({
           <div className="fs-track-title" title={track.title}>
             {track.title}
           </div>
-          <button
-            className={`fs-heart-btn ${fav ? "active" : ""}`}
-            onClick={onFav}
-            title={t(lang, "bottom.favorite")}
-            aria-label="Favorite"
-          >
-            {fav ? (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="#ff4060" stroke="#ff4060" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-              </svg>
-            ) : (
-              HEART_SVG
-            )}
-          </button>
+          <div className="fs-track-actions">
+            <PlatformSwitchMenu
+              track={track}
+              positionMs={shownMs}
+              size={30}
+              iconSize={20}
+              direction="down"
+              transparent={true}
+            />
+            <button
+              className={`fs-heart-btn ${fav ? "active" : ""}`}
+              onClick={onFav}
+              title={t(lang, "bottom.favorite")}
+              aria-label="Favorite"
+            >
+              {fav ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="#ff4060" stroke="#ff4060" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+              ) : (
+                HEART_SVG
+              )}
+            </button>
+          </div>
         </div>
         <div className="fs-track-artists">
           {filterValidArtists(track.artists).map((artist, idx, arr) => (
@@ -197,30 +220,25 @@ export function FullscreenControls({
         </button>
       </div>
 
-      {/* Volume Control */}
-      <div className="fs-vol-wrap">
-        <PlatformSwitchMenu
-          track={track}
-          positionMs={shownMs}
-          size={48}
-          iconSize={28}
-          transparent={true}
-        />
-        <button
-          className="fs-vol-btn"
-          onClick={handleMute}
-          title={muted ? "Включить звук" : "Выключить звук"}
-          aria-label={muted ? "Unmute" : "Mute"}
-        >
-          {muted ? MUTE_SVG : VOLUME_SVG}
-        </button>
-        <div
-          ref={volBarRef}
-          className="fs-vol-bar"
-          onPointerDown={onVolPointerDown}
-        >
-          <div className="fill" style={{ width: `${player.volume_percent}%` }} />
-          <div className="knob" style={{ left: `${player.volume_percent}%` }} />
+      {/* Bottom Bar: Pure Volume Slider (Centered & Symmetrical) */}
+      <div className="fs-bottom-bar">
+        <div className="fs-vol-wrap">
+          <button
+            className="fs-vol-btn"
+            onClick={handleMute}
+            title={muted ? "Включить звук" : "Выключить звук"}
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? FS_MUTE_SOLID_SVG : FS_VOLUME_SOLID_SVG}
+          </button>
+          <div
+            ref={volBarRef}
+            className="fs-vol-bar"
+            onPointerDown={onVolPointerDown}
+          >
+            <div className="fill" style={{ width: `${player.volume_percent}%` }} />
+            <div className="knob" style={{ left: `${player.volume_percent}%` }} />
+          </div>
         </div>
       </div>
     </div>

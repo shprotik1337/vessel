@@ -212,6 +212,9 @@ export function CurrentlyListeningSection({
         onClick={onRowClick}
         onContextMenu={onContextMenu}
       >
+        <span className={`cur-listen-rank ${index < 3 ? "top" : ""}`}>
+          {index + 1}
+        </span>
         <div
           className="cur-listen-art-wrap"
           title={playing ? (lang === "ru" ? "Пауза" : "Pause") : (lang === "ru" ? "Слушать" : "Play")}

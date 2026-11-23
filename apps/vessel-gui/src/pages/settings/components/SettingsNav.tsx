@@ -30,7 +30,6 @@ const SERVICE_TABS = [
   { id: "service_soundcloud" as const, name: "SoundCloud", kind: "soundcloud" as const, brandColor: "#FF5500" },
   { id: "service_deezer" as const, name: "Deezer", kind: "deezer" as const, brandColor: "#A238FF" },
   { id: "service_spotify" as const, name: "Spotify", kind: "spotify" as const, brandColor: "#1ED760" },
-  { id: "service_lyrics" as const, name: "Тексты", kind: "lyrics" as const, brandColor: "var(--accent)" },
 ];
 
 export function SettingsNav({

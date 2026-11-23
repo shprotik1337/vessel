@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect } from "react";
 import type { TrackRef } from "../../api/types";
 import { t, type Lang } from "../../i18n";
 import { type useFullscreenLyrics } from "./useFullscreenLyrics";
 import { BraccatoLyricsView } from "./BraccatoLyricsView";
+import { applyLyricsTypography, loadLyricsTypography } from "./lyricsTypography";
 
 export interface FullscreenLyricsProps {
   track: TrackRef | null | undefined;
@@ -33,6 +34,10 @@ export function FullscreenLyrics({
     curSeconds,
     activeProvider,
   } = lyrics;
+
+  useEffect(() => {
+    applyLyricsTypography(loadLyricsTypography());
+  }, []);
 
   return (
     <div className={`fs-right ${blurEnabled ? "" : "no-lyrics-blur"}`}>
