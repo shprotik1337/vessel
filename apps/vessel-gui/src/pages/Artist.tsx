@@ -82,12 +82,12 @@ function ArtistHeroSkeleton({
           onClick={goBack}
           title={t(lang, "common.back")}
           style={{
-            background: "rgba(0, 0, 0, 0.45)",
+            background: "var(--card-bg, rgba(0, 0, 0, 0.45))",
             backdropFilter: "blur(12px)",
             WebkitBackdropFilter: "blur(12px)",
-            border: "1px solid rgba(255, 255, 255, 0.15)",
+            border: "1px solid var(--border, rgba(255, 255, 255, 0.15))",
             borderRadius: "20px",
-            color: "#ffffff",
+            color: "var(--text, #ffffff)",
             padding: "6px 14px",
             fontSize: "13px",
             fontWeight: 600,
@@ -130,7 +130,7 @@ function ArtistHeroSkeleton({
               style={{
                 fontSize: "36px",
                 fontWeight: 800,
-                color: "#ffffff",
+                color: "var(--text, #ffffff)",
                 margin: 0,
                 letterSpacing: "-0.5px",
                 lineHeight: 1.15,
@@ -162,16 +162,16 @@ function ArtistHeroSkeleton({
           style={{
             width: "300px",
             maxWidth: "100%",
-            background: "rgba(255, 255, 255, 0.05)",
+            background: "var(--card-bg, rgba(255, 255, 255, 0.05))",
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
-            border: "none",
+            border: "1px solid var(--border, transparent)",
             borderRadius: "14px",
             padding: "14px 16px",
             display: "flex",
             flexDirection: "column",
             gap: "8px",
-            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.16)",
           }}
         >
           <div className="skel" style={{ width: "90px", height: "12px", borderRadius: "3px", marginBottom: 0 }} />
@@ -699,7 +699,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                     {pl.tracks.length > 0 && (
                       <button
                         className="btn-pill btn-pill-primary"
-                        onClick={() => void playTracks(previewTracks(pl.tracks), 0)}
+                        onClick={() => void playTracks(previewTracks(pl.tracks), 0, true)}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                         <span>{t(lang, "artist.play")}</span>
@@ -710,7 +710,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                         className="btn-pill"
                         onClick={() => {
                           const arr = [...pl.tracks].sort(() => Math.random() - 0.5);
-                          void playTracks(arr, 0);
+                          void playTracks(arr, 0, true);
                         }}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
@@ -821,7 +821,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
         <span>{profile?.name || artist}</span>
         {(mode === "releases" || mode === "singles") && (
           <>
-            <span style={{ fontSize: 20, fontWeight: 400, color: "var(--text3, rgba(255, 255, 255, 0.4))" }}>
+            <span style={{ fontSize: 20, fontWeight: 400, color: "var(--text2, rgba(255, 255, 255, 0.4))" }}>
               —
             </span>
             <span style={{ fontSize: 18, fontWeight: 500, color: "var(--text2)" }}>
@@ -833,7 +833,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
         )}
         {mode === "tracks" && (
           <>
-            <span style={{ fontSize: 20, fontWeight: 400, color: "var(--text3, rgba(255, 255, 255, 0.4))" }}>
+            <span style={{ fontSize: 20, fontWeight: 400, color: "var(--text2, rgba(255, 255, 255, 0.4))" }}>
               —
             </span>
             <span style={{ fontSize: 18, fontWeight: 500, color: "var(--text2)" }}>
@@ -896,7 +896,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
         </div>
         <div style={{ fontSize: 12, fontWeight: 500, color: "var(--text2, rgba(255, 255, 255, 0.6))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
           {(release as any).explicit && (
-            <span style={{ fontSize: 10, padding: "1px 3px", borderRadius: 3, background: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 700 }}>E</span>
+            <span style={{ fontSize: 10, padding: "1px 4px", borderRadius: 3, background: "var(--elev, rgba(255,255,255,0.2))", border: "1px solid var(--border, transparent)", color: "var(--text2, #fff)", fontWeight: 700 }}>E</span>
           )}
           <span>{formatReleaseSubtitle(release, single)}</span>
         </div>
@@ -904,8 +904,18 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
     );
   };
 
+  const artistAmbientUrl = profile
+    ? resolveArtworkUrl(
+        profile.header_image_url ||
+        profile.avatar_url ||
+        profile.popular_tracks?.[0]?.artwork_url ||
+        profile.releases?.[0]?.artwork_url
+      )
+    : null;
+
   return (
     <div className="view artist-view" style={{ padding: 0, position: "relative", minHeight: "100%", background: "transparent" }}>
+      <PageAmbientBackdrop url={artistAmbientUrl} />
       {mode === "profile" && (
         <div key="profile" style={{ animation: "fade .18s ease", width: "100%" }}>
           {loading && !profile && (
@@ -920,12 +930,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
           )}
 
           {profile && (() => {
-            const heroBannerUrl = resolveArtworkUrl(
-              profile.header_image_url ||
-              profile.avatar_url ||
-              profile.popular_tracks?.[0]?.artwork_url ||
-              profile.releases?.[0]?.artwork_url
-            );
+            const heroBannerUrl = artistAmbientUrl;
             const avatarUrl = resolveArtworkUrl(
               profile.avatar_url ||
               heroBannerUrl
@@ -933,48 +938,6 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
 
             return (
               <>
-                {/* Full-bleed solid background with smooth ambient glow from artist image (Ref Kai Angel) */}
-                {heroBannerUrl && (
-                  <div
-                    className="artist-ambient-backdrop"
-                    style={{
-                      position: "fixed",
-                      inset: 0,
-                      width: "100vw",
-                      height: "100vh",
-                      zIndex: 0,
-                      pointerEvents: "none",
-                      overflow: "hidden",
-                      background: "#0b0e14",
-                    }}
-                  >
-                    {/* Atmospheric diffuse blur filling top and right sides */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "-80px",
-                        right: "-40px",
-                        width: "85vw",
-                        height: "750px",
-                        backgroundImage: `url("${heroBannerUrl}")`,
-                        backgroundSize: "cover",
-                        backgroundPosition: "center 25%",
-                        filter: "blur(110px) saturate(1.8)",
-                        opacity: 0.5,
-                        transform: "translate3d(0, 0, 0)",
-                      }}
-                    />
-                    {/* Smooth transition into clean solid #0b0e14 base */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        background: "linear-gradient(180deg, rgba(11, 14, 20, 0.15) 0%, rgba(11, 14, 20, 0.5) 360px, #0b0e14 620px, #0b0e14 100%)",
-                      }}
-                    />
-                  </div>
-                )}
-
                 {/* Top Bar with Back Button */}
                 <div
                   style={{
@@ -989,12 +952,12 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                     onClick={goBack}
                     title={t(lang, "common.back")}
                     style={{
-                      background: "rgba(0, 0, 0, 0.45)",
+                      background: "var(--card-bg, rgba(0, 0, 0, 0.45))",
                       backdropFilter: "blur(12px)",
                       WebkitBackdropFilter: "blur(12px)",
-                      border: "1px solid rgba(255, 255, 255, 0.15)",
+                      border: "1px solid var(--border, rgba(255, 255, 255, 0.15))",
                       borderRadius: "20px",
-                      color: "#ffffff",
+                      color: "var(--text, #ffffff)",
                       padding: "6px 14px",
                       fontSize: "13px",
                       fontWeight: 600,
@@ -1004,8 +967,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                       gap: "6px",
                       transition: "transform 0.12s ease, background 0.12s ease",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.15)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0, 0, 0, 0.45)")}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover, rgba(255, 255, 255, 0.15))")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "var(--card-bg, rgba(0, 0, 0, 0.45))")}
                   >
                     {t(lang, "common.back")}
                   </button>
@@ -1079,7 +1042,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                           style={{
                             fontSize: "36px",
                             fontWeight: 800,
-                            color: "#ffffff",
+                            color: "var(--text, #ffffff)",
                             margin: 0,
                             letterSpacing: "-0.5px",
                             lineHeight: 1.15,
@@ -1098,7 +1061,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                       </div>
 
                       {profile.monthly_listeners != null && (
-                        <div style={{ fontSize: "14px", fontWeight: 500, color: "rgba(255, 255, 255, 0.72)" }}>
+                        <div style={{ fontSize: "14px", fontWeight: 500, color: "var(--text2, rgba(255, 255, 255, 0.72))" }}>
                           {(profile.monthly_listeners / 1_000_000).toFixed(2)}M{" "}
                           {lang === "ru" ? "слушателей за месяц" : "monthly listeners"}
                         </div>
@@ -1110,8 +1073,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                           <button
                             onClick={() => playPopular(popular[0])}
                             style={{
-                              background: "#ffffff",
-                              color: "#000000",
+                              background: "var(--accent, #ffffff)",
+                              color: "var(--accent-contrast-text, #000000)",
                               border: "none",
                               borderRadius: "20px",
                               height: "40px",
@@ -1122,7 +1085,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                               alignItems: "center",
                               gap: "8px",
                               cursor: "pointer",
-                              boxShadow: "0 4px 14px rgba(0, 0, 0, 0.35)",
+                              boxShadow: "0 4px 14px rgba(0, 0, 0, 0.25)",
                               transition: "transform 0.16s ease",
                             }}
                             onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.04)")}
@@ -1139,13 +1102,13 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                           <button
                             onClick={() => {
                               const shuffled = [...popular].sort(() => Math.random() - 0.5);
-                              void playTracks(shuffled, 0);
+                              void playTracks(shuffled, 0, true);
                             }}
                             title={lang === "ru" ? "Перемешать" : "Shuffle"}
                             style={{
-                              background: "rgba(255, 255, 255, 0.1)",
-                              color: "#ffffff",
-                              border: "none",
+                              background: "var(--card-bg, rgba(255, 255, 255, 0.1))",
+                              color: "var(--text, #ffffff)",
+                              border: "1px solid var(--border, transparent)",
                               borderRadius: "10px",
                               width: "40px",
                               height: "40px",
@@ -1157,8 +1120,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                               WebkitBackdropFilter: "blur(8px)",
                               transition: "all 0.16s ease",
                             }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.18)")}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.1)")}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover, rgba(255, 255, 255, 0.18))")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "var(--card-bg, rgba(255, 255, 255, 0.1))")}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="16 3 21 3 21 8" />
@@ -1175,9 +1138,9 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                           disabled={followLoading}
                           title={isFollowed ? (lang === "ru" ? "В библиотеке" : "In library") : (lang === "ru" ? "Сохранить в библиотеку" : "Save to library")}
                           style={{
-                            background: isFollowed ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.1)",
-                            color: "#ffffff",
-                            border: "none",
+                            background: isFollowed ? "var(--sett-active-pill, rgba(255, 255, 255, 0.2))" : "var(--card-bg, rgba(255, 255, 255, 0.1))",
+                            color: "var(--text, #ffffff)",
+                            border: "1px solid var(--border, transparent)",
                             borderRadius: "10px",
                             width: "40px",
                             height: "40px",
@@ -1189,8 +1152,8 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                             WebkitBackdropFilter: "blur(8px)",
                             transition: "all 0.16s ease",
                           }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.22)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = isFollowed ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.1)")}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover, rgba(255, 255, 255, 0.22))")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = isFollowed ? "var(--sett-active-pill, rgba(255, 255, 255, 0.2))" : "var(--card-bg, rgba(255, 255, 255, 0.1))")}
                         >
                           {isFollowed ? (
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -1212,20 +1175,20 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                       style={{
                         width: "300px",
                         maxWidth: "100%",
-                        background: "rgba(255, 255, 255, 0.06)",
+                        background: "var(--card-bg, rgba(255, 255, 255, 0.06))",
                         backdropFilter: "blur(20px)",
                         WebkitBackdropFilter: "blur(20px)",
-                        border: "none",
+                        border: "1px solid var(--border, transparent)",
                         borderRadius: "14px",
                         padding: "14px 16px",
                         display: "flex",
                         flexDirection: "column",
                         gap: "6px",
-                        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+                        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.16)",
                       }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255, 255, 255, 0.85)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text, rgba(255, 255, 255, 0.85))", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                           {lang === "ru" ? "Об исполнителе" : "About the artist"}
                         </span>
                         <button
@@ -1247,7 +1210,7 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                         style={{
                           fontSize: "12.5px",
                           lineHeight: "1.4",
-                          color: "rgba(255, 255, 255, 0.72)",
+                          color: "var(--text2, rgba(255, 255, 255, 0.72))",
                           display: "-webkit-box",
                           WebkitLineClamp: 2,
                           WebkitBoxOrient: "vertical",
@@ -1266,14 +1229,14 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 {popular.length > 0 && (
                   <div className="section" style={{ marginBottom: "32px" }}>
                     <div className="sec-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "#ffffff" }}>
+                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "var(--text, #ffffff)" }}>
                         {t(lang, "artist.popular")}
                       </span>
                       {popular.length > 5 && (
                         <span
                           className="sec-link"
                           onClick={() => setShowAllPopular((prev) => !prev)}
-                          style={{ cursor: "pointer", fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", fontWeight: 500 }}
+                          style={{ cursor: "pointer", fontSize: "13px", color: "var(--text2, rgba(255, 255, 255, 0.7))", fontWeight: 500 }}
                         >
                           {showAllPopular
                             ? (lang === "ru" ? "Свернуть" : "Collapse")
@@ -1302,14 +1265,14 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 {albums.length > 0 && (
                   <div className="section" style={{ marginBottom: "32px" }}>
                     <div className="sec-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "#ffffff" }}>
+                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "var(--text, #ffffff)" }}>
                         {lang === "ru" ? "Альбомы" : "Albums"}
                       </span>
                       {albums.length > INITIAL_RELEASES && (
                         <span
                           className="sec-link"
                           onClick={() => navigateTo("artist-releases")}
-                          style={{ cursor: "pointer", fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", fontWeight: 500 }}
+                          style={{ cursor: "pointer", fontSize: "13px", color: "var(--text2, rgba(255, 255, 255, 0.7))", fontWeight: 500 }}
                         >
                           {t(lang, "artist.showAll")} ({albums.length})
                         </span>
@@ -1332,14 +1295,14 @@ export function Artist({ artist, provider, artistId, mode }: ArtistProps) {
                 {singles.length > 0 && (
                   <div className="section" style={{ marginBottom: "32px" }}>
                     <div className="sec-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "#ffffff" }}>
+                      <span className="sec-title" style={{ fontSize: "22px", fontWeight: 700, color: "var(--text, #ffffff)" }}>
                         {lang === "ru" ? "Синглы и EP" : "Singles & EPs"}
                       </span>
                       {singles.length > INITIAL_RELEASES && (
                         <span
                           className="sec-link"
                           onClick={() => navigateTo("artist-singles")}
-                          style={{ cursor: "pointer", fontSize: "13px", color: "rgba(255, 255, 255, 0.7)", fontWeight: 500 }}
+                          style={{ cursor: "pointer", fontSize: "13px", color: "var(--text2, rgba(255, 255, 255, 0.7))", fontWeight: 500 }}
                         >
                           {t(lang, "artist.showAll")} ({singles.length})
                         </span>

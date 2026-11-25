@@ -162,7 +162,7 @@ export function ExploreBlockContent({
   const handlePlayRealAlbum = async (alb: any) => {
     try {
       if (alb.tracks && alb.tracks.length > 0) {
-        await playTracks(alb.tracks, 0);
+        await playTracks(alb.tracks, 0, true);
         return;
       }
       if (alb.web_url) {
@@ -177,12 +177,12 @@ export function ExploreBlockContent({
           } catch {}
         }
         if (pl && pl.tracks && pl.tracks.length > 0) {
-          await playTracks(pl.tracks, 0);
+          await playTracks(pl.tracks, 0, true);
           return;
         }
       }
       if (alb.track) {
-        await playTracks([alb.track], 0);
+        await playTracks([alb.track], 0, true);
         return;
       }
       showToast(lang === "ru" ? "Альбом пуст" : "Album is empty", true);

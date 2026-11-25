@@ -60,7 +60,7 @@ export function Playlists() {
     const p = state.playlists.find((x) => x.id === playlistId);
     if (!p || p.tracks.length === 0) return;
     try {
-      await playTracks(p.tracks, 0);
+      await playTracks(p.tracks, 0, true);
     } catch (error) {
       showToast(String(error), true);
     }

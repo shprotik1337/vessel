@@ -5,10 +5,6 @@ import {
   IconSparkles,
   IconLayoutBottom,
   IconLayoutTop,
-  IconLayoutLeft,
-  IconLayoutRight,
-  IconShapeCapsule,
-  IconShapeRect,
   IconWaveStream,
 } from "../../../components/Icons";
 
@@ -18,65 +14,47 @@ export function PlayerSection() {
     config,
     setPlayerPosition,
     setPlayerStyle,
-    setQueuePosition,
-    setShowMiniPlayer,
-    setMiniPlayerShape,
-    setFullscreenLyricsPosition,
   } = useCustomization();
 
   return (
     <div>
       <div className="sett-page-header">
         <h1 className="sett-page-title">
-          {lang === "ru" ? "Настройки плеера" : "Player Settings"}
+          {lang === "ru" ? "Плеер" : "Player"}
         </h1>
         <p className="sett-page-sub">
           {lang === "ru"
-            ? "Расположение, стиль, оформление мини-плеера и очередь треков"
-            : "Layout, style, mini-player appearance and track queue"}
+            ? "Расположение и стиль панели управления плеером."
+            : "Placement and visual style of the player bar."}
         </p>
       </div>
 
-      <div className="sett-section-title">
-        {lang === "ru" ? "ПОЛОЖЕНИЕ ПЛЕЕРА" : "PLAYER POSITION"}
-      </div>
-      <div className="sett-card">
-        <div className="sett-card-row" style={{ alignItems: "center" }}>
-          <div className="sett-card-info">
-            <div className="sett-card-title">
+      <div className="sett-group-card">
+        <div className="sett-row">
+          <div className="sett-row-info">
+            <div className="sett-row-title">
               {lang === "ru" ? "Положение панели плеера" : "Player Bar Position"}
             </div>
-            <div className="sett-card-desc">
-              {lang === "ru" ? "Выберите позицию плеера на экране" : "Select player position on screen"}
+            <div className="sett-row-desc">
+              {lang === "ru"
+                ? "Выберите сторону экрана, где располагается плеер."
+                : "Choose which edge of the window holds the player."}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+          <div className="sett-icon-pills">
             {[
               { id: "bottom", icon: <IconLayoutBottom size={16} />, label: lang === "ru" ? "Снизу" : "Bottom" },
               { id: "top", icon: <IconLayoutTop size={16} />, label: lang === "ru" ? "Сверху" : "Top" },
-              { id: "left", icon: <IconLayoutLeft size={16} />, label: lang === "ru" ? "Слева" : "Left" },
-              { id: "right", icon: <IconLayoutRight size={16} />, label: lang === "ru" ? "Справа" : "Right" },
             ].map((pos) => {
-              const isSel = (config.player?.position || "bottom") === pos.id;
+              const isSel = (config.player?.position === "top" ? "top" : "bottom") === pos.id;
               return (
                 <button
                   key={pos.id}
                   type="button"
                   onClick={() => setPlayerPosition(pos.id as any)}
                   title={pos.label}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: "50%",
-                    border: isSel ? "none" : "1px solid var(--border2)",
-                    background: isSel ? "var(--accent, #e11d48)" : "var(--elev, rgba(255,255,255,0.04))",
-                    color: isSel ? "var(--accent-contrast-text, #fff)" : "var(--text3)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    transition: "all 0.15s ease",
-                  }}
+                  className={`sett-icon-pill-btn ${isSel ? "active" : ""}`}
                 >
                   {pos.icon}
                 </button>
@@ -84,185 +62,45 @@ export function PlayerSection() {
             })}
           </div>
         </div>
-      </div>
 
-      <div className="sett-section-title">
-        {lang === "ru" ? "СТИЛЬ ПЛЕЕРА" : "PLAYER STYLE"}
-      </div>
-      <div className="sett-card">
-        <div className="sett-card-info">
-          <div className="sett-card-title">
-            {lang === "ru" ? "Тип отображения" : "Display Type"}
-          </div>
-          <div className="sett-card-desc">
-            {lang === "ru" ? "Прикрепленная к краю панель или плавающий островок" : "Docked to edge panel or floating island"}
-          </div>
-        </div>
-        <div className="sett-segmented-group">
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.style === "floating" || !config.player?.style ? "active" : ""}`}
-            onClick={() => setPlayerStyle("floating")}
-          >
-            <span className="sett-segmented-btn-icon"><IconSparkles size={15} /></span>
-            <span className="sett-segmented-btn-label">
-              {lang === "ru" ? "Плавающий остров" : "Floating Island"}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.style === "dock" ? "active" : ""}`}
-            onClick={() => setPlayerStyle("dock")}
-          >
-            <span className="sett-segmented-btn-icon"><IconPlayer size={15} /></span>
-            <span className="sett-segmented-btn-label">
-              {lang === "ru" ? "Прикрепленный (Док)" : "Docked"}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.style === "progress_fill" ? "active" : ""}`}
-            onClick={() => setPlayerStyle("progress_fill")}
-          >
-            <span className="sett-segmented-btn-icon"><IconWaveStream size={15} /></span>
-            <span className="sett-segmented-btn-label">
-              {lang === "ru" ? "Заполнение прогрессом" : "Progress Fill"}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div className="sett-section-title">
-        {lang === "ru" ? "ОЧЕРЕДЬ ВОСПРОИЗВЕДЕНИЯ" : "PLAYBACK QUEUE"}
-      </div>
-      <div className="sett-card">
-        <div className="sett-card-info">
-          <div className="sett-card-title">
-            {lang === "ru" ? "Положение панели очереди" : "Queue Drawer Position"}
-          </div>
-          <div className="sett-card-desc">
-            {lang === "ru"
-              ? "Выберите, с какой стороны экрана выдвигается панель следующих треков"
-              : "Choose which side of the screen the queue drawer slides out from"}
-          </div>
-        </div>
-        <div className="sett-segmented-group">
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.queuePosition === "bottom" ? "active" : ""}`}
-            onClick={() => setQueuePosition("bottom")}
-          >
-            <span className="sett-segmented-btn-icon"><IconLayoutBottom size={15} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Снизу" : "Bottom"}</span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.queuePosition === "left" ? "active" : ""}`}
-            onClick={() => setQueuePosition("left")}
-          >
-            <span className="sett-segmented-btn-icon"><IconLayoutLeft size={15} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Слева" : "Left"}</span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.queuePosition === "right" || !config.player?.queuePosition ? "active" : ""}`}
-            onClick={() => setQueuePosition("right")}
-          >
-            <span className="sett-segmented-btn-icon"><IconLayoutRight size={15} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Справа" : "Right"}</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="sett-section-title">
-        {lang === "ru" ? "МИНИ-ПЛЕЕР" : "MINI-PLAYER"}
-      </div>
-      <div className="sett-card">
-        <div className="sett-card-row">
-          <div className="sett-card-info">
-            <div className="sett-card-title">
-              {lang === "ru" ? "Отображать мини-плеер" : "Show Mini-Player"}
+        <div className="sett-row-col">
+          <div className="sett-row-info" style={{ marginBottom: 12 }}>
+            <div className="sett-row-title">
+              {lang === "ru" ? "Стиль отображения" : "Display Style"}
             </div>
-            <div className="sett-card-desc">
+            <div className="sett-row-desc">
               {lang === "ru"
-                ? "Показывать компактный виджет мини-плеера при сворачивании главного окна"
-                : "Show compact mini-player widget when main window is minimized"}
+                ? "Прикреплённая к краю панель, плавающий островок или заполнение прогрессом."
+                : "Docked edge panel, floating island, or progress fill bar."}
             </div>
           </div>
-          <label className="sett-switch">
-            <input
-              type="checkbox"
-              checked={config.player?.showMiniPlayer ?? true}
-              onChange={(e) => setShowMiniPlayer(e.target.checked)}
-            />
-            <span className="sett-slider" />
-          </label>
-        </div>
-      </div>
 
-      <div className="sett-card">
-        <div className="sett-card-info" style={{ marginBottom: 12 }}>
-          <div className="sett-card-title">
-            {lang === "ru" ? "Форма мини-плеера" : "Mini-Player Shape"}
+          <div className="sett-pill-switch full">
+            <button
+              type="button"
+              className={`sett-pill-opt ${config.player?.style === "floating" || !config.player?.style ? "active" : ""}`}
+              onClick={() => setPlayerStyle("floating")}
+            >
+              <IconSparkles size={14} />
+              <span>{lang === "ru" ? "Плавающий остров" : "Floating Island"}</span>
+            </button>
+            <button
+              type="button"
+              className={`sett-pill-opt ${config.player?.style === "dock" ? "active" : ""}`}
+              onClick={() => setPlayerStyle("dock")}
+            >
+              <IconPlayer size={14} />
+              <span>{lang === "ru" ? "Прикреплённый (Док)" : "Docked"}</span>
+            </button>
+            <button
+              type="button"
+              className={`sett-pill-opt ${config.player?.style === "progress_fill" ? "active" : ""}`}
+              onClick={() => setPlayerStyle("progress_fill")}
+            >
+              <IconWaveStream size={14} />
+              <span>{lang === "ru" ? "Заполнение прогрессом" : "Progress Fill"}</span>
+            </button>
           </div>
-          <div className="sett-card-desc">
-            {lang === "ru"
-              ? "Капсульная закруглённая форма или стандартный прямоугольник"
-              : "Capsule rounded shape or standard rectangle"}
-          </div>
-        </div>
-        <div className="sett-segmented-group">
-          <button
-            type="button"
-            className={`sett-segmented-btn ${(config.player?.miniPlayerShape || "capsule") === "capsule" ? "active" : ""}`}
-            onClick={() => setMiniPlayerShape("capsule")}
-          >
-            <span className="sett-segmented-btn-icon"><IconShapeCapsule size={15} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Капсула" : "Capsule"}</span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${(config.player?.miniPlayerShape || "capsule") === "default" ? "active" : ""}`}
-            onClick={() => setMiniPlayerShape("default")}
-          >
-            <span className="sett-segmented-btn-icon"><IconShapeRect size={15} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Стандартный" : "Standard"}</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="sett-section-title">
-        {lang === "ru" ? "НАСТРОЙКИ БОЛЬШОГО (ПОЛНОЭКРАННОГО) ПЛЕЕРА" : "FULLSCREEN PLAYER SETTINGS"}
-      </div>
-
-      <div className="sett-card">
-        <div className="sett-card-info">
-          <div className="sett-card-title">
-            {lang === "ru" ? "Положение текста песни (Lyrics)" : "Lyrics Column Position"}
-          </div>
-          <div className="sett-card-desc">
-            {lang === "ru"
-              ? "Расположение колонки караоке-текста в полноэкранном плеере"
-              : "Placement of karaoke lyrics column in fullscreen player"}
-          </div>
-        </div>
-        <div className="sett-segmented-group">
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.fullscreenLyricsPosition === "right" || !config.player?.fullscreenLyricsPosition ? "active" : ""}`}
-            onClick={() => setFullscreenLyricsPosition("right")}
-          >
-            <span className="sett-segmented-btn-icon"><IconLayoutRight size={14} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Справа" : "Right"}</span>
-          </button>
-          <button
-            type="button"
-            className={`sett-segmented-btn ${config.player?.fullscreenLyricsPosition === "left" ? "active" : ""}`}
-            onClick={() => setFullscreenLyricsPosition("left")}
-          >
-            <span className="sett-segmented-btn-icon"><IconLayoutLeft size={14} /></span>
-            <span className="sett-segmented-btn-label">{lang === "ru" ? "Слева" : "Left"}</span>
-          </button>
         </div>
       </div>
     </div>

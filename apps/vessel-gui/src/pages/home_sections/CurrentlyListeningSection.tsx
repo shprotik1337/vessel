@@ -89,7 +89,7 @@ export function CurrentlyListeningSection({
         return;
       }
 
-      // 1. Пытаемся получить живые треки платформы
+      // Пытаемся получить живые треки платформы
       try {
         const live = await api.getPlatformNowPlaying();
         if (!cancelled && live && live.length > 0) {
@@ -100,29 +100,6 @@ export function CurrentlyListeningSection({
           return;
         }
       } catch {}
-
-      // 2. Фолбэк на рекомендации (только если кэш пуст)
-      if (!hasCached) {
-        try {
-          const res = await api.getHomeRecommendations(10);
-          if (!cancelled && res && res.length > 0) {
-            const list = res.slice(0, 10);
-            setTracks(list);
-            saveCachedListeningTracks(list);
-            setLoading(false);
-            return;
-          }
-        } catch {}
-
-        try {
-          const waveRecs = await api.getWaveRecommendations("all", 10);
-          if (!cancelled && waveRecs && waveRecs.length > 0) {
-            const list = waveRecs.slice(0, 10);
-            setTracks(list);
-            saveCachedListeningTracks(list);
-          }
-        } catch {}
-      }
 
       if (!cancelled) setLoading(false);
     };
@@ -153,12 +130,12 @@ export function CurrentlyListeningSection({
           <div className="cur-listen-cols">
             <div className="cur-listen-col">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="cur-listen-skel" style={{ height: 56, borderRadius: 8, background: "rgba(255, 255, 255, 0.03)" }} />
+                <div key={i} className="cur-listen-skel" style={{ height: 56, borderRadius: 8 }} />
               ))}
             </div>
             <div className="cur-listen-col">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="cur-listen-skel" style={{ height: 56, borderRadius: 8, background: "rgba(255, 255, 255, 0.03)" }} />
+                <div key={i} className="cur-listen-skel" style={{ height: 56, borderRadius: 8 }} />
               ))}
             </div>
           </div>

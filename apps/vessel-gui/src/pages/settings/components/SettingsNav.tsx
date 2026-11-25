@@ -1,278 +1,252 @@
-﻿import type { SettingsCategory, SettingsTab } from "../types";
-import {
-  IconUser,
-  IconGeneral,
-  IconAudio,
-  IconPlayer,
-  IconInterface,
-  IconBackground,
-  IconCustomization,
-  IconProxy,
-  IconDiscord,
-  IconVpn,
-  IconStorage,
-  IconTabs,
-  IconSparkles,
-} from "../../../components/Icons";
+﻿import { useMemo } from "react";
+import { useApp } from "../../../store";
 import { PlatformIcon } from "../../../components/PlatformIcon";
+import {
+  IconSearch,
+  IconPlay,
+  IconInterface,
+  IconPlayer,
+  IconTabs,
+  IconDiscord,
+  IconStorage,
+  IconUser,
+} from "../../../components/Icons";
+import {
+  SETTINGS_NAV_ITEMS,
+  type SettingsGroup,
+  type SettingsTab,
+} from "../types";
 
 interface SettingsNavProps {
-  category: SettingsCategory;
-  setCategory: (c: SettingsCategory) => void;
   activeTab: SettingsTab;
   setActiveTab: (t: SettingsTab) => void;
-  lang: string;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  profilePreview?: {
+    displayName: string;
+    username: string;
+    avatarUrl: string;
+  } | null;
+  onClose?: () => void;
 }
 
-const SERVICE_TABS = [
-  { id: "service_yandex" as const, name: "Yandex", kind: "yandex" as const, brandColor: "#FFCC00" },
-  { id: "service_youtube_music" as const, name: "YouTube", kind: "youtube_music" as const, brandColor: "#FF0000" },
-  { id: "service_soundcloud" as const, name: "SoundCloud", kind: "soundcloud" as const, brandColor: "#FF5500" },
-  { id: "service_deezer" as const, name: "Deezer", kind: "deezer" as const, brandColor: "#A238FF" },
-  { id: "service_spotify" as const, name: "Spotify", kind: "spotify" as const, brandColor: "#1ED760" },
+const GROUP_META: Array<{ id: SettingsGroup; labelRu: string; labelEn: string }> = [
+  { id: "player", labelRu: "Плеер", labelEn: "Player" },
+  { id: "interface", labelRu: "Интерфейс", labelEn: "Interface" },
+  { id: "integrations", labelRu: "Интеграции", labelEn: "Integrations" },
+  { id: "app", labelRu: "Приложение", labelEn: "Application" },
 ];
 
+const PLATFORM_BRAND_COLOR: Record<string, string> = {
+  service_youtube_music: "#FF0000",
+  service_soundcloud: "#FF5500",
+  service_deezer: "#A238FF",
+  service_yandex: "#FFCC00",
+  service_spotify: "#1DB954",
+};
+
+function renderItemIcon(id: SettingsTab) {
+  switch (id) {
+    case "playback":
+      return <IconPlay size={16} />;
+    case "appearance":
+      return <IconInterface size={16} />;
+    case "player":
+      return <IconPlayer size={16} />;
+    case "tabs":
+      return <IconTabs size={16} />;
+    case "service_youtube_music":
+      return <PlatformIcon kind="youtube_music" size={16} color={PLATFORM_BRAND_COLOR[id]} />;
+    case "service_soundcloud":
+      return <PlatformIcon kind="soundcloud" size={16} color={PLATFORM_BRAND_COLOR[id]} />;
+    case "service_deezer":
+      return <PlatformIcon kind="deezer" size={16} color={PLATFORM_BRAND_COLOR[id]} />;
+    case "service_yandex":
+      return <PlatformIcon kind="yandex" size={16} />;
+    case "service_spotify":
+      return <PlatformIcon kind="spotify" size={16} color={PLATFORM_BRAND_COLOR[id]} />;
+    case "discord":
+      return <IconDiscord size={16} color="#5865F2" />;
+    case "storage":
+      return <IconStorage size={16} />;
+    case "about":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+      );
+    default:
+      return <IconUser size={16} />;
+  }
+}
+
 export function SettingsNav({
-  category,
-  setCategory,
   activeTab,
   setActiveTab,
-  lang,
+  searchQuery,
+  setSearchQuery,
+  profilePreview,
+  onClose,
 }: SettingsNavProps) {
+  const { state, lang, logoutAccount, showToast } = useApp();
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  const groupedItems = useMemo(() => {
+    return GROUP_META.map((group) => {
+      const groupMatch =
+        !normalizedQuery ||
+        group.labelRu.toLowerCase().includes(normalizedQuery) ||
+        group.labelEn.toLowerCase().includes(normalizedQuery);
+
+      const items = SETTINGS_NAV_ITEMS.filter((item) => {
+        if (item.group !== group.id) return false;
+        if (groupMatch) return true;
+        return (
+          item.labelRu.toLowerCase().includes(normalizedQuery) ||
+          item.labelEn.toLowerCase().includes(normalizedQuery) ||
+          item.keywords.some((kw) => kw.includes(normalizedQuery))
+        );
+      });
+
+      return { ...group, items };
+    }).filter((g) => g.items.length > 0);
+  }, [normalizedQuery]);
+
+  const accState = state?.account_state;
+  const isAuthenticated = accState?.kind === "authenticated";
+  const isRestoring = accState?.kind === "restoring";
+  const username = accState?.kind === "authenticated" ? accState.username : "";
+  const displayName = profilePreview?.displayName || username || (lang === "ru" ? "Гость" : "Guest");
+  const avatarUrl = profilePreview?.avatarUrl || "";
+  const handleTag = isAuthenticated
+    ? `@${username.replace(/^@+/, "")}`
+    : isRestoring
+    ? (lang === "ru" ? "Вход..." : "Restoring...")
+    : (lang === "ru" ? "Войти в аккаунт" : "Sign in");
+
   return (
-    <div className="sett-modal-nav-container">
-      {/* TIER 1: CATEGORIES */}
-      <div className="sett-modal-categories">
-        <button
-          type="button"
-          className={`sett-cat-btn ${category === "profile" ? "active" : ""}`}
-          onClick={() => {
-            setCategory("profile");
-            setActiveTab("users");
-          }}
-        >
-          {lang === "ru" ? "Профиль" : "Profile"}
-        </button>
-        <button
-          type="button"
-          className={`sett-cat-btn ${category === "general" ? "active" : ""}`}
-          onClick={() => {
-            setCategory("general");
-            setActiveTab("general");
-          }}
-        >
-          {lang === "ru" ? "Общие" : "General"}
-        </button>
-        <button
-          type="button"
-          className={`sett-cat-btn ${category === "interface" ? "active" : ""}`}
-          onClick={() => {
-            setCategory("interface");
-            setActiveTab("interface");
-          }}
-        >
-          {lang === "ru" ? "Интерфейс" : "Interface"}
-        </button>
-        <button
-          type="button"
-          className={`sett-cat-btn ${category === "services" ? "active" : ""}`}
-          onClick={() => {
-            setCategory("services");
-            setActiveTab("service_yandex");
-          }}
-        >
-          {lang === "ru" ? "Сервисы" : "Services"}
-        </button>
-        <button
-          type="button"
-          className={`sett-cat-btn ${category === "integrations" ? "active" : ""}`}
-          onClick={() => {
-            setCategory("integrations");
-            setActiveTab("proxy");
-          }}
-        >
-          {lang === "ru" ? "Интеграции" : "Integrations"}
-        </button>
-      </div>
-
-      {/* TIER 2: SUB-TABS (Pill bar) */}
-      <div className="sett-modal-subtabs-wrap">
-        <div className="sett-modal-subtabs">
-          {category === "profile" && (
-            <>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "users" ? "active" : ""}`}
-                onClick={() => setActiveTab("users")}
-              >
-                <IconUser size={15} />
-                <span>{lang === "ru" ? "Профиль" : "Profile"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "migration" ? "active" : ""}`}
-                onClick={() => setActiveTab("migration")}
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M17 3L21 7L17 11" />
-                  <path d="M3 7H21" />
-                  <path d="M7 21L3 17L7 13" />
-                  <path d="M21 17H3" />
-                </svg>
-                <span>{lang === "ru" ? "Перенос треков" : "Transfer Tracks"}</span>
-              </button>
-            </>
-          )}
-
-          {category === "general" && (
-            <>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "general" ? "active" : ""}`}
-                onClick={() => setActiveTab("general")}
-              >
-                <IconGeneral size={15} />
-                <span>{lang === "ru" ? "Основные" : "General"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "audio" ? "active" : ""}`}
-                onClick={() => setActiveTab("audio")}
-              >
-                <IconAudio size={15} />
-                <span>{lang === "ru" ? "Аудио" : "Audio"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "storage" ? "active" : ""}`}
-                onClick={() => setActiveTab("storage")}
-              >
-                <IconStorage size={15} />
-                <span>{lang === "ru" ? "Кеш" : "Cache"}</span>
-              </button>
-            </>
-          )}
-
-          {category === "interface" && (
-            <>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "interface" ? "active" : ""}`}
-                onClick={() => setActiveTab("interface")}
-              >
-                <IconInterface size={15} />
-                <span>{lang === "ru" ? "Вид" : "Appearance"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "background" ? "active" : ""}`}
-                onClick={() => setActiveTab("background")}
-              >
-                <IconBackground size={15} />
-                <span>{lang === "ru" ? "Фон" : "Background"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "player" ? "active" : ""}`}
-                onClick={() => setActiveTab("player")}
-              >
-                <IconPlayer size={15} />
-                <span>{lang === "ru" ? "Плеер" : "Player"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "tabs" ? "active" : ""}`}
-                onClick={() => setActiveTab("tabs")}
-              >
-                <IconTabs size={15} />
-                <span>{lang === "ru" ? "Вкладки" : "Tabs"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "customization" ? "active" : ""}`}
-                onClick={() => setActiveTab("customization")}
-              >
-                <IconCustomization size={15} />
-                <span>{lang === "ru" ? "Кастом" : "Custom"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "workshop" ? "active" : ""}`}
-                onClick={() => setActiveTab("workshop")}
-              >
-                <IconSparkles size={15} />
-                <span>{lang === "ru" ? "Мастерская" : "Workshop"}</span>
-              </button>
-            </>
-          )}
-
-          {category === "services" && (
-            <>
-              {SERVICE_TABS.map((srv) => {
-                const isTabActive = activeTab === srv.id;
-                return (
-                  <button
-                    key={srv.id}
-                    type="button"
-                    className={`sett-subtab-pill ${isTabActive ? "active" : ""}`}
-                    onClick={() => setActiveTab(srv.id)}
-                  >
-                    <PlatformIcon
-                      kind={srv.kind}
-                      size={15}
-                      color={isTabActive ? srv.brandColor : "var(--text3)"}
-                      style={{
-                        filter: isTabActive ? "none" : "grayscale(100%)",
-                        opacity: isTabActive ? 1 : 0.55,
-                        transition: "all 0.15s ease",
-                      }}
-                    />
-                    <span>{srv.name}</span>
-                  </button>
-                );
-              })}
-            </>
-          )}
-
-          {category === "integrations" && (
-            <>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "proxy" ? "active" : ""}`}
-                onClick={() => setActiveTab("proxy")}
-              >
-                <IconProxy size={15} />
-                <span>{lang === "ru" ? "Прокси" : "Proxy"}</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "discord" ? "active" : ""}`}
-                onClick={() => setActiveTab("discord")}
-              >
-                <IconDiscord size={15} />
-                <span>Discord RPC</span>
-              </button>
-              <button
-                type="button"
-                className={`sett-subtab-pill ${activeTab === "vpn" ? "active" : ""}`}
-                onClick={() => setActiveTab("vpn")}
-              >
-                <IconVpn size={15} />
-                <span>VPN</span>
-              </button>
-            </>
+    <aside className="sett-sidebar">
+      {/* Search bar */}
+      <div className="sett-sidebar-search-wrap">
+        <div className="sett-sidebar-search">
+          <span className="sett-sidebar-search-icon">
+            <IconSearch size={14} />
+          </span>
+          <input
+            type="text"
+            className="sett-sidebar-search-input"
+            placeholder={lang === "ru" ? "Поиск настроек..." : "Search settings..."}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label={lang === "ru" ? "Поиск настроек" : "Search settings"}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              className="sett-sidebar-search-clear"
+              onClick={() => setSearchQuery("")}
+              title={lang === "ru" ? "Очистить" : "Clear"}
+              aria-label={lang === "ru" ? "Очистить поиск" : "Clear search"}
+            >
+              ✕
+            </button>
           )}
         </div>
       </div>
-    </div>
+
+      {/* Category tree */}
+      <nav className="sett-sidebar-nav" aria-label={lang === "ru" ? "Разделы настроек" : "Settings sections"}>
+        {groupedItems.length === 0 ? (
+          <div className="sett-sidebar-empty">
+            {lang === "ru" ? "Ничего не найдено" : "No settings found"}
+          </div>
+        ) : (
+          groupedItems.map((group) => (
+            <div key={group.id} className="sett-sidebar-group">
+              <div className="sett-sidebar-group-title">
+                {lang === "ru" ? group.labelRu : group.labelEn}
+              </div>
+              <div className="sett-sidebar-group-list">
+                {group.items.map((item) => {
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`sett-sidebar-item ${isActive ? "active" : ""}`}
+                      onClick={() => setActiveTab(item.id)}
+                    >
+                      <span className="sett-sidebar-item-icon">
+                        {renderItemIcon(item.id)}
+                      </span>
+                      <span className="sett-sidebar-item-label">
+                        {lang === "ru" ? item.labelRu : item.labelEn}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </nav>
+
+      {/* Bottom Profile Dock */}
+      <div className="sett-sidebar-footer">
+        <div
+          role="button"
+          tabIndex={0}
+          className={`sett-profile-dock ${activeTab === "account" ? "active" : ""}`}
+          onClick={() => setActiveTab("account")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setActiveTab("account");
+            }
+          }}
+          title={lang === "ru" ? "Настройка профиля" : "Profile settings"}
+        >
+          <div className="sett-profile-avatar-wrap">
+            <div className="sett-profile-avatar">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={displayName} />
+              ) : (
+                <span>{displayName.slice(0, 1).toUpperCase()}</span>
+              )}
+            </div>
+            {isAuthenticated && <span className="sett-profile-status-dot" />}
+          </div>
+
+          <div className="sett-profile-meta">
+            <div className="sett-profile-name">{displayName}</div>
+            <div className="sett-profile-tag">{handleTag}</div>
+          </div>
+
+          {isAuthenticated && (
+            <button
+              type="button"
+              className="sett-profile-logout"
+              onClick={async (e) => {
+                e.stopPropagation();
+                await logoutAccount();
+                onClose?.();
+                showToast(lang === "ru" ? "Вы вышли из аккаунта Vessel" : "Logged out from Vessel");
+              }}
+              title={lang === "ru" ? "Выйти из аккаунта" : "Log out"}
+              aria-label={lang === "ru" ? "Выйти из аккаунта" : "Log out"}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+    </aside>
   );
 }

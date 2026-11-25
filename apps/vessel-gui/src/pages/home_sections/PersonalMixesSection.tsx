@@ -104,7 +104,7 @@ export function MixesBlockContent({
       return;
     }
     setActiveMixContext({ title: mix.title, artists: mix.relatedArtists, tracks: mix.tracks });
-    void playTracks(mix.tracks, 0);
+    void playTracks(mix.tracks, 0, false, { preserveMix: true });
   };
 
   const handleOpenMixItem = (mix: MixItem) => {

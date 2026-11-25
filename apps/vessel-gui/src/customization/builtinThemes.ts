@@ -185,3 +185,43 @@ export const BUILTIN_THEMES: ThemePreset[] = [
     glassOpacity: 0.72,
   },
 ];
+
+export const DARK_THEME_PRESET: ThemePreset = {
+  id: "dark",
+  name: "Тёмная",
+  desc: "Глубокая тёмная палитра (AMOLED)",
+  themeMode: "dark",
+  accentColor: "#ffffff",
+  secondaryColor: "#000000",
+  appBgColor: "#000000",
+  sidebarBgColor: "#000000",
+  playerBgColor: "#000000",
+  cardBgColor: "#000000",
+  textColor: "#ffffff",
+  glassMode: true,
+  glassOpacity: 0.55,
+  windowOpacity: 55,
+  glassForce: 55,
+  backdropBlur: 10,
+  ambientMode: "dynamic",
+};
+
+export const LIGHT_THEME_PRESET: ThemePreset = {
+  id: "light",
+  name: "Светлая",
+  desc: "Чистая светлая палитра",
+  themeMode: "light",
+  accentColor: "#111114",
+  secondaryColor: "#e4e4e7",
+  appBgColor: "#f7f7f8",
+  sidebarBgColor: "#ececef",
+  playerBgColor: "#ffffff",
+  cardBgColor: "#ffffff",
+  textColor: "#111114",
+  glassMode: true,
+  glassOpacity: 0.55,
+  windowOpacity: 55,
+  glassForce: 55,
+  backdropBlur: 10,
+  ambientMode: "dynamic",
+};

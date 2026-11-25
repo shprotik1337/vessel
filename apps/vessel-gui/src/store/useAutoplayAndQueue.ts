@@ -3,7 +3,7 @@ import type { FullState, Playlist, QueueContext, TrackRef } from "../api/types";
 import type { Lang } from "../i18n";
 import { trackKey, dedupe } from "../lib/utils";
 import * as api from "../api/commands";
-import type { MixContext } from "./storeTypes";
+import type { MixContext, PlayTracksOptions } from "./storeTypes";
 import { semanticTrackKey } from "./storeUtils";
 
 interface UseAutoplayAndQueueProps {
@@ -63,6 +63,7 @@ export function useAutoplayAndQueue({
   }, []);
 
   const expandingQueueRef = useRef(false);
+  const queueGenerationRef = useRef<number>(0);
   const lastExpandedIndexRef = useRef<number | null>(null);
   const lastExpandedTimeRef = useRef<number>(0);
   const sessionPlayedKeysRef = useRef<Set<string>>(new Set());
@@ -101,13 +102,18 @@ export function useAutoplayAndQueue({
   const expandQueueTracks = useCallback(
     async (count = 8, force = false): Promise<TrackRef[]> => {
       if (!force && (expandingQueueRef.current || Date.now() - lastExpandedTimeRef.current < 3000)) return [];
+      const startGeneration = queueGenerationRef.current;
       expandingQueueRef.current = true;
       lastExpandedTimeRef.current = Date.now();
       try {
         const rawProviders = await api
           .getRecommendationProviders()
           .catch(() => api.getWaveProviders().catch(() => "all"));
+        if (queueGenerationRef.current !== startGeneration) return [];
+
         const fresh = await api.getState().catch(() => state);
+        if (queueGenerationRef.current !== startGeneration) return [];
+
         const currentQueue = fresh?.queue ?? state?.queue ?? [];
         const currentIndex = fresh?.queue_index ?? state?.queue_index ?? 0;
 
@@ -115,6 +121,8 @@ export function useAutoplayAndQueue({
           // Волна (My Wave): непрерывный поток
           const waveSource = (await api.getWaveSource().catch(() => "favorites")) as "favorites" | "playlists";
           const more = await api.getWaveRecommendations(waveSource, count * 2, null, rawProviders).catch(() => []);
+          if (queueGenerationRef.current !== startGeneration) return [];
+
           const existingKeys = new Set(currentQueue.map(trackKey));
           const existingSemantics = new Set(currentQueue.map(semanticTrackKey));
           const chunk = more
@@ -123,8 +131,10 @@ export function useAutoplayAndQueue({
           if (chunk.length > 0) {
             setWaveTracks((prev) => dedupe([...prev, ...chunk]));
             for (const t of chunk) {
+              if (queueGenerationRef.current !== startGeneration) return [];
               await api.addToQueue(t);
             }
+            if (queueGenerationRef.current !== startGeneration) return [];
             await refresh();
           }
           return chunk;
@@ -148,11 +158,14 @@ export function useAutoplayAndQueue({
           console.warn("Autoplay chunk error:", err);
           return [];
         });
+        if (queueGenerationRef.current !== startGeneration) return [];
 
         if (chunk.length > 0) {
           for (const track of chunk) {
+            if (queueGenerationRef.current !== startGeneration) return [];
             await api.addToQueue(track);
           }
+          if (queueGenerationRef.current !== startGeneration) return [];
           await refresh();
         }
         return chunk;
@@ -211,7 +224,12 @@ export function useAutoplayAndQueue({
     if (!shouldAutoplay) return;
 
     const remaining = state.queue.length - 1 - state.queue_index;
-    const isNearEnd = remaining <= 2;
+    const isInfiniteStream = isWaveActive || !!activeMixContext;
+    // Для Волны и миксов держим буфер на 2 трека вперёд;
+    // для обычных альбомов/плейлистов (включая короткие EP/синглы) подбираем похожие только на последнем треке (при длине > 1)
+    const isNearEnd = isInfiniteStream
+      ? remaining <= 2
+      : remaining === 0 && state.queue.length > 1;
     const isPlayingOrBuffering =
       state.player?.status === "playing" || state.player?.status === "buffering";
 
@@ -398,19 +416,30 @@ export function useAutoplayAndQueue({
   }, [state, smartShuffle, smartTrackKeys, lang, refresh, showToast, setSmartShuffle]);
 
   const playTracks = useCallback(
-    async (tracks: TrackRef[], start = 0, forceNewQueue = false) => {
+    async (
+      tracks: TrackRef[],
+      start = 0,
+      forceNewQueue = false,
+      opts?: PlayTracksOptions,
+    ) => {
       setHasEverPlayed(true);
 
       const targetTrack = tracks[start];
 
-      // If the clicked track is already present in the active queue and matches current playlist context,
-      // smoothly jump directly to that index without re-shuffling or re-generating recommendations!
-      if (!forceNewQueue && targetTrack && state?.queue && state.queue.length > 0) {
+      // Если кликнутый трек уже в текущей очереди того же контекста (не Волны/микса, если не запрошено явно),
+      // плавно переключаемся без пересоздания очереди.
+      if (
+        !forceNewQueue &&
+        targetTrack &&
+        state?.queue &&
+        state.queue.length > 0 &&
+        (opts?.preserveWave || !isWaveActive) &&
+        (opts?.preserveMix || !activeMixContext) &&
+        (tracks.length > 1 || state.queue.length === 1) &&
+        tracks.every((orig) => state.queue.some((q) => trackKey(q) === trackKey(orig)))
+      ) {
         const existingIdx = state.queue.findIndex((t) => trackKey(t) === trackKey(targetTrack));
-        const isCurrentQueueFromList = state.queue.some((t) =>
-          tracks.some((orig) => trackKey(orig) === trackKey(t))
-        );
-        if (existingIdx >= 0 && isCurrentQueueFromList) {
+        if (existingIdx >= 0) {
           try {
             await api.playQueueIndex(existingIdx);
             await refresh();
@@ -419,6 +448,16 @@ export function useAutoplayAndQueue({
             console.warn("playQueueIndex error, falling back to full playTracks:", e);
           }
         }
+      }
+
+      const gen = ++queueGenerationRef.current;
+      lastExpandedIndexRef.current = null;
+      lastEndedHandledKeyRef.current = null;
+      if (!opts?.preserveWave) {
+        setIsWaveActiveState(false);
+      }
+      if (!opts?.preserveMix) {
+        setActiveMixContext(null);
       }
 
       if (smartShuffle) {
@@ -437,6 +476,7 @@ export function useAutoplayAndQueue({
           // 2. ДО старта воспроизведения запрашиваем рекомендации и интерливим очередь
           const rawProviders = await api.getRecommendationProviders().catch(() => "all");
           const res = await api.applySmartShuffle(baseShuffledQueue, 0, rawProviders).catch(() => null);
+          if (queueGenerationRef.current !== gen) return;
 
           const finalQueue = res && res.interleaved_queue && res.interleaved_queue.length > 0
             ? res.interleaved_queue
@@ -450,6 +490,7 @@ export function useAutoplayAndQueue({
           if (state?.player?.shuffle) {
             await api.setShuffle(false);
           }
+          if (queueGenerationRef.current !== gen) return;
           await api.playTracks(finalQueue, 0);
           await refresh();
           return;
@@ -460,13 +501,26 @@ export function useAutoplayAndQueue({
 
       // Обычный запуск (без Smart Shuffle)
       try {
+        if (!opts?.preserveShuffle) {
+          await api.setShuffle(false).catch(() => {});
+        }
+        if (queueGenerationRef.current !== gen) return;
         await api.playTracks(tracks, start);
         await refresh();
       } catch (error) {
         showToast(String(error), true);
       }
     },
-    [refresh, showToast, smartShuffle, state?.player?.shuffle, state?.queue, setHasEverPlayed],
+    [
+      activeMixContext,
+      isWaveActive,
+      refresh,
+      showToast,
+      smartShuffle,
+      state?.player?.shuffle,
+      state?.queue,
+      setHasEverPlayed,
+    ],
   );
 
   const regenerateWave = useCallback(
@@ -500,7 +554,7 @@ export function useAutoplayAndQueue({
         if (autoplay) {
           if (unique.length > 0) {
             setIsWaveActive(true);
-            await playTracks(unique, 0, true);
+            await playTracks(unique, 0, true, { preserveWave: true });
           } else {
             showToast(
               lang === "ru"

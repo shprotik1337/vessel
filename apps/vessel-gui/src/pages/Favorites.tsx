@@ -99,7 +99,7 @@ export function Favorites() {
     }
     if (visible.length === 0) return;
     try {
-      void playTracks(visible, Math.floor(Math.random() * visible.length), true);
+      void playTracks(visible, Math.floor(Math.random() * visible.length), true, { preserveShuffle: true });
     } catch (error) {
       showToast(String(error), true);
     }

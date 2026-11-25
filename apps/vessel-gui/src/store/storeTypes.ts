@@ -21,6 +21,12 @@ export interface CacheCompletePayload {
   failed: number;
 }
 
+export interface PlayTracksOptions {
+  preserveWave?: boolean;
+  preserveMix?: boolean;
+  preserveShuffle?: boolean;
+}
+
 export interface MixContext {
   title: string;
   artists: string[];
@@ -101,7 +107,12 @@ export interface AppStore {
   setIsSettingsOpen: (open: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
-  playTracks: (tracks: TrackRef[], start?: number, forceNewQueue?: boolean) => Promise<void>;
+  playTracks: (
+    tracks: TrackRef[],
+    start?: number,
+    forceNewQueue?: boolean,
+    opts?: PlayTracksOptions,
+  ) => Promise<void>;
   refresh: () => Promise<void>;
   hasEverPlayed: boolean;
   setHasEverPlayed: React.Dispatch<React.SetStateAction<boolean>>;

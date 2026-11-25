@@ -12,6 +12,7 @@ import type {
   CustomizationContextType,
 } from "./types";
 import { DEFAULT_CUSTOMIZATION, STORAGE_KEY, USER_PRESETS_KEY } from "./defaults";
+import { DARK_THEME_PRESET, LIGHT_THEME_PRESET } from "./builtinThemes";
 import { sanitizeConfig } from "./configSanitizer";
 import { applyThemeVariables } from "./cssVariables";
 import * as api from "../api/commands";
@@ -75,7 +76,41 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   const [previewPreset, setPreviewPreset] = useState<ThemePreset | null>(null);
   const [prePreviewConfig, setPrePreviewConfig] = useState<CustomizationConfig | null>(null);
 
-  const activeConfig = sanitizeConfig(isEditMode ? draftConfig : savedConfig);
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    setSystemPrefersDark(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  const rawActiveConfig = sanitizeConfig(isEditMode ? draftConfig : savedConfig);
+  const activeConfig: CustomizationConfig = (() => {
+    if (rawActiveConfig.theme.themeMode === "system") {
+      const targetPreset = systemPrefersDark ? DARK_THEME_PRESET : LIGHT_THEME_PRESET;
+      return {
+        ...rawActiveConfig,
+        theme: {
+          ...rawActiveConfig.theme,
+          themeMode: "system",
+          accentColor: targetPreset.accentColor,
+          secondaryColor: targetPreset.secondaryColor,
+          appBgColor: targetPreset.appBgColor,
+          sidebarBgColor: targetPreset.sidebarBgColor,
+          playerBgColor: targetPreset.playerBgColor,
+          cardBgColor: targetPreset.cardBgColor,
+          textColor: targetPreset.textColor,
+        },
+      };
+    }
+    return rawActiveConfig;
+  })();
 
   // Dynamically inject CSS variables into document.documentElement
   useEffect(() => {
@@ -234,9 +269,10 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
   };
 
   const setPlayerPosition = (pos: "bottom" | "top" | "left" | "right") => {
+    const normalized: "bottom" | "top" = pos === "top" ? "top" : "bottom";
     persistOrDraft((prev) => ({
       ...prev,
-      player: { ...prev.player, position: pos },
+      player: { ...prev.player, position: normalized },
     }));
   };
 
@@ -781,16 +817,37 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const setThemeMode = (mode: "system" | "light" | "dark") => {
+    const resolved = mode === "system"
+      ? (systemPrefersDark ? DARK_THEME_PRESET : LIGHT_THEME_PRESET)
+      : (mode === "light" ? LIGHT_THEME_PRESET : DARK_THEME_PRESET);
+    updateThemeDirectly({
+      themeMode: mode,
+      accentColor: resolved.accentColor,
+      secondaryColor: resolved.secondaryColor,
+      appBgColor: resolved.appBgColor,
+      sidebarBgColor: resolved.sidebarBgColor,
+      playerBgColor: resolved.playerBgColor,
+      cardBgColor: resolved.cardBgColor,
+      textColor: resolved.textColor,
+      glassMode: resolved.glassMode,
+      glassOpacity: resolved.glassOpacity,
+      windowOpacity: resolved.windowOpacity ?? 55,
+      glassForce: resolved.glassForce ?? 55,
+      backdropBlur: resolved.backdropBlur ?? 10,
+    });
+  };
+
   const applyPreset = (preset: ThemePreset) => {
     updateThemeDirectly({
+      themeMode: preset.themeMode ?? "custom",
       accentColor: preset.accentColor,
+      secondaryColor: preset.secondaryColor,
       appBgColor: preset.appBgColor,
       sidebarBgColor: preset.sidebarBgColor,
       playerBgColor: preset.playerBgColor,
       cardBgColor: preset.cardBgColor,
       textColor: preset.textColor,
-      glassMode: preset.glassMode,
-      glassOpacity: preset.glassOpacity,
       ...(preset.wallpaperData !== undefined ? { wallpaperData: preset.wallpaperData } : {}),
       ...(preset.wallpaperBlur !== undefined ? { wallpaperBlur: preset.wallpaperBlur } : {}),
       ...(preset.wallpaperDim !== undefined ? { wallpaperDim: preset.wallpaperDim } : {}),
@@ -997,6 +1054,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
         isAddModalOpen,
         setIsAddModalOpen,
         setBlockGridColumns,
+        setThemeMode,
         applyPreset,
         userPresets,
         saveToUserSlot,

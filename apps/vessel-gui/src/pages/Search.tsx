@@ -136,7 +136,7 @@ export function Search() {
         setSearchPlayingKey(trackKey(pl.tracks[0]));
         setSearchPlayingCover(pl.cover_url || pl.tracks[0]?.artwork_url || null);
       }
-      await playTracks(pl.tracks, 0);
+      await playTracks(pl.tracks, 0, true);
     } catch (err) {
       showToast(String(err), true);
     }
@@ -150,7 +150,7 @@ export function Search() {
         nowKey={nowKey}
         lang={lang}
         adding={adding}
-        onPlayTracks={(tracks: TrackRef[], startIndex: number) => void playTracks(tracks, startIndex)}
+        onPlayTracks={(tracks: TrackRef[], startIndex: number) => void playTracks(tracks, startIndex, true)}
         onPlayTrack={(track: TrackRef, tracks: TrackRef[]) => {
           setSearchPlayingKey(trackKey(track));
           setSearchPlayingCover(track.artwork_url || null);

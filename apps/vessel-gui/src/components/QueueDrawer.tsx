@@ -442,18 +442,6 @@ export function QueueDrawer() {
         {/* Header */}
         <div className="queue-drawer-header">
           <div className="queue-drawer-nav-row">
-            <button
-              type="button"
-              className="queue-drawer-back-btn"
-              onClick={toggleQueue}
-              title={lang === "ru" ? "Закрыть панель (Esc)" : "Close panel (Esc)"}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 12H5M12 19l-7-7 7-7"/>
-              </svg>
-              <span>{lang === "ru" ? "Назад" : "Back"}</span>
-            </button>
-
             <div className="queue-drawer-nav-actions">
               {activeTab === "queue" && (
                 <button
@@ -486,16 +474,16 @@ export function QueueDrawer() {
                   {lang === "ru" ? "Очистить" : "Clear"}
                 </button>
               )}
-              <button
-                type="button"
-                className="queue-drawer-close-btn"
-                onClick={toggleQueue}
-                aria-label="Close"
-                title={lang === "ru" ? "Закрыть (Esc)" : "Close (Esc)"}
-              >
-                ✕
-              </button>
             </div>
+            <button
+              type="button"
+              className="queue-drawer-close-btn"
+              onClick={toggleQueue}
+              aria-label="Close"
+              title={lang === "ru" ? "Закрыть (Esc)" : "Close (Esc)"}
+            >
+              ✕
+            </button>
           </div>
 
           {/* Segmented Switch: Очередь / Текст */}

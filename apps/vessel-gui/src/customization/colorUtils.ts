@@ -15,8 +15,8 @@ export function hexToRgba(hex: string, alpha: number): string {
   return hex;
 }
 
-export function getContrastTextColor(hex: string): string {
-  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) return "#ffffff";
+export function isLightColor(hex: string): boolean {
+  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) return false;
   let c = hex.substring(1);
   if (c.length === 3) c = c.split("").map((x) => x + x).join("");
   if (c.length === 6) {
@@ -24,7 +24,11 @@ export function getContrastTextColor(hex: string): string {
     const g = parseInt(c.substring(2, 4), 16) / 255;
     const b = parseInt(c.substring(4, 6), 16) / 255;
     const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return lum > 0.48 ? "#000000" : "#ffffff";
+    return lum > 0.48;
   }
-  return "#ffffff";
+  return false;
+}
+
+export function getContrastTextColor(hex: string): string {
+  return isLightColor(hex) ? "#000000" : "#ffffff";
 }

@@ -1,48 +1,40 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "../store";
 import { useCustomization } from "../customization";
 import { ConfirmModal, PathModal } from "../components/Modal";
-import { VpnTab } from "../components/VpnTab";
 import * as api from "../api/commands";
 
-import type {
-  SettingsCategory,
-  SettingsTab,
-  ConfirmTarget,
-  DirTarget,
+import {
+  SETTINGS_NAV_ITEMS,
+  type SettingsTab,
+  type ConfirmTarget,
+  type DirTarget,
 } from "./settings/types";
 import { SettingsNav } from "./settings/components/SettingsNav";
-import { ImagePickerModal } from "./settings/components/ImagePickerModal";
 import {
   UsersSection,
-  MigrationSection,
-  GeneralSection,
-  AudioSection,
+  PlaybackSection,
+  AppearanceSection,
   StorageSection,
   PlayerSection,
-  InterfaceSection,
   TabsSection,
-  BackgroundSection,
   ServicesSection,
-  CustomizationSection,
-  WorkshopSection,
-  ProxySection,
   DiscordSection,
+  AboutSection,
 } from "./settings/sections";
 
 export function Settings({ onClose }: { onClose?: () => void } = {}) {
-  const { lang, refresh, showToast } = useApp();
-  const {
-    resetToDefaults,
-    imageLibrary,
-    addToImageLibrary,
-    setCustomTrackArt,
-    setWallpaperData,
-  } = useCustomization();
+  const { state, lang, refresh, showToast } = useApp();
+  const { resetToDefaults } = useCustomization();
 
   const [isClosing, setIsClosing] = useState(false);
-  const [category, setCategory] = useState<SettingsCategory>("general");
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("playback");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [profilePreview, setProfilePreview] = useState<{
+    displayName: string;
+    username: string;
+    avatarUrl: string;
+  } | null>(null);
 
   const [scale, setScale] = useState(() => {
     const saved = localStorage.getItem("vessel_scale") || localStorage.getItem("vessel_scale_windowed");
@@ -55,7 +47,6 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
 
   const [confirm, setConfirm] = useState<ConfirmTarget>(null);
   const [dirModal, setDirModal] = useState<DirTarget>(null);
-  const [pickerTarget, setPickerTarget] = useState<"trackArt" | "wallpaper" | null>(null);
 
   const triggerClose = () => {
     if (isClosing) return;
@@ -89,6 +80,48 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
       }
     })();
   }, []);
+
+  // Load user profile preview for sidebar dock on modal open
+  useEffect(() => {
+    if (state?.account_state?.kind !== "authenticated") {
+      setProfilePreview(null);
+      return;
+    }
+    let mounted = true;
+    void api
+      .authGetProfile()
+      .then((p) => {
+        if (!mounted) return;
+        setProfilePreview({
+          displayName: p.display_name || p.username,
+          username: p.username,
+          avatarUrl: p.avatar_url || "",
+        });
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [state?.account_state]);
+
+  // When searching, auto-select first matching tab if current tab isn't in filtered results
+  const matchingTabIds = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    return SETTINGS_NAV_ITEMS.filter(
+      (item) =>
+        item.labelRu.toLowerCase().includes(q) ||
+        item.labelEn.toLowerCase().includes(q) ||
+        item.keywords.some((kw) => kw.includes(q)),
+    ).map((i) => i.id);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!matchingTabIds || matchingTabIds.length === 0) return;
+    if (!matchingTabIds.includes(activeTab)) {
+      setActiveTab(matchingTabIds[0]);
+    }
+  }, [matchingTabIds, activeTab]);
 
   const handleScale = (val: number) => {
     setScale(val);
@@ -180,63 +213,57 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
       }}
     >
       <div className={`settings-modal-window ${isClosing ? "closing" : ""}`} role="dialog" aria-modal="true">
-        {/* MODAL HEADER */}
-        <div className="settings-modal-header">
-          <div className="settings-modal-title">
-            {lang === "ru" ? "Настройки" : "Settings"}
-          </div>
+        {/* LEFT SIDEBAR NAVIGATION */}
+        <SettingsNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          profilePreview={profilePreview}
+          onClose={onClose}
+        />
+
+        {/* RIGHT CONTENT AREA */}
+        <div className="sett-main-pane">
           <button
             type="button"
-            className="settings-modal-close"
+            className="settings-modal-close sett-floating-close"
             onClick={triggerClose}
-            aria-label="Закрыть"
+            aria-label={lang === "ru" ? "Закрыть" : "Close"}
           >
             ✕
           </button>
-        </div>
 
-        {/* 2-TIER TOP NAVIGATION */}
-        <SettingsNav
-          category={category}
-          setCategory={setCategory}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          lang={lang}
-        />
-
-        {/* MAIN SETTINGS CONTENT */}
-        <div className="sett-modal-body sett-sett-content">
-          <div key={activeTab} className="sett-tab-page">
-            {activeTab === "users" && <UsersSection onClose={onClose} />}
-            {activeTab === "migration" && <MigrationSection onClose={onClose} />}
-            {activeTab === "general" && <GeneralSection onResetApp={setConfirm} />}
-            {activeTab === "audio" && (
-              <AudioSection
-                downloadDir={downloadDir}
-                cacheDir={cacheDir}
-                onOpenDirModal={setDirModal}
-              />
-            )}
-            {activeTab === "storage" && <StorageSection />}
-            {activeTab === "player" && <PlayerSection />}
-            {activeTab === "interface" && (
-              <InterfaceSection
-                scale={scale}
-                onScale={handleScale}
-                selectedFont={selectedFont}
-                onFontSelect={handleFontSelect}
-              />
-            )}
-            {activeTab === "tabs" && <TabsSection />}
-            {activeTab === "background" && (
-              <BackgroundSection onOpenImagePicker={setPickerTarget} />
-            )}
-            {activeTab === "customization" && <CustomizationSection />}
-            {activeTab === "workshop" && <WorkshopSection />}
-            {activeTab.startsWith("service_") && <ServicesSection activeTab={activeTab} />}
-            {activeTab === "proxy" && <ProxySection />}
-            {activeTab === "discord" && <DiscordSection />}
-            {activeTab === "vpn" && <VpnTab />}
+          <div className="sett-modal-body">
+            <div key={activeTab} className="sett-tab-page">
+              {activeTab === "playback" && <PlaybackSection />}
+              {activeTab === "appearance" && (
+                <AppearanceSection
+                  scale={scale}
+                  onScale={handleScale}
+                  selectedFont={selectedFont}
+                  onFontSelect={handleFontSelect}
+                />
+              )}
+              {activeTab === "player" && <PlayerSection />}
+              {activeTab === "tabs" && <TabsSection />}
+              {activeTab.startsWith("service_") && <ServicesSection activeTab={activeTab} />}
+              {activeTab === "discord" && <DiscordSection />}
+              {activeTab === "storage" && (
+                <StorageSection
+                  downloadDir={downloadDir}
+                  cacheDir={cacheDir}
+                  onOpenDirModal={setDirModal}
+                />
+              )}
+              {activeTab === "about" && <AboutSection onResetApp={setConfirm} />}
+              {activeTab === "account" && (
+                <UsersSection
+                  onClose={onClose}
+                  onProfileLoadedOrSaved={setProfilePreview}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -246,9 +273,11 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
         <ConfirmModal
           lang={lang}
           title={lang === "ru" ? "Подтверждение" : "Confirmation"}
-          text={confirm === "settings"
-            ? (lang === "ru" ? "Сбросить настройки к значениям по умолчанию?" : "Reset settings to defaults?")
-            : (lang === "ru" ? "Стереть все сохраненные данные приложения?" : "Purge all saved application data?")}
+          text={
+            confirm === "settings"
+              ? (lang === "ru" ? "Сбросить настройки к значениям по умолчанию?" : "Reset settings to defaults?")
+              : (lang === "ru" ? "Стереть все сохранённые данные приложения?" : "Purge all saved application data?")
+          }
           confirmText={lang === "ru" ? "Подтвердить" : "Confirm"}
           onConfirm={handleConfirmAction}
           onClose={() => setConfirm(null)}
@@ -258,7 +287,11 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
       {dirModal && (
         <PathModal
           lang={lang}
-          title={dirModal === "download" ? (lang === "ru" ? "Папка загрузок" : "Downloads Directory") : (lang === "ru" ? "Папка кэша" : "Cache Directory")}
+          title={
+            dirModal === "download"
+              ? (lang === "ru" ? "Папка загрузок" : "Downloads Directory")
+              : (lang === "ru" ? "Папка кэша" : "Cache Directory")
+          }
           initial={dirModal === "download" ? downloadDir : cacheDir}
           browseMode="folder"
           confirmText={lang === "ru" ? "Сохранить" : "Save"}
@@ -269,22 +302,6 @@ export function Settings({ onClose }: { onClose?: () => void } = {}) {
           onClose={() => setDirModal(null)}
         />
       )}
-
-      <ImagePickerModal
-        pickerTarget={pickerTarget}
-        onClose={() => setPickerTarget(null)}
-        imageLibrary={imageLibrary}
-        onAddToLibrary={addToImageLibrary}
-        lang={lang}
-        onSelectTrackArt={(url) => {
-          setCustomTrackArt(url);
-          showToast(lang === "ru" ? "Обложка трека установлена!" : "Track artwork set!");
-        }}
-        onSelectWallpaper={(url) => {
-          setWallpaperData(url);
-          showToast(lang === "ru" ? "Фон приложения установлен!" : "Wallpaper set!");
-        }}
-      />
     </div>
   );
 }

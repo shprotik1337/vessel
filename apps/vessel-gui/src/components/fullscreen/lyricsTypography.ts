@@ -38,9 +38,21 @@ export function saveLyricsTypography(t: LyricsTypography) {
 
 export function applyLyricsTypography(t: LyricsTypography) {
   const root = document.documentElement;
-  root.style.setProperty("--fs-lyric-font-size", `${t.fontSize}px`);
+  const minFont = Math.max(15, Math.round(t.fontSize * 0.65));
+  const vwFactor = (t.fontSize * 0.08).toFixed(2);
+  const vhFactor = (t.fontSize * 0.095).toFixed(2);
+  const minGap = Math.max(4, Math.round(t.lineSpacing * 0.5));
+  const gapVhFactor = (t.lineSpacing * 0.085).toFixed(2);
+
+  root.style.setProperty(
+    "--fs-lyric-font-size",
+    `clamp(${minFont}px, min(${vwFactor}vw, ${vhFactor}vh), ${t.fontSize}px)`,
+  );
   root.style.setProperty("--fs-lyric-font-weight", `${t.fontWeight}`);
-  root.style.setProperty("--fs-lyric-line-gap", `${t.lineSpacing}px`);
+  root.style.setProperty(
+    "--fs-lyric-line-gap",
+    `clamp(${minGap}px, ${gapVhFactor}vh, ${t.lineSpacing}px)`,
+  );
   root.style.setProperty("--fs-lyric-align", t.alignment);
   root.style.setProperty("--fs-lyric-justify", t.alignment === "center" ? "center" : "flex-start");
 }

@@ -33,8 +33,9 @@ export const PageAmbientBackdrop = memo(function PageAmbientBackdrop({
   const { config } = useCustomization();
   const [mounted, setMounted] = useState(false);
 
+  const hasWallpaper = Boolean(config.theme?.wallpaperData);
   const ambientMode = config.theme?.ambientMode ?? "dynamic";
-  const isOff = ambientMode === "off";
+  const isOff = hasWallpaper || ambientMode === "off";
   const isTheme = ambientMode === "theme";
 
   const effectiveSrc = isTheme
@@ -119,9 +120,8 @@ export const PageAmbientBackdrop = memo(function PageAmbientBackdrop({
               alt=""
               draggable={false}
               decoding="async"
-              className="page-ambient-layer-img"
+              className={`page-ambient-layer-img ${isVisible ? "visible" : ""}`}
               style={{
-                opacity: isVisible ? 0.6 : 0,
                 transition: `opacity ${FADE_MS}ms ease-out`,
               }}
             />

@@ -466,7 +466,7 @@ export function WaveSection() {
       setCurrentIndex(normalized);
       triggerSwitchSpinner(chosenKey);
       setIsWaveActive(true);
-      void playTracks(waveTracks, normalized);
+      void playTracks(waveTracks, normalized, false, { preserveWave: true });
     },
     [waveTracks, safeIndex, isWaveTrackCurrent, triggerSwitchSpinner, setIsWaveActive, playTracks],
   );
@@ -486,7 +486,7 @@ export function WaveSection() {
       triggerSwitchSpinner(trackKey(chosen));
     }
     setIsWaveActive(true);
-    void playTracks(waveTracks, safeIndex);
+    void playTracks(waveTracks, safeIndex, false, { preserveWave: true });
   }, [
     waveTracks,
     safeIndex,

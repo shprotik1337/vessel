@@ -14,7 +14,8 @@ type SortDir = "asc" | "desc";
 const WAVE_PROVIDER_OPTIONS = [
   { key: "youtube_music", label: "YouTube Music", color: "#FF0000" },
   { key: "soundcloud", label: "SoundCloud", color: "#FF5500" },
-  { key: "yandex", label: "Yandex Music", color: "#FFCC00" },
+  // Временно скрыто из выбора до доработки провайдера:
+  // { key: "yandex", label: "Yandex Music", color: "#FFCC00" },
   { key: "deezer", label: "Deezer", color: "#A238FF" },
 ];
 
@@ -74,7 +75,11 @@ export function WavePage() {
 
   const allKeys = WAVE_PROVIDER_OPTIONS.map((o) => o.key);
   const activeProviders =
-    providers === "all" ? allKeys : !providers ? [] : providers.split(",").filter(Boolean);
+    providers === "all"
+      ? allKeys
+      : !providers
+      ? []
+      : providers.split(",").filter((k) => allKeys.includes(k));
 
   const handleLaunchWave = async () => {
     if (activeProviders.length === 0) {
@@ -91,7 +96,7 @@ export function WavePage() {
         await api.togglePlayback();
       } else {
         setIsWaveActive(true);
-        await playTracks(waveTracks, 0);
+        await playTracks(waveTracks, 0, false, { preserveWave: true });
       }
     } else {
       await regenerateWave({ force: true, autoplay: true });
@@ -107,7 +112,7 @@ export function WavePage() {
   const playOne = (track: TrackRef) => {
     const idx = waveTracks.findIndex((t) => trackKey(t) === trackKey(track));
     setIsWaveActive(true);
-    void playTracks(waveTracks, idx < 0 ? 0 : idx);
+    void playTracks(waveTracks, idx < 0 ? 0 : idx, false, { preserveWave: true });
   };
 
   const sortTracks = (tracks: TrackRef[]): TrackRef[] => {

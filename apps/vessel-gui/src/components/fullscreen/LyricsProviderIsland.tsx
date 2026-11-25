@@ -56,16 +56,28 @@ export function LyricsProviderIsland({
   const [visualQualityOpen, setVisualQualityOpen] = useState(false);
   const [typo, setTypo] = useState<LyricsTypography>(() => loadLyricsTypography());
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const typoRafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    applyLyricsTypography(typo);
+    if (typoRafRef.current !== null) {
+      cancelAnimationFrame(typoRafRef.current);
+    }
+    typoRafRef.current = requestAnimationFrame(() => {
+      typoRafRef.current = null;
+      applyLyricsTypography(typo);
+    });
+    return () => {
+      if (typoRafRef.current !== null) {
+        cancelAnimationFrame(typoRafRef.current);
+        typoRafRef.current = null;
+      }
+    };
   }, [typo]);
 
   const updateTypo = (patch: Partial<LyricsTypography>) => {
     setTypo((prev) => {
       const next = { ...prev, ...patch };
       saveLyricsTypography(next);
-      applyLyricsTypography(next);
       return next;
     });
   };
@@ -73,7 +85,6 @@ export function LyricsProviderIsland({
   const resetTypo = () => {
     setTypo(DEFAULT_LYRICS_TYPOGRAPHY);
     saveLyricsTypography(DEFAULT_LYRICS_TYPOGRAPHY);
-    applyLyricsTypography(DEFAULT_LYRICS_TYPOGRAPHY);
   };
 
   useEffect(() => {

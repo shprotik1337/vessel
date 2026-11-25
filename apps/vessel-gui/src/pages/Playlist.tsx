@@ -144,7 +144,7 @@ export function PlaylistDetail({ playlistId }: PlaylistDetailProps) {
       } catch {}
     }
     try {
-      void playTracks(visible, Math.floor(Math.random() * visible.length), true);
+      void playTracks(visible, Math.floor(Math.random() * visible.length), true, { preserveShuffle: true });
     } catch (error) {
       showToast(String(error), true);
     }

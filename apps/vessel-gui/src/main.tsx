@@ -116,6 +116,10 @@ window.addEventListener("drop", (e) => {
 
 // Global error handlers: show raw debug overlay ONLY in dev mode
 window.addEventListener("error", (e) => {
+  const msg = String(e.message || "");
+  if (msg.includes("ResizeObserver loop")) {
+    return;
+  }
   console.error("Window Error:", e);
   if (!import.meta.env.DEV) return;
   let el = document.getElementById("vessel-err-box");

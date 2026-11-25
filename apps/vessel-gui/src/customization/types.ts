@@ -1,4 +1,7 @@
+export type ThemeMode = "system" | "light" | "dark" | "custom";
+
 export interface ThemeColors {
+  themeMode?: ThemeMode;
   accentColor: string;
   secondaryColor?: string;
   appBgColor: string;
@@ -89,6 +92,7 @@ export interface ThemePreset {
   id: string;
   name: string;
   desc: string;
+  themeMode?: ThemeMode;
   accentColor: string;
   secondaryColor?: string;
   appBgColor: string;
@@ -98,6 +102,9 @@ export interface ThemePreset {
   textColor: string;
   glassMode: boolean;
   glassOpacity: number;
+  windowOpacity?: number;
+  glassForce?: number;
+  backdropBlur?: number;
   wallpaperData?: string | null;
   wallpaperBlur?: number;
   wallpaperDim?: number;
@@ -148,6 +155,7 @@ export interface CustomizationContextType {
   isAddModalOpen: boolean;
   setIsAddModalOpen: (open: boolean) => void;
   setBlockGridColumns: (id: string, cols: number) => void;
+  setThemeMode: (mode: "system" | "light" | "dark") => void;
   applyPreset: (preset: ThemePreset) => void;
   userPresets: (ThemePreset | null)[];
   saveToUserSlot: (slotIndex: number, customName?: string) => void;

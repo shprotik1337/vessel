@@ -123,11 +123,12 @@ export function Artwork({
               width: size ? Math.max(20, size * 0.4) : 28,
               height: size ? Math.max(20, size * 0.4) : 28,
               borderRadius: "50%",
-              background: "var(--text)",
+              background: "#ffffff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: "#0B0B0C",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.35)",
             }}
           >
             {isPlaying ? (

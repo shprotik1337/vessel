@@ -31,7 +31,7 @@ export function HomeMixPageView({
   const handlePlayAll = () => {
     if (mix.tracks.length === 0) return;
     setActiveMixContext({ title: mix.title, artists: mix.relatedArtists, tracks: mix.tracks });
-    void playTracks(mix.tracks, 0);
+    void playTracks(mix.tracks, 0, false, { preserveMix: true });
   };
 
   const handlePlayIndex = (idx: number) => {
@@ -41,7 +41,7 @@ export function HomeMixPageView({
       return;
     }
     setActiveMixContext({ title: mix.title, artists: mix.relatedArtists, tracks: mix.tracks });
-    void playTracks(mix.tracks, idx);
+    void playTracks(mix.tracks, idx, false, { preserveMix: true });
   };
 
   const handleSaveToPlaylists = async () => {

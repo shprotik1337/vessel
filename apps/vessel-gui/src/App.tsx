@@ -285,7 +285,7 @@ function AppContent() {
   const isSidebarLeft = !isSidebarRight && !isSidebarTop && !isSidebarBottom;
   const isPlayerTop = config.player?.position === "top";
   const isPlaybackActive = Boolean(state?.now_playing);
-  const showBottomPlayer = config.player?.showMiniPlayer !== false && view !== "player" && isPlaybackActive;
+  const showBottomPlayer = view !== "player" && isPlaybackActive;
 const isProgressFill = config.player?.style === "progress_fill";
   const effectivePlayerHeight = showBottomPlayer
     ? (isProgressFill ? 66 : 68)
@@ -338,8 +338,8 @@ const isProgressFill = config.player?.style === "progress_fill";
       )}
       {/* Root Ambient Glow Layer: Portaled from active page */}
       <div id="vessel-glow-root" className="vessel-glow-root" />
-      {/* Seamless Ambient Backdrop (fullscreen player only) */}
-      {config.theme?.ambientMode !== "off" && view === "player" && (
+      {/* Seamless Ambient Backdrop (fullscreen player only, disabled when custom wallpaper is set) */}
+      {!hasWallpaper && config.theme?.ambientMode !== "off" && view === "player" && (
         config.theme?.ambientMode === "theme" ? (
           <div className="app-ambient-backdrop-theme app-ambient-backdrop-fs" />
         ) : globalAmbientArt ? (

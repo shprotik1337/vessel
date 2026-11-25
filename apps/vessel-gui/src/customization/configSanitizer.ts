@@ -41,7 +41,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     ? raw.sidebar.horizontalNavButtons.filter((b: any) => typeof b === "string")
     : ["player", "home", "wave", "search", "favorites", "playlists", "recent", "queue"];
 
-  const validPlayerPositions = ["bottom", "top", "left", "right"] as const;
+  const validPlayerPositions = ["bottom", "top"] as const;
   const playerPos = validPlayerPositions.includes(raw.player?.position)
     ? raw.player.position
     : "bottom";
@@ -70,7 +70,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     ? raw.player.miniPlayerPreset
     : "default";
 
-  const showMiniPlayer = raw.player?.showMiniPlayer !== false;
+  const showMiniPlayer = true;
   const fullscreenFollowTrack = raw.player?.fullscreenFollowTrack !== false;
 
   const validFsLyricsPositions = ["right", "left"] as const;
@@ -172,7 +172,13 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     freeLayoutSections = raw.home.freeLayoutSections.filter((i: any) => typeof i === "number");
   }
 
+  const validThemeModes = ["system", "light", "dark", "custom"] as const;
+  const themeMode = validThemeModes.includes(raw.theme?.themeMode)
+    ? raw.theme.themeMode
+    : (raw.theme?.appBgColor && raw.theme.appBgColor.toLowerCase() !== "#000000" ? "custom" : "dark");
+
   const theme: ThemeColors = {
+    themeMode,
     accentColor: typeof raw.theme?.accentColor === "string" ? raw.theme.accentColor : "#ffffff",
     appBgColor: typeof raw.theme?.appBgColor === "string" ? raw.theme.appBgColor : "#000000",
     sidebarBgColor: typeof raw.theme?.sidebarBgColor === "string" ? raw.theme.sidebarBgColor : "#000000",
@@ -183,19 +189,17 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     wallpaperBlur: typeof raw.theme?.wallpaperBlur === "number" ? raw.theme.wallpaperBlur : 0,
     wallpaperDim: typeof raw.theme?.wallpaperDim === "number" ? raw.theme.wallpaperDim : 0,
     glassMode: raw.theme?.glassMode !== undefined ? Boolean(raw.theme.glassMode) : true,
-    glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.5,
+    glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.55,
     trackRowOpacity: typeof raw.theme?.trackRowOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowOpacity)) : 0,
     trackRowStyle: raw.theme?.trackRowStyle === "glass" ? "glass" : "none",
     trackRowActiveOpacity: typeof raw.theme?.trackRowActiveOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowActiveOpacity)) : 0.08,
     trackRowActiveStyle: (raw.theme?.trackRowActiveStyle === "accent" || raw.theme?.trackRowActiveStyle === "dark")
       ? raw.theme.trackRowActiveStyle
       : "glass",
-    ambientMode: (raw.theme?.ambientMode === "theme" || raw.theme?.ambientMode === "dynamic" || raw.theme?.ambientMode === "off")
-      ? raw.theme.ambientMode
-      : "dynamic",
-    windowOpacity: typeof raw.theme?.windowOpacity === "number" ? Math.max(0, Math.min(100, raw.theme.windowOpacity)) : 50,
-    glassForce: typeof raw.theme?.glassForce === "number" ? Math.max(0, Math.min(100, raw.theme.glassForce)) : 65,
-    backdropBlur: typeof raw.theme?.backdropBlur === "number" ? Math.max(0, Math.min(40, raw.theme.backdropBlur)) : 15,
+    ambientMode: "dynamic",
+    windowOpacity: typeof raw.theme?.windowOpacity === "number" ? Math.max(0, Math.min(100, raw.theme.windowOpacity)) : 55,
+    glassForce: typeof raw.theme?.glassForce === "number" ? Math.max(0, Math.min(100, raw.theme.glassForce)) : 55,
+    backdropBlur: typeof raw.theme?.backdropBlur === "number" ? Math.max(0, Math.min(40, raw.theme.backdropBlur)) : 10,
     customTrackArt: typeof raw.theme?.customTrackArt === "string" ? raw.theme.customTrackArt : null,
   };
 
