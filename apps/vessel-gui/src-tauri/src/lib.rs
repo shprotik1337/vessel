@@ -334,6 +334,8 @@ fn driver_loop(core: Arc<Mutex<GuiCore>>, app: AppHandle) {
         let rpc_msg = discord_rpc::RpcMessage {
             client_id: core.config.discord_rpc_client_id.clone(),
             enabled: core.config.discord_rpc,
+            settings: core.config.discord_rpc_settings.clone(),
+            language: core.config.language.clone(),
             status: core.app.player.status,
             now_playing: core.app.now_playing.clone(),
             position_ms: core.app.player.position_ms,
@@ -1018,6 +1020,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::set_language,
             commands::get_discord_rpc,
             commands::set_discord_rpc,
+            commands::get_discord_rpc_settings,
+            commands::set_discord_rpc_settings,
             commands::pick_folder,
             commands::pick_file,
             commands::save_file_as,

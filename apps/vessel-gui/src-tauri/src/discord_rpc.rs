@@ -7,10 +7,13 @@ use serde_json::json;
 use uuid::Uuid;
 use vessel_core::{
     app::PlaybackStatus,
+    config::{DiscordRpcSettings, DiscordStatusFormat},
     model::{ProviderKind, TrackRef},
 };
 
-const DEFAULT_CLIENT_ID: &str = "1129859263741837373"; // Registered as "Music" (без упоминания Vessel)
+const DEFAULT_CLIENT_ID: &str = "1575313641517883463"; // Registered as "Vessel"
+const VESSEL_RELEASES_URL: &str = "https://github.com/shprotik1337/vessel/releases/latest";
+const MAX_IMAGE_URL_LENGTH: usize = 256;
 
 #[cfg(windows)]
 type IpcStream = std::fs::File;
@@ -95,12 +98,15 @@ impl DiscordRpc {
     pub fn update(
         &mut self,
         enabled: bool,
+        settings: &DiscordRpcSettings,
+        language: &str,
         status: PlaybackStatus,
         now_playing: Option<&TrackRef>,
         position_ms: u64,
         duration_ms: u64,
     ) {
-        if !enabled || status == PlaybackStatus::Stopped || now_playing.is_none() {
+        let paused_hidden = status == PlaybackStatus::Paused && !settings.show_paused;
+        if !enabled || status == PlaybackStatus::Stopped || paused_hidden || now_playing.is_none() {
             if self.has_active_presence {
                 if self.ensure_connected() {
                     if let Some(stream) = self.stream.as_mut() {
@@ -135,6 +141,8 @@ impl DiscordRpc {
         use std::hash::{Hash, Hasher};
         track_key.hash(&mut hasher);
         status_code.hash(&mut hasher);
+        settings.hash(&mut hasher);
+        language.hash(&mut hasher);
         let hash = hasher.finish();
 
         if hash == self.last_activity_hash && !is_seek {
@@ -150,7 +158,7 @@ impl DiscordRpc {
         self.last_position_at = now;
 
         let res = if let Some(stream) = self.stream.as_mut() {
-            send_playback_activity(stream, track, status, position_ms, duration_ms)
+            send_playback_activity(stream, track, settings, language, status, position_ms, duration_ms)
         } else {
             Ok(())
         };
@@ -265,9 +273,35 @@ fn send_clear_activity(stream: &mut IpcStream) -> std::io::Result<()> {
     Ok(())
 }
 
+fn sanitize_discord_text(text: &str, max_chars: usize) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut result: String = trimmed.chars().take(max_chars).collect();
+    if result.chars().count() == 1 {
+        result.push(' ');
+    }
+    Some(result)
+}
+
+fn to_discord_image_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_IMAGE_URL_LENGTH {
+        return None;
+    }
+    if trimmed.starts_with("https://") {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
 fn send_playback_activity(
     stream: &mut IpcStream,
     track: &TrackRef,
+    settings: &DiscordRpcSettings,
+    language: &str,
     status: PlaybackStatus,
     position_ms: u64,
     duration_ms: u64,
@@ -295,35 +329,96 @@ fn send_playback_activity(
         ),
     };
 
-    let artists = track.display_artist();
-    let state_text = match status {
-        PlaybackStatus::Playing => format!("{artists} • {platform_name}"),
-        PlaybackStatus::Paused => format!("{artists} • {platform_name} (Пауза)"),
-        _ => artists.clone(),
+    let is_ru = language != "en";
+    let is_paused = status == PlaybackStatus::Paused;
+    let paused_suffix = if is_paused {
+        if is_ru { " (Пауза)" } else { " (Paused)" }
+    } else {
+        ""
     };
 
-    let artwork_url = track
-        .artwork_url
-        .as_ref()
-        .map(|u| u.to_string())
-        .unwrap_or_else(|| platform_icon.to_string());
+    let title = track.title.trim();
+    let title = if title.is_empty() { "Unknown Track" } else { title };
+    let artists_raw = track.display_artist();
+    let artists = if artists_raw.trim().is_empty() {
+        "Unknown Artist"
+    } else {
+        artists_raw.trim()
+    };
+
+    let (activity_name, status_display_type, details_raw, state_raw) = match settings.status_format {
+        DiscordStatusFormat::Title => (
+            title.to_string(),
+            2u8, // DETAILS -> "Слушает <Название трека>"
+            format!("{title}{paused_suffix}"),
+            artists.to_string(),
+        ),
+        DiscordStatusFormat::ArtistTitle => {
+            let combined = format!("{artists} — {title}");
+            (
+                combined.clone(),
+                1u8, // STATE -> "Слушает <Исполнитель — Трек>"
+                title.to_string(),
+                format!("{combined}{paused_suffix}"),
+            )
+        }
+        DiscordStatusFormat::TitleArtist => {
+            let combined = format!("{title} — {artists}");
+            (
+                combined.clone(),
+                2u8, // DETAILS -> "Слушает <Трек — Исполнитель>"
+                format!("{combined}{paused_suffix}"),
+                artists.to_string(),
+            )
+        }
+        DiscordStatusFormat::Artist => (
+            artists.to_string(),
+            1u8, // STATE -> "Слушает <Исполнитель>"
+            title.to_string(),
+            format!("{artists}{paused_suffix}"),
+        ),
+        DiscordStatusFormat::App => (
+            "Vessel".to_string(),
+            0u8, // NAME -> "Слушает Vessel"
+            title.to_string(),
+            format!("{artists}{paused_suffix}"),
+        ),
+    };
 
     let mut activity = json!({
         "type": 2, // Listening
-        "details": track.title,
-        "state": state_text,
-        "assets": {
-            "large_image": artwork_url,
-            "small_image": platform_icon,
-            "small_text": match status {
-                PlaybackStatus::Playing => platform_name.to_string(),
-                PlaybackStatus::Paused => format!("{platform_name} (Пауза)"),
-                _ => platform_name.to_string(),
-            }
-        }
+        "name": sanitize_discord_text(&activity_name, 128).unwrap_or_else(|| "Vessel".to_string()),
+        "status_display_type": status_display_type,
+        "details": sanitize_discord_text(&details_raw, 128).unwrap_or_else(|| "Vessel".to_string()),
+        "state": sanitize_discord_text(&state_raw, 128).unwrap_or_else(|| "Vessel".to_string()),
     });
 
-    if status == PlaybackStatus::Playing && duration_ms > 0 {
+    let mut assets = serde_json::Map::new();
+    if settings.show_artwork {
+        let large_image = to_discord_image_url(&settings.custom_artwork_url).or_else(|| {
+            track
+                .artwork_url
+                .as_ref()
+                .and_then(|u| to_discord_image_url(u.as_str()))
+        });
+        if let Some(img) = large_image {
+            assets.insert("large_image".to_string(), json!(img));
+        }
+    }
+
+    if settings.show_small_icon {
+        assets.insert("small_image".to_string(), json!(platform_icon));
+        assets.insert(
+            "small_text".to_string(),
+            json!(format!("{platform_name}{paused_suffix}")),
+        );
+    }
+
+    if !assets.is_empty() {
+        activity["assets"] = serde_json::Value::Object(assets);
+    }
+
+    if settings.show_time && status == PlaybackStatus::Playing && duration_ms > 0 {
         let now_sec = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -339,16 +434,12 @@ fn send_playback_activity(
         });
     }
 
-    let web_url_str = track.web_url.as_str();
-    if web_url_str.starts_with("http://") || web_url_str.starts_with("https://") {
-        let button_label = match track.provider {
-            ProviderKind::YandexMusic => "Слушать на Яндекс Музыке",
-            _ => &format!("Слушать на {platform_name}"),
-        };
+    if settings.show_download_button {
+        let label = if is_ru { "Скачать Vessel" } else { "Download Vessel" };
         activity["buttons"] = json!([
             {
-                "label": button_label,
-                "url": web_url_str
+                "label": label,
+                "url": VESSEL_RELEASES_URL
             }
         ]);
     }
@@ -371,6 +462,8 @@ fn send_playback_activity(
 pub struct RpcMessage {
     pub client_id: Option<String>,
     pub enabled: bool,
+    pub settings: DiscordRpcSettings,
+    pub language: String,
     pub status: PlaybackStatus,
     pub now_playing: Option<TrackRef>,
     pub position_ms: u64,
@@ -403,6 +496,8 @@ impl DiscordRpcHandle {
                     rpc.set_client_id(latest.client_id.as_deref());
                     rpc.update(
                         latest.enabled,
+                        &latest.settings,
+                        &latest.language,
                         latest.status,
                         latest.now_playing.as_ref(),
                         latest.position_ms,

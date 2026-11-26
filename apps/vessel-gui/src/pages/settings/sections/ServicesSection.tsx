@@ -50,15 +50,15 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
         : `${displayName} account is connected and active.`)
     : isYt
     ? (lang === "ru"
-        ? "Работает без входа. Можно добавить cookies при необходимости."
-        : "Works without signing in. Optional cookies can be added if needed.")
+        ? "Работает без входа. Вход нужен только для переноса лайков."
+        : "Works without signing in. Sign-in is only needed to transfer liked tracks.")
     : isGuest
     ? (lang === "ru"
-        ? `Доступен гостевой режим. Войдите в ${displayName} для доступа к аккаунту.`
-        : `Guest access active. Sign in to ${displayName} for account features.`)
+        ? `Доступен гостевой режим. Вход в ${displayName} нужен только для переноса лайков.`
+        : `Guest access active. Sign in to ${displayName} only to transfer liked tracks.`)
     : (lang === "ru"
-        ? `Войдите, чтобы использовать ${displayName} в Vessel.`
-        : `Sign in to use ${displayName} in Vessel.`);
+        ? `Вход в ${displayName} нужен только для переноса лайков (плейлисты работают без входа).`
+        : `Sign in to ${displayName} only to transfer liked tracks (playlists work without signing in).`);
 
   const saveServiceToken = async (sKey: string) => {
     const val = tokenInputs[sKey]?.trim() || "";
@@ -110,15 +110,15 @@ export function ServicesSection({ activeTab }: ServicesSectionProps) {
         <p className="sett-page-sub">
           {isSpotify
             ? (lang === "ru"
-                ? "Spotify используется для переноса плейлистов, альбомов и избранных треков."
-                : "Spotify is used to transfer playlists, albums and liked tracks.")
+                ? "Подключение аккаунта Spotify нужно только для переноса лайков — плейлисты и альбомы можно переносить без входа."
+                : "Spotify sign-in is only needed to transfer liked tracks — playlists and albums can be transferred without signing in.")
             : isYt
             ? (lang === "ru"
-                ? "Подключение YouTube Music для воспроизведения и поиска."
-                : "YouTube Music integration for playback and search.")
+                ? "Подключение аккаунта YouTube нужно только для переноса лайков — поиск, воспроизведение и плейлисты работают без входа."
+                : "YouTube sign-in is only needed to transfer liked tracks — search, playback and playlists work without signing in.")
             : (lang === "ru"
-                ? `Подключите аккаунт ${displayName} для полного доступа.`
-                : `Connect your ${displayName} account for full access.`)}
+                ? `Подключение аккаунта ${displayName} нужно только для переноса лайков — плейлисты работают без входа.`
+                : `Connecting your ${displayName} account is only needed to transfer liked tracks — playlists work without signing in.`)}
         </p>
       </div>
 

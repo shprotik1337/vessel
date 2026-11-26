@@ -29,7 +29,7 @@ export const SERVICE_META: Record<string, { key: string; hint: string; bg: strin
   },
   youtube_music: {
     key: "youtube_music",
-    hint: "YouTube Music работает публично (гостевой доступ). Для доступа к личным плейлистам и полному стриму можно вставить cookies браузера.",
+    hint: "YouTube Music работает публично (гостевой доступ). Вход / cookies браузера нужны только для переноса лайков и личных треков.",
     bg: "#FF0000",
     brandColor: "#FF0000",
   },

@@ -13575,20 +13575,56 @@ body:has(.app-shell.no-player) .library-fab-container {
 }
 
 /* Discord preview */
-.sett-discord-preview {
+.sett-discord-dropdown .sett-dropdown-trigger {
+  max-width: 260px;
+}
+
+.sett-discord-dropdown .sett-dropdown-menu {
+  min-width: 240px;
+  white-space: nowrap;
+}
+
+.sett-discord-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--sett-surface);
+  border: 1px solid var(--border);
+  transition: opacity 0.16s ease;
+}
+
+.sett-discord-preview-card.is-hidden-pause {
+  opacity: 0.55;
+}
+
+.sett-discord-preview-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sett-discord-preview-body {
   display: flex;
   align-items: center;
   gap: 14px;
-  max-width: 400px;
-  padding: 14px;
-  border-radius: 12px;
-  background: var(--sett-surface);
-  border: none;
+}
+
+.sett-discord-art-wrap {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
 }
 
 .sett-discord-art {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   border-radius: 10px;
   overflow: hidden;
   background: var(--sett-active-pill);
@@ -13603,6 +13639,21 @@ body:has(.app-shell.no-player) .library-fab-container {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.sett-discord-small-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  border: 2px solid var(--sett-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .sett-discord-meta {
@@ -13621,7 +13672,7 @@ body:has(.app-shell.no-player) .library-fab-container {
 
 .sett-discord-artist {
   font-size: 12px;
-  color: var(--text3);
+  color: var(--text2);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -13640,6 +13691,43 @@ body:has(.app-shell.no-player) .library-fab-container {
   width: 38%;
   height: 100%;
   background: var(--accent);
+}
+
+.sett-discord-preview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--sett-active-pill);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.sett-discord-custom-thumb {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--sett-surface);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text3);
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sett-discord-custom-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* Storage rows */

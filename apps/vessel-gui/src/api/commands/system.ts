@@ -4,6 +4,7 @@ import type {
   AuthResult,
   CaptchaChallenge,
   CloudSyncResult,
+  DiscordRpcSettings,
   DownloadBatchResult,
   FullState,
   LoginRequest,
@@ -18,7 +19,7 @@ import type {
   SaveUserSettingsResponse,
 } from "../types";
 
-export type { CloudSyncResult, DownloadBatchResult, SyncedUserSettings, UserSettingsResponse, SaveUserSettingsRequest, SaveUserSettingsResponse };
+export type { CloudSyncResult, DiscordRpcSettings, DownloadBatchResult, SyncedUserSettings, UserSettingsResponse, SaveUserSettingsRequest, SaveUserSettingsResponse };
 
 export async function getState(): Promise<FullState> {
   return invoke<FullState>("get_state");
@@ -46,6 +47,16 @@ export async function getDiscordRpc(): Promise<boolean> {
 
 export async function setDiscordRpc(enabled: boolean): Promise<void> {
   return invoke("set_discord_rpc", { enabled });
+}
+
+export async function getDiscordRpcSettings(): Promise<DiscordRpcSettings> {
+  return invoke<DiscordRpcSettings>("get_discord_rpc_settings");
+}
+
+export async function setDiscordRpcSettings(
+  settings: DiscordRpcSettings,
+): Promise<DiscordRpcSettings> {
+  return invoke<DiscordRpcSettings>("set_discord_rpc_settings", { settings });
 }
 
 export async function pickFolder(): Promise<string | null> {

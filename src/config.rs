@@ -199,6 +199,9 @@ pub struct AppConfig {
     pub discord_rpc: bool,
     #[serde(default)]
     pub discord_rpc_client_id: Option<String>,
+    /// Параметры отображения Discord Rich Presence
+    #[serde(default)]
+    pub discord_rpc_settings: DiscordRpcSettings,
     /// Учитывать треки из плейлистов в рекомендациях и персональных миксах
     #[serde(default = "default_include_playlists_in_recommendations")]
     pub include_playlists_in_recommendations: bool,
@@ -225,6 +228,44 @@ fn default_auto_fallback() -> bool {
 
 fn default_auto_cache() -> bool {
     true
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscordStatusFormat {
+    Artist,
+    Title,
+    ArtistTitle,
+    TitleArtist,
+    #[default]
+    #[serde(alias = "custom")]
+    App,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(default)]
+pub struct DiscordRpcSettings {
+    pub status_format: DiscordStatusFormat,
+    pub show_time: bool,
+    pub show_artwork: bool,
+    pub custom_artwork_url: String,
+    pub show_small_icon: bool,
+    pub show_paused: bool,
+    pub show_download_button: bool,
+}
+
+impl Default for DiscordRpcSettings {
+    fn default() -> Self {
+        Self {
+            status_format: DiscordStatusFormat::App,
+            show_time: true,
+            show_artwork: true,
+            custom_artwork_url: String::new(),
+            show_small_icon: true,
+            show_paused: true,
+            show_download_button: true,
+        }
+    }
 }
 
 fn default_discord_rpc() -> bool {
@@ -294,6 +335,7 @@ impl Default for AppConfig {
             },
             discord_rpc: true,
             discord_rpc_client_id: None,
+            discord_rpc_settings: DiscordRpcSettings::default(),
             include_playlists_in_recommendations: true,
             excluded_recommendation_playlist_ids: Vec::new(),
             auto_cache: true,

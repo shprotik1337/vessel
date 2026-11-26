@@ -72,6 +72,39 @@ pub async fn set_discord_rpc(core: CoreState<'_>, enabled: bool) -> Result<(), S
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_discord_rpc_settings(
+    core: CoreState<'_>,
+) -> Result<vessel_core::config::DiscordRpcSettings, String> {
+    let core = lock(&core);
+    Ok(core.config.discord_rpc_settings.clone())
+}
+
+#[tauri::command]
+pub async fn set_discord_rpc_settings(
+    core: CoreState<'_>,
+    mut settings: vessel_core::config::DiscordRpcSettings,
+) -> Result<vessel_core::config::DiscordRpcSettings, String> {
+    let trimmed_art = settings.custom_artwork_url.trim().to_string();
+    if !trimmed_art.is_empty() {
+        if !trimmed_art.starts_with("https://") {
+            return Err(
+                "URL обложки Discord должен начинаться с https:// (локальные файлы Discord не поддерживает)."
+                    .to_string(),
+            );
+        }
+        if trimmed_art.len() > 256 {
+            return Err("URL обложки Discord не должен превышать 256 символов.".to_string());
+        }
+    }
+    settings.custom_artwork_url = trimmed_art;
+
+    let mut core = lock(&core);
+    core.config.discord_rpc_settings = settings.clone();
+    core.app.config_dirty = true;
+    Ok(settings)
+}
+
 // ---------- Нативные диалоги и проводник ----------
 
 #[tauri::command]

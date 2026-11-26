@@ -98,6 +98,23 @@ export interface FullState {
   discord_rpc: boolean;
 }
 
+export type DiscordStatusFormat =
+  | "app"
+  | "artist"
+  | "title"
+  | "artist_title"
+  | "title_artist";
+
+export interface DiscordRpcSettings {
+  status_format: DiscordStatusFormat;
+  show_time: boolean;
+  show_artwork: boolean;
+  custom_artwork_url: string;
+  show_small_icon: boolean;
+  show_paused: boolean;
+  show_download_button: boolean;
+}
+
 export type AccountState =
   | { kind: "guest" }
   | { kind: "restoring" }
