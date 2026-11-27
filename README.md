@@ -21,7 +21,7 @@
 
 ## Установка
 
-Скачай установщик `Vessel_1.4.0_x64-setup.exe` из [Releases](https://github.com/shprotik1337/vessel/releases/latest) и запусти — NSIS-инсталлятор (~38 МБ) сделает всё сам. Инсталлятор включает всё необходимое для работы.
+Скачай установщик `Vessel_x64-setup.exe` из [Releases](https://github.com/shprotik1337/vessel/releases/latest) и запусти — NSIS-инсталлятор (~38 МБ) сделает всё сам. Инсталлятор включает всё необходимое для работы.
 
 ## Системные требования
 
@@ -37,7 +37,7 @@ npm install
 npm run tauri build
 ```
 
-Готовый NSIS-инсталлятор появится в `target/release/bundle/nsis/Vessel_1.4.0_x64-setup.exe`. Для сборки автономного бинарника без инсталлятора используйте `npm run tauri build -- --no-bundle`.
+Готовый NSIS-инсталлятор появится в `target/release/bundle/nsis/Vessel_x64-setup.exe`. Для сборки автономного бинарника без инсталлятора используйте `npm run tauri build -- --no-bundle`.
 
 Режим разработки с горячей перезагрузкой:
 
