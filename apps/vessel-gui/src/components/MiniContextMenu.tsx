@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { TrackRef } from "../api/types";
 import { t, type Lang } from "../i18n";
 import { useApp } from "../store";
-import { trackKey } from "../lib/utils";
+import { resolveArtworkUrl, trackKey } from "../lib/utils";
 import * as api from "../api/commands";
 
 export interface MiniContextMenuState {
@@ -41,6 +41,7 @@ export function MiniContextMenu({
   const track = menu?.track;
   const key = track ? trackKey(track) : "";
   const isFav = favoriteKeysSet && key ? favoriteKeysSet.has(key) : false;
+  const userPlaylists = (state?.playlists ?? []).filter((pl) => !pl.is_album);
 
   useEffect(() => {
     if (!menu) return;
@@ -230,6 +231,7 @@ export function MiniContextMenu({
                     zIndex: 99999,
                   }
             }
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
             {/* 1. Начать станцию */}
@@ -352,7 +354,11 @@ export function MiniContextMenu({
 
       {pickerTrack &&
         createPortal(
-          <div className="ov show" onClick={() => setPickerTrack(null)}>
+          <div
+            className="ov show"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setPickerTrack(null)}
+          >
             <div
               ref={pickerRef}
               className="playlist-picker-card"
@@ -369,19 +375,34 @@ export function MiniContextMenu({
                 </button>
               </div>
               <div className="playlist-picker-list">
-                {state?.playlists && state.playlists.length > 0 ? (
-                  state.playlists.map((pl) => (
-                    <div
-                      key={pl.id}
-                      className="playlist-picker-item"
-                      onClick={() => void handleAddToPlaylist(pl.id)}
-                    >
-                      <div className="pl-mark" style={{ background: "var(--elev)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, borderRadius: 3, width: 22, height: 22, flexShrink: 0 }}>
-                        ♫
+                {userPlaylists.length > 0 ? (
+                  userPlaylists.map((pl) => {
+                    const thumbUrl = resolveArtworkUrl(pl.cover_url ?? pl.tracks[0]?.artwork_url);
+                    return (
+                      <div
+                        key={pl.id}
+                        className="playlist-picker-item"
+                        onClick={() => void handleAddToPlaylist(pl.id)}
+                      >
+                        {thumbUrl ? (
+                          <div className="pl-mark" style={{ background: "var(--track)", overflow: "hidden", width: 22, height: 22, borderRadius: 3, flexShrink: 0 }}>
+                            <img
+                              src={thumbUrl}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="pl-mark" style={{ background: "var(--elev)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, borderRadius: 3, width: 22, height: 22, flexShrink: 0 }}>
+                            ♫
+                          </div>
+                        )}
+                        <span>{pl.title}</span>
                       </div>
-                      <span>{pl.title}</span>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div style={{ padding: "16px", color: "var(--text3)", textAlign: "center", fontSize: 13 }}>
                     {lang === "ru" ? "Нет созданных плейлистов" : "No playlists found"}

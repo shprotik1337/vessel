@@ -22,8 +22,6 @@ export function PlayerContextMenu({
   onRemoveTrack,
   lang,
 }: PlayerContextMenuProps) {
-  if (!menu) return null;
-
   return (
     <MiniContextMenu
       menu={menu}

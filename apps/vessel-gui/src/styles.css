@@ -5440,6 +5440,18 @@ body.vessel-block-dragging .section-slot-wrapper {
   position: relative;
   min-height: 100%;
   width: 100%;
+  padding-top: 0;
+  margin-top: -2px;
+}
+
+.content.player-dock-top .home-view-container {
+  margin-top: 0;
+}
+
+.content.player-dock-left .home-view-container,
+.content.player-dock-right .home-view-container {
+  padding-top: 14px;
+  margin-top: 0;
 }
 
 .home-rows-container {
@@ -5447,7 +5459,7 @@ body.vessel-block-dragging .section-slot-wrapper {
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  padding: 8px 0 0;
+  padding: 0;
 }
 
 .home-row-line {

@@ -231,18 +231,16 @@ function TrackRowComponent({
         <span className="c-time">{formatDuration(track.duration_ms)}</span>
       </div>
 
-      {menu && (
-        <MiniContextMenu
-          menu={{ track, x: menu.x, y: menu.y }}
-          onClose={() => setMenu(null)}
-          onPlayNext={handlePlayNext}
-          onRemoveTrack={onRemove ? () => onRemove(track) : undefined}
-          lang={lang}
-        />
-      )}
+      <MiniContextMenu
+        menu={menu ? { track, x: menu.x, y: menu.y } : null}
+        onClose={() => setMenu(null)}
+        onPlayNext={handlePlayNext}
+        onRemoveTrack={onRemove ? () => onRemove(track) : undefined}
+        lang={lang}
+      />
 
       {plPicker && createPortal(
-        <div className="ov show" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="ov show" onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
           <div
             ref={pickerRef}
             className="playlist-picker-card"
@@ -255,37 +253,40 @@ function TrackRowComponent({
               </button>
             </div>
             <div className="playlist-picker-list">
-              {state?.playlists.length === 0 && (
-                <div className="set-desc" style={{ padding: 12 }}>{t(lang, "trackrow.noPlaylists")}</div>
-              )}
-              {state?.playlists.map((p) => (
-                <div
-                  key={p.id}
-                  className="playlist-picker-item"
-                  onClick={() => addToPlaylist(p.id)}
-                >
-                  {p.cover_url || p.tracks[0]?.artwork_url ? (
-                    <div
-                      className="pl-mark"
-                      style={{ background: "var(--track)", overflow: "hidden" }}
-                    >
-                      <img
-                        src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              {(() => {
+                const userPlaylists = (state?.playlists ?? []).filter((p) => !p.is_album);
+                if (userPlaylists.length === 0) {
+                  return <div className="set-desc" style={{ padding: 12 }}>{t(lang, "trackrow.noPlaylists")}</div>;
+                }
+                return userPlaylists.map((p) => (
+                  <div
+                    key={p.id}
+                    className="playlist-picker-item"
+                    onClick={() => addToPlaylist(p.id)}
+                  >
+                    {p.cover_url || p.tracks[0]?.artwork_url ? (
+                      <div
+                        className="pl-mark"
+                        style={{ background: "var(--track)", overflow: "hidden" }}
+                      >
+                        <img
+                          src={resolveArtworkUrl(p.cover_url ?? p.tracks[0]?.artwork_url) ?? ""}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className="pl-mark"
+                        style={{ background: `var(--track${((p.tracks.length % 4) + 1)})` }}
                       />
-                    </div>
-                  ) : (
-                    <div
-                      className="pl-mark"
-                      style={{ background: `var(--track${((p.tracks.length % 4) + 1)})` }}
-                    />
-                  )}
-                  {p.title}
-                </div>
-              ))}
+                    )}
+                    {p.title}
+                  </div>
+                ));
+              })()}
             </div>
           </div>
         </div>,

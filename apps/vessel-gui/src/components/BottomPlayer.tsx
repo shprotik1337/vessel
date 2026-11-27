@@ -166,11 +166,11 @@ export function BottomPlayer() {
     : activePosMs;
 
   const onPlayerBarPointerDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (!isProgressFill) return;
+    if (!isProgressFill || e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (
       target.closest(
-        "button, a, input, .vol, .vol-bar, .pl-title-link, .pl-artist-link, .pl-art, .heart, .ctrl-btn, .p-play"
+        "button, a, input, .vol, .vol-bar, .pl-title-link, .pl-artist-link, .pl-art, .heart, .ctrl-btn, .p-play, .pl-actions-row, .mini-ctx-menu, .ov, .playlist-picker-card, .eq-popover, .err-banner"
       )
     ) {
       return;
@@ -475,9 +475,10 @@ export function BottomPlayer() {
     ? `${track?.title ?? ""} — не удалось воспроизвести`
     : null;
   return (
-    <footer
-      ref={footerRef}
-      onPointerDown={onPlayerBarPointerDown}
+    <>
+      <footer
+        ref={footerRef}
+        onPointerDown={onPlayerBarPointerDown}
       className={`player ${failed ? "playback-error" : ""} ${
         config.player?.position === "top"
           ? "dock-top"
@@ -745,26 +746,25 @@ export function BottomPlayer() {
           </div>
         </button>
       </div>
-
-
-
-      {isEqOpen && (
-        <EqualizerPopover
-          lang={lang}
-          onClose={() => setIsEqOpen(false)}
-          anchorRef={eqBtnRef}
-        />
-      )}
-
-      <PlayerContextMenu
-        menu={ctxMenu}
-        onClose={() => setCtxMenu(null)}
-        onPlayNext={(t) => void handleCtxPlayNext(t)}
-        onToggleFavorite={(t) => void handleCtxToggleFav(t)}
-        onCacheTrack={(t) => void handleCtxCache(t)}
-        isFav={Boolean(ctxMenu && state && isFavorite(state.library, ctxMenu.track))}
-        lang={lang}
-      />
     </footer>
+
+    {isEqOpen && (
+      <EqualizerPopover
+        lang={lang}
+        onClose={() => setIsEqOpen(false)}
+        anchorRef={eqBtnRef}
+      />
+    )}
+
+    <PlayerContextMenu
+      menu={ctxMenu}
+      onClose={() => setCtxMenu(null)}
+      onPlayNext={(t) => void handleCtxPlayNext(t)}
+      onToggleFavorite={(t) => void handleCtxToggleFav(t)}
+      onCacheTrack={(t) => void handleCtxCache(t)}
+      isFav={Boolean(ctxMenu && state && isFavorite(state.library, ctxMenu.track))}
+      lang={lang}
+    />
+    </>
   );
 }
