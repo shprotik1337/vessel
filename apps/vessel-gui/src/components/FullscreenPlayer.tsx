@@ -70,7 +70,7 @@ export function FullscreenPlayer() {
     refresh,
     showToast,
     lang,
-    defaultProvider: config.player?.defaultLyricsProvider,
+    defaultProvider: "Vessel",
   });
 
   const [visualMode, setVisualMode] = useState<VisualMode>(() => {
@@ -210,11 +210,6 @@ export function FullscreenPlayer() {
       <FullscreenHeader
         onClose={() => setFullscreenOpen(false)}
         lang={lang}
-        availableProviders={lyrics.availableProviders}
-        activeProvider={lyrics.activeProvider}
-        onSelectProvider={lyrics.selectProvider}
-        onNextProvider={lyrics.nextProvider}
-        onPrevProvider={lyrics.prevProvider}
         visualMode={visualMode}
         onSetVisualMode={handleSetVisualMode}
         blurEnabled={blurEnabled}

@@ -1,5 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
-import type { LyricsCandidateOption } from "../../lib/lyrics";
+import { useState, useRef, useEffect } from "react";
 import {
   loadLyricsTypography,
   saveLyricsTypography,
@@ -11,11 +10,6 @@ import {
 export type VisualMode = "full" | "balanced";
 
 export interface LyricsProviderIslandProps {
-  availableProviders: LyricsCandidateOption[];
-  activeProvider: string;
-  onSelectProvider: (provider: string) => void;
-  onNext: () => void;
-  onPrev: () => void;
   visualMode?: VisualMode;
   onSetVisualMode?: (mode: VisualMode) => void;
   blurEnabled?: boolean;
@@ -41,18 +35,12 @@ const VISUAL_MODES = [
 ];
 
 export function LyricsProviderIsland({
-  availableProviders,
-  activeProvider,
-  onSelectProvider,
-  onNext,
-  onPrev,
   visualMode = "full",
   onSetVisualMode,
   blurEnabled = true,
   onToggleBlur,
   lang = "ru",
 }: LyricsProviderIslandProps) {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [visualQualityOpen, setVisualQualityOpen] = useState(false);
   const [typo, setTypo] = useState<LyricsTypography>(() => loadLyricsTypography());
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -88,16 +76,14 @@ export function LyricsProviderIsland({
   };
 
   useEffect(() => {
-    if (!dropdownOpen && !visualQualityOpen) return;
+    if (!visualQualityOpen) return;
     const onMouseDown = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
         setVisualQualityOpen(false);
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setDropdownOpen(false);
         setVisualQualityOpen(false);
       }
     };
@@ -107,154 +93,32 @@ export function LyricsProviderIsland({
       document.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [dropdownOpen, visualQualityOpen]);
+  }, [visualQualityOpen]);
 
-  // Filter out any stale Polaris Mono entries if any remain in cache
-  const cleanProviders = (availableProviders || []).filter(
-    (p) => p.provider !== "Polaris Mono" && p.provider !== "Polaris"
-  );
-
-  if (cleanProviders.length === 0) {
+  if (!onSetVisualMode && !onToggleBlur) {
     return null;
   }
 
-  // Find candidate for activeProvider
-  const currentOption =
-    cleanProviders.find((p) => p.provider === activeProvider) ||
-    cleanProviders.find((p) => p.isMeta) ||
-    cleanProviders[0];
-
-  const hasMultiple = cleanProviders.length > 1;
-  const currentIndex = Math.max(
-    0,
-    cleanProviders.findIndex((p) => p.provider === currentOption?.provider)
-  );
-
-  const handlePrev = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (hasMultiple) onPrev();
-  };
-
-  const handleNext = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (hasMultiple) onNext();
-  };
-
-  // Display label: strictly "Vessel" for meta-candidate (no parentheses!), or provider name
-  const displayLabel =
-    currentOption?.isMeta || currentOption?.provider === "Vessel"
-      ? "Vessel"
-      : currentOption?.provider || "Lyrics";
-
   return (
     <div ref={containerRef} className="fs-lyrics-island">
-      {(onSetVisualMode || onToggleBlur) && (
-        <>
-          <button
-            type="button"
-            className={`fs-island-blur-btn ${visualMode === "full" || blurEnabled ? "active" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onSetVisualMode) {
-                setVisualQualityOpen((prev) => !prev);
-                setDropdownOpen(false);
-              } else if (onToggleBlur) {
-                onToggleBlur();
-              }
-            }}
-            title={lang === "ru" ? "Качество визуалов" : "Visual quality"}
-            aria-label="Visual quality"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z" />
-            </svg>
-          </button>
-          <span className="fs-island-divider" />
-        </>
-      )}
-
-      {hasMultiple && (
-        <button
-          type="button"
-          className="fs-island-nav-btn"
-          onClick={handlePrev}
-          title="Предыдущий источник"
-          aria-label="Previous provider"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-      )}
-
       <button
         type="button"
-        className={`fs-island-main-btn ${hasMultiple ? "interactive" : ""}`}
+        className={`fs-island-blur-btn ${visualMode === "full" || blurEnabled ? "active" : ""}`}
         onClick={(e) => {
           e.stopPropagation();
-          if (hasMultiple) {
-            setDropdownOpen((prev) => !prev);
-            setVisualQualityOpen(false);
+          if (onSetVisualMode) {
+            setVisualQualityOpen((prev) => !prev);
+          } else if (onToggleBlur) {
+            onToggleBlur();
           }
         }}
-        title="Выбрать источник текста"
+        title={lang === "ru" ? "Настройка текста и визуалов" : "Lyrics & visual settings"}
+        aria-label="Lyrics and visual settings"
       >
-        <span className="fs-island-provider-name">{displayLabel}</span>
-        {hasMultiple && (
-          <span className="fs-island-count-badge">
-            {currentIndex + 1}/{cleanProviders.length}
-          </span>
-        )}
-        {hasMultiple && (
-          <svg
-            className={`fs-island-chevron ${dropdownOpen ? "open" : ""}`}
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        )}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2L14.4 8.6L21 11L14.4 13.4L12 20L9.6 13.4L3 11L9.6 8.6L12 2Z" />
+        </svg>
       </button>
-
-      {hasMultiple && (
-        <button
-          type="button"
-          className="fs-island-nav-btn"
-          onClick={handleNext}
-          title="Следующий источник"
-          aria-label="Next provider"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
-      )}
 
       {/* Visual Quality Popover */}
       {visualQualityOpen && onSetVisualMode && (
@@ -394,47 +258,6 @@ export function LyricsProviderIsland({
               {lang === "ru" ? "Сбросить" : "Reset"}
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Clean compact provider dropdown */}
-      {dropdownOpen && hasMultiple && (
-        <div className="fs-island-dropdown" onClick={(e) => e.stopPropagation()}>
-          {cleanProviders.map((item, idx) => {
-            const isItemActive =
-              currentOption?.provider === item.provider ||
-              (item.isMeta && currentOption?.isMeta);
-            const label = item.isMeta ? "Vessel" : item.provider;
-
-            return (
-              <button
-                key={`${item.provider}-${idx}`}
-                type="button"
-                className={`fs-island-item ${isItemActive ? "active" : ""}`}
-                onClick={() => {
-                  onSelectProvider(item.provider);
-                  setDropdownOpen(false);
-                }}
-              >
-                <span className="fs-island-item-name">{label}</span>
-                {isItemActive && (
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="fs-island-item-check"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-              </button>
-            );
-          })}
         </div>
       )}
     </div>

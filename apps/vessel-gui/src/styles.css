@@ -1533,10 +1533,21 @@ button{font-family:inherit}
 .ctrl-btn.active::after{content:"";display:block;width:3px;height:3px;border-radius:50%;background:var(--accent, var(--text));margin:2px auto 0}
 .ctrl-btn.muted{color:var(--text3)}
 .ctrl-btn .rep-one{position:absolute;font-size:8px;font-weight:700;right:-2px;bottom:-2px;background:#000;border-radius:50%;width:10px;height:10px;display:flex;align-items:center;justify-content:center;line-height:1;color:var(--text)}
-.p-play{width:32px;height:32px;border-radius:16px;background:var(--accent, var(--text));color:#0B0B0C;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;opacity:1;transition:transform .12s ease}
-.p-play:hover{transform:scale(1.06)}
-.p-play:active{transform:scale(.94)}
-.p-play svg{width:15px;height:15px}
+.ctrl-btn.skip-btn{width:36px;height:36px;padding:0;background:transparent;border:none;border-radius:0;box-shadow:none;opacity:.72;filter:drop-shadow(0 1px 3px rgba(0,0,0,.32));transition:opacity 140ms ease,color 140ms ease}
+.ctrl-btn.skip-btn svg{width:20px;height:20px}
+.ctrl-btn.skip-btn:hover{opacity:1;transform:none}
+.ctrl-btn.skip-btn:active{opacity:.55;transform:none}
+.p-play{width:40px;height:40px;border-radius:50%;background:#eaeaef;color:#121215;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border:none;opacity:1;box-shadow:0 2px 10px rgba(0,0,0,.3);transition:background-color 140ms ease,box-shadow 140ms ease}
+.p-play:hover{background:#ffffff;box-shadow:0 2px 14px rgba(0,0,0,.36);transform:none}
+.p-play:active{background:#d8d8df;transform:none}
+.p-play svg{width:20px;height:20px}
+.np-skip-btn{width:36px;height:36px;padding:0;background:transparent;border:none;border-radius:0;box-shadow:none;color:var(--text,#ffffff);opacity:.72;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.32));transition:opacity 140ms ease,color 140ms ease}
+.np-skip-btn svg{width:20px;height:20px}
+.np-skip-btn:hover{opacity:1}
+.np-skip-btn:active{opacity:.55}
+.np-play-btn{width:44px;height:44px;border-radius:50%;background:#eaeaef;color:#121215;border:none;padding:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3);transition:background-color 140ms ease,box-shadow 140ms ease;flex-shrink:0}
+.np-play-btn:hover{background:#ffffff;box-shadow:0 2px 14px rgba(0,0,0,.36)}
+.np-play-btn:active{background:#d8d8df}
 .pl-right{grid-column:3;grid-row:1;display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;justify-self:end}
 .pl-right .divider{width:1px;height:18px;background:var(--border)}
 .vol{display:flex;align-items:center;gap:8px;color:var(--text2)}
@@ -1814,49 +1825,39 @@ button{font-family:inherit}
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
-/* Fullscreen Lyrics Provider Island */
+/* Fullscreen Lyrics Settings Button */
 .fs-lyrics-island {
   position: relative;
   display: inline-flex;
   align-items: center;
-  height: 28px;
-  min-height: 28px;
-  max-height: 28px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: none !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   user-select: none;
-  gap: 2px;
-  box-sizing: border-box;
 }
 
 .fs-island-blur-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  min-height: 22px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text3, rgba(255, 255, 255, 0.45));
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none !important;
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background 0.14s ease, color 0.14s ease;
   padding: 0;
 }
 
 .fs-island-blur-btn:hover {
-  background: var(--hover, rgba(255, 255, 255, 0.12));
-  color: var(--text, #fff);
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
 }
 
 .fs-island-blur-btn.active {
-  color: var(--text, #ffffff);
+  color: #ffffff;
 }
 
 .fs-island-divider {
@@ -2628,12 +2629,14 @@ button{font-family:inherit}
   font-variant-numeric: tabular-nums;
 }
 
-/* Controls */
+/* Controls: compact centered 5-button group */
 .fs-controls {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px;
+  justify-content: center;
+  gap: clamp(8px, 1.2vw, 16px);
+  padding: 2px 0;
+  margin-top: calc(-1 * clamp(4px, 0.9vh, 10px));
 }
 
 .fs-ctrl-btn {
@@ -2641,7 +2644,9 @@ button{font-family:inherit}
   border: none;
   color: rgba(255, 255, 255, 0.75);
   cursor: pointer;
-  padding: clamp(6px, 1vh, 10px);
+  width: 42px;
+  height: 42px;
+  padding: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -2650,9 +2655,43 @@ button{font-family:inherit}
   position: relative;
 }
 
+.fs-ctrl-btn > svg {
+  width: 22px;
+  height: 22px;
+}
+
 .fs-ctrl-btn:hover {
   color: #fff;
   transform: scale(1.12);
+}
+
+.fs-ctrl-btn.skip-btn {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #ffffff;
+  opacity: 0.78;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.22));
+  transition: opacity 150ms ease, color 150ms ease;
+}
+
+.fs-ctrl-btn.skip-btn > svg {
+  width: 28px;
+  height: 28px;
+}
+
+.fs-ctrl-btn.skip-btn:hover {
+  color: #ffffff;
+  opacity: 1;
+  transform: none;
+}
+
+.fs-ctrl-btn.skip-btn:active {
+  opacity: 0.55;
+  transform: none;
 }
 
 .fs-ctrl-btn.active {
@@ -2693,27 +2732,37 @@ button{font-family:inherit}
 }
 
 .fs-play-btn {
-  width: clamp(42px, min(4.6vw, 5.6vh), 60px);
-  height: clamp(42px, min(4.6vw, 5.6vh), 60px);
-  border-radius: 50%;
-  background: #ffffff;
-  color: #090b10;
+  width: clamp(48px, min(5.2vw, 6.4vh), 60px);
+  height: clamp(48px, min(5.2vw, 6.4vh), 60px);
+  border-radius: 0;
+  background: transparent !important;
+  color: #ffffff;
   border: none;
-  display: flex;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0.94;
+  box-shadow: none !important;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.28));
+  transition: opacity 150ms ease, color 150ms ease;
+}
+
+.fs-play-btn > svg {
+  width: clamp(32px, min(3.6vw, 4.4vh), 42px);
+  height: clamp(32px, min(3.6vw, 4.4vh), 42px);
 }
 
 .fs-play-btn:hover {
-  transform: scale(1.08);
-  box-shadow: 0 12px 28px rgba(255, 255, 255, 0.25);
+  opacity: 1;
+  transform: none;
+  box-shadow: none !important;
 }
 
 .fs-play-btn:active {
-  transform: scale(0.95);
+  opacity: 0.62;
+  transform: none;
 }
 
 /* Bottom Bar: Pure Volume Slider (Centered & Symmetrical, matching reference) */
@@ -2722,7 +2771,8 @@ button{font-family:inherit}
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 28px;
+  min-height: 24px;
+  margin-top: calc(-1 * clamp(2px, 0.6vh, 6px));
   box-sizing: border-box;
 }
 
@@ -3396,16 +3446,34 @@ braccato-lyrics .blyrics-container {
   .fs-time-row {
     font-size: 11px;
   }
+  .fs-controls {
+    gap: 8px;
+  }
   .fs-play-btn {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
+  }
+  .fs-play-btn > svg {
+    width: 34px;
+    height: 34px;
   }
   .fs-ctrl-btn {
-    padding: 6px;
+    width: 38px;
+    height: 38px;
+    padding: 0;
   }
-  .fs-ctrl-btn svg {
-    width: 18px;
-    height: 18px;
+  .fs-ctrl-btn > svg {
+    width: 20px;
+    height: 20px;
+  }
+  .fs-ctrl-btn.skip-btn {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+  }
+  .fs-ctrl-btn.skip-btn > svg {
+    width: 23px;
+    height: 23px;
   }
   .fs-bottom-bar {
     min-height: 24px;
@@ -3470,23 +3538,39 @@ braccato-lyrics .blyrics-container {
   .fs-progress-wrap {
     gap: 8px;
   }
-  .fs-play-btn {
-    width: 38px;
-    height: 38px;
+  .fs-controls {
+    gap: 6px;
+    margin-top: 0;
   }
-  .fs-play-btn svg {
+  .fs-play-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .fs-play-btn > svg {
+    width: 28px;
+    height: 28px;
+  }
+  .fs-ctrl-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+  }
+  .fs-ctrl-btn > svg {
     width: 18px;
     height: 18px;
   }
-  .fs-ctrl-btn {
-    padding: 4px;
+  .fs-ctrl-btn.skip-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
   }
-  .fs-ctrl-btn svg {
-    width: 16px;
-    height: 16px;
+  .fs-ctrl-btn.skip-btn > svg {
+    width: 20px;
+    height: 20px;
   }
   .fs-bottom-bar {
     min-height: 20px;
+    margin-top: 0;
   }
   .fs-vol-btn svg {
     width: 16px;
@@ -8763,32 +8847,35 @@ body.vessel-block-dragging .section-slot-wrapper {
 .player.bg-theme .p-play,
 .player.bg-dominant .p-play,
 .player.bg-blur .p-play {
-  background: #ffffff !important;
-  color: #000000 !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+  background: #eaeaef !important;
+  color: #121215 !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
+  transition: background-color 140ms ease, box-shadow 140ms ease !important;
 }
 
 .player .p-play svg,
 .player.bg-theme .p-play svg,
 .player.bg-dominant .p-play svg,
 .player.bg-blur .p-play svg {
-  fill: #000000 !important;
-  color: #000000 !important;
+  fill: currentColor !important;
+  color: #121215 !important;
 }
 
 .player .p-play:hover,
 .player.bg-theme .p-play:hover,
 .player.bg-dominant .p-play:hover,
 .player.bg-blur .p-play:hover {
-  background: #f2f2f2 !important;
-  transform: scale(1.06) !important;
+  background: #ffffff !important;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.36) !important;
+  transform: none !important;
 }
 
 .player .p-play:active,
 .player.bg-theme .p-play:active,
 .player.bg-dominant .p-play:active,
 .player.bg-blur .p-play:active {
-  transform: scale(0.94) !important;
+  background: #d8d8df !important;
+  transform: none !important;
 }
 
 .player.bg-dominant {

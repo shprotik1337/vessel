@@ -16,7 +16,6 @@ interface CompactLyricsProps {
 }
 
 function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
-  const { config } = useCustomization();
   const progress = usePlaybackProgress();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -60,9 +59,8 @@ function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
       .then((res) => {
         if (!cancelled) {
           if (res.candidates && res.candidates.length > 0) {
-            const preferred = config.player?.defaultLyricsProvider || "Vessel";
             const candidate =
-              res.candidates.find((c) => c.provider === preferred || (preferred === "Vessel" && c.isMeta)) ||
+              res.candidates.find((c) => c.provider === "Vessel" || c.isMeta) ||
               res.candidates[0];
             const parsed = parseCandidateToLyricsData(candidate, durSecs);
             setLyrics(parsed);

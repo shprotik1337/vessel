@@ -16,14 +16,16 @@ export const SHUFFLE_SVG = (
 );
 
 export const PREV_SVG = (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M6 5h2v14H6zM20 5v14l-11-7z" />
+  <svg width="23" height="23" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <rect x="4.5" y="5.5" width="2.4" height="13" rx="1.2" />
+    <path d="M17.75 6.1C18.58 5.58 19.65 6.18 19.65 7.15V16.85C19.65 17.82 18.58 18.42 17.75 17.9L9.65 13.05C8.85 12.57 8.85 11.43 9.65 10.95L17.75 6.1Z" />
   </svg>
 );
 
 export const NEXT_SVG = (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M16 5h2v14h-2zM4 5v14l11-7z" />
+  <svg width="23" height="23" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M6.25 6.1C5.42 5.58 4.35 6.18 4.35 7.15V16.85C4.35 17.82 5.42 18.42 6.25 17.9L14.35 13.05C15.15 12.57 15.15 11.43 14.35 10.95L6.25 6.1Z" />
+    <rect x="17.1" y="5.5" width="2.4" height="13" rx="1.2" />
   </svg>
 );
 

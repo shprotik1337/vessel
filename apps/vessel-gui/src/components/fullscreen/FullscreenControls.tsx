@@ -9,10 +9,9 @@ import {
   SHUFFLE_SVG,
   PREV_SVG,
   NEXT_SVG,
-  PLAY_SVG,
-  PAUSE_SVG,
   REPEAT_SVG,
 } from "../../pages/player/playerIcons";
+import { MorphPlayIcon } from "../MorphPlayIcon";
 import { usePlayerVolume } from "../../pages/player/usePlayerVolume";
 import { usePlayerProgress } from "../../pages/player/usePlayerProgress";
 
@@ -186,7 +185,7 @@ export function FullscreenControls({
           {smartShuffle && <span className="fs-smart-sparkle"><IconSparkle size={12} /></span>}
         </button>
         <button
-          className="fs-ctrl-btn"
+          className="fs-ctrl-btn skip-btn"
           onClick={onPrev}
           title={t(lang, "bottom.previous")}
           aria-label="Previous"
@@ -199,10 +198,10 @@ export function FullscreenControls({
           title={t(lang, "bottom.playPause")}
           aria-label={playing ? "Pause" : "Play"}
         >
-          {playing ? PAUSE_SVG : PLAY_SVG}
+          <MorphPlayIcon playing={playing} size={42} />
         </button>
         <button
-          className="fs-ctrl-btn"
+          className="fs-ctrl-btn skip-btn"
           onClick={onNext}
           title={t(lang, "bottom.next")}
           aria-label="Next"

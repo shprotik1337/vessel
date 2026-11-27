@@ -4,13 +4,12 @@ import { t, type Lang } from "../../i18n";
 import { Artwork } from "../../components/Artwork";
 import { PlatformSwitchMenu } from "../../components/PlatformSwitchMenu";
 import { IconSparkle } from "../../components/Icons";
+import { MorphPlayIcon } from "../../components/MorphPlayIcon";
 import {
   HEART_SVG,
   SHUFFLE_SVG,
   PREV_SVG,
   NEXT_SVG,
-  PLAY_SVG,
-  PAUSE_SVG,
   REPEAT_SVG,
   VOLUME_SVG,
   MUTE_SVG,
@@ -273,36 +272,29 @@ export function PlayerNowPlayingCard({
                   )}
                 </button>
                 <button
+                  type="button"
+                  className="np-skip-btn"
                   onClick={onPrev}
-                  style={{ background: "none", border: "none", color: "var(--text, #fff)", cursor: "pointer", padding: 4, display: "flex" }}
                   title={t(lang, "bottom.previous")}
+                  aria-label="Previous"
                 >
                   {PREV_SVG}
                 </button>
                 <button
+                  type="button"
+                  className="np-play-btn"
                   onClick={onToggle}
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 22,
-                    background: "#ffffff",
-                    color: "#0b0b0d",
-                    border: "none",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-                    transition: "transform 0.12s ease",
-                  }}
                   title={playing ? "Пауза" : "Воспроизвести"}
+                  aria-label={playing ? "Pause" : "Play"}
                 >
-                  {playing ? PAUSE_SVG : PLAY_SVG}
+                  <MorphPlayIcon playing={playing} size={22} />
                 </button>
                 <button
+                  type="button"
+                  className="np-skip-btn"
                   onClick={onNext}
-                  style={{ background: "none", border: "none", color: "var(--text, #fff)", cursor: "pointer", padding: 4, display: "flex" }}
                   title={t(lang, "bottom.next")}
+                  aria-label="Next"
                 >
                   {NEXT_SVG}
                 </button>

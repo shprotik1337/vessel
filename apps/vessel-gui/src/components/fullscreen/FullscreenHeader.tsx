@@ -1,6 +1,5 @@
 import type { Lang } from "../../i18n";
 import { t } from "../../i18n";
-import type { LyricsCandidateOption } from "../../lib/lyrics";
 import { LyricsProviderIsland } from "./LyricsProviderIsland";
 
 export const CLOSE_SVG = (
@@ -13,11 +12,6 @@ export const CLOSE_SVG = (
 export interface FullscreenHeaderProps {
   onClose: () => void;
   lang: Lang;
-  availableProviders?: LyricsCandidateOption[];
-  activeProvider?: string;
-  onSelectProvider?: (provider: string) => void;
-  onNextProvider?: () => void;
-  onPrevProvider?: () => void;
   visualMode?: "full" | "balanced";
   onSetVisualMode?: (mode: "full" | "balanced") => void;
   blurEnabled?: boolean;
@@ -27,34 +21,18 @@ export interface FullscreenHeaderProps {
 export function FullscreenHeader({
   onClose,
   lang,
-  availableProviders,
-  activeProvider,
-  onSelectProvider,
-  onNextProvider,
-  onPrevProvider,
   visualMode = "full",
   onSetVisualMode,
   blurEnabled,
   onToggleBlur,
 }: FullscreenHeaderProps) {
-  const showIsland =
-    availableProviders &&
-    availableProviders.length > 0 &&
-    activeProvider &&
-    onSelectProvider &&
-    onNextProvider &&
-    onPrevProvider;
+  const showLyricsSettings = Boolean(onSetVisualMode || onToggleBlur);
 
   return (
     <div className="fs-top-bar">
       <div className="fs-top-left">
-        {showIsland && (
+        {showLyricsSettings && (
           <LyricsProviderIsland
-            availableProviders={availableProviders}
-            activeProvider={activeProvider}
-            onSelectProvider={onSelectProvider}
-            onNext={onNextProvider}
-            onPrev={onPrevProvider}
             visualMode={visualMode}
             onSetVisualMode={onSetVisualMode}
             blurEnabled={blurEnabled}

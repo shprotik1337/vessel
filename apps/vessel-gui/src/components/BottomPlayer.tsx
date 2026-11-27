@@ -6,6 +6,7 @@ import { formatTime, isFavorite, filterValidArtists } from "../lib/utils";
 import { t } from "../i18n";
 import { Artwork } from "./Artwork";
 import { IconSparkle } from "./Icons";
+import { MorphPlayIcon } from "./MorphPlayIcon";
 import { EqualizerPopover } from "./player/EqualizerPopover";
 import { loadStoredEqualizer, isEqActive } from "./player/equalizerData";
 import { PlayerContextMenu, type ContextMenuState } from "../pages/player";
@@ -22,28 +23,21 @@ const SHUFFLE_SVG = (
 );
 
 const PREV_SVG = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <rect x="4.5" y="5.5" width="2.4" height="13" rx="1.2" />
+    <path d="M17.75 6.1C18.58 5.58 19.65 6.18 19.65 7.15V16.85C19.65 17.82 18.58 18.42 17.75 17.9L9.65 13.05C8.85 12.57 8.85 11.43 9.65 10.95L17.75 6.1Z" />
+  </svg>
 );
 
 const NEXT_SVG = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M6.25 6.1C5.42 5.58 4.35 6.18 4.35 7.15V16.85C4.35 17.82 5.42 18.42 6.25 17.9L14.35 13.05C15.15 12.57 15.15 11.43 14.35 10.95L6.25 6.1Z" />
+    <rect x="17.1" y="5.5" width="2.4" height="13" rx="1.2" />
+  </svg>
 );
 
 const REPEAT_SVG = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-);
-
-const PLAY_SVG = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="#000000" style={{ fill: "#000000", color: "#000000", display: "block" }}>
-    <polygon points="7 4 19 12 7 20" />
-  </svg>
-);
-
-const PAUSE_SVG = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="#000000" style={{ fill: "#000000", color: "#000000", display: "block" }}>
-    <rect x="6" y="4" width="4" height="16" rx="1.5" />
-    <rect x="14" y="4" width="4" height="16" rx="1.5" />
-  </svg>
 );
 
 const VOLUME_LOW_SVG = (
@@ -618,13 +612,13 @@ export function BottomPlayer() {
               {smartShuffle && <span className="smart-sparkle-badge"><IconSparkle size={10} /></span>}
             </button>
           )}
-          <button className="ctrl-btn" onClick={handlePrev} title={t(lang, "bottom.previous")} aria-label="Previous">
+          <button className="ctrl-btn skip-btn" onClick={handlePrev} title={t(lang, "bottom.previous")} aria-label="Previous">
             {PREV_SVG}
           </button>
           <button className="p-play" onClick={handleToggle} title={t(lang, "bottom.playPause")} type="button" aria-label={playing ? "Pause" : "Play"}>
-            {playing ? PAUSE_SVG : PLAY_SVG}
+            <MorphPlayIcon playing={playing} size={20} />
           </button>
-          <button className="ctrl-btn" onClick={handleNext} title={t(lang, "bottom.next")} aria-label="Next">
+          <button className="ctrl-btn skip-btn" onClick={handleNext} title={t(lang, "bottom.next")} aria-label="Next">
             {NEXT_SVG}
           </button>
           {!isProgressFill && (
