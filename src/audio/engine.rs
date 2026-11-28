@@ -53,6 +53,8 @@ pub struct AudioEngine {
     crossfade_ms: Arc<AtomicU32>,
     agc_enabled: Arc<AtomicBool>,
     equalizer: Arc<crate::audio::equalizer::SharedEqualizer>,
+    preamp_db: Arc<AtomicU32>,
+    speed_rate: Arc<AtomicU32>,
     output_rate: u32,
     output_channels: usize,
     output_name: String,
@@ -84,6 +86,8 @@ impl AudioEngine {
         let crossfade_ms = Arc::new(AtomicU32::new(0));
         let agc_enabled = Arc::new(AtomicBool::new(false));
         let equalizer = crate::audio::equalizer::SharedEqualizer::new();
+        let preamp_db = Arc::new(AtomicU32::new(0.0f32.to_bits()));
+        let speed_rate = Arc::new(AtomicU32::new(1.0f32.to_bits()));
 
         // В колбэке нельзя устраивать сходку с мьютексами, аудиодрайвер за такое этапирует звук в лагерь 🫩
         let stream = build_stream(
@@ -101,6 +105,8 @@ impl AudioEngine {
             Arc::clone(&crossfade_ms),
             Arc::clone(&agc_enabled),
             Arc::clone(&equalizer),
+            Arc::clone(&preamp_db),
+            Arc::clone(&speed_rate),
         )?;
         stream.play().context("не удалось запустить аудиовыход")?;
 
@@ -120,6 +126,8 @@ impl AudioEngine {
             crossfade_ms,
             agc_enabled,
             equalizer,
+            preamp_db,
+            speed_rate,
             output_rate,
             output_channels,
             output_name,
@@ -140,6 +148,32 @@ impl AudioEngine {
 
     pub fn get_equalizer(&self) -> (bool, Vec<f32>) {
         self.equalizer.get_params()
+    }
+
+    pub fn set_preamp(&self, db: f32) {
+        let clamped = if db.is_finite() {
+            db.clamp(0.0, 12.0)
+        } else {
+            0.0
+        };
+        self.preamp_db.store(clamped.to_bits(), Ordering::Release);
+    }
+
+    pub fn preamp(&self) -> f32 {
+        f32::from_bits(self.preamp_db.load(Ordering::Acquire))
+    }
+
+    pub fn set_speed(&self, rate: f32) {
+        let clamped = if rate.is_finite() {
+            rate.clamp(0.5, 2.0)
+        } else {
+            1.0
+        };
+        self.speed_rate.store(clamped.to_bits(), Ordering::Release);
+    }
+
+    pub fn speed(&self) -> f32 {
+        f32::from_bits(self.speed_rate.load(Ordering::Acquire))
     }
 
     pub fn output_devices() -> Result<Vec<String>> {

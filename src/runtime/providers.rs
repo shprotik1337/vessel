@@ -110,6 +110,9 @@ pub fn build_provider(
             }
             Box::new(provider)
         }
+        ProviderKind::Local => {
+            anyhow::bail!("Локальные файлы воспроизводятся напрямую без сетевого провайдера")
+        }
     };
     Ok(provider)
 }
@@ -233,6 +236,7 @@ fn apply_provider_routing(
             ProviderKind::Deezer => config.deezer_enabled,
             ProviderKind::Spotify => config.spotify_enabled,
             ProviderKind::YouTubeMusic => config.youtube_music_enabled,
+            ProviderKind::Local => false,
         };
         if !is_enabled {
             continue;

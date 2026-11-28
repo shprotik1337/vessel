@@ -10,6 +10,8 @@ import { Library } from "./pages/Library";
 import { PlaylistDetail } from "./pages/Playlist";
 import { Queue } from "./pages/Queue";
 import { Favorites } from "./pages/Favorites";
+import { Downloads } from "./pages/Downloads";
+import { LocalTracks } from "./pages/LocalTracks";
 import { Recent } from "./pages/Recent";
 import { Settings } from "./pages/Settings";
 import { Artist } from "./pages/Artist";
@@ -264,6 +266,10 @@ function AppContent() {
         return <Queue />;
       case "favorites":
         return <Favorites />;
+      case "downloads":
+        return <Downloads />;
+      case "local":
+        return <LocalTracks />;
       case "recent":
         return <Recent />;
       case "settings":

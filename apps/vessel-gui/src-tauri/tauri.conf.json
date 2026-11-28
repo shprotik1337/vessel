@@ -23,7 +23,7 @@
         "fullscreen": false,
         "decorations": false,
         "devtools": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ],
     "security": {

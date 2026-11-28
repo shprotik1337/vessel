@@ -81,6 +81,7 @@ impl Runtime {
             ProviderKind::Deezer => self.config.deezer_enabled = enabled,
             ProviderKind::Spotify => self.config.spotify_enabled = enabled,
             ProviderKind::YouTubeMusic => self.config.youtube_music_enabled = enabled,
+            ProviderKind::Local => {}
         }
         self.reload_providers();
     }

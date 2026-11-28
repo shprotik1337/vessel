@@ -351,6 +351,18 @@ impl Runtime {
         }
     }
 
+    pub fn set_audio_preamp(&self, db: f32) {
+        if let Some(audio) = &self.audio {
+            audio.set_preamp(db);
+        }
+    }
+
+    pub fn set_playback_speed(&self, rate: f32) {
+        if let Some(audio) = &self.audio {
+            audio.set_speed(rate);
+        }
+    }
+
     #[allow(dead_code)]
     pub(super) fn start_playback(&mut self, track: TrackRef, actions: &mut Vec<Action>) {
         self.start_playback_with_cache_flag(track, true, actions);
@@ -376,6 +388,50 @@ impl Runtime {
             track.id,
             self.playback_resolver.source().as_str()
         );
+
+        // Локальные файлы (на устройстве или скачанные file:// треки) играются напрямую с диска.
+        if track.provider == ProviderKind::Local || track.web_url.scheme() == "file" {
+            let file_path = match track.web_url.to_file_path() {
+                Ok(p) if p.is_file() => p,
+                _ => {
+                    actions.push(Action::PlaybackFailed(format!(
+                        "Локальный файл для «{}» не найден на диске",
+                        track.title
+                    )));
+                    return;
+                }
+            };
+            let mut local_source = match crate::provider::cache::cache_file_source(&file_path) {
+                Ok(src) => src,
+                Err(error) => {
+                    actions.push(Action::PlaybackFailed(format!(
+                        "Не удалось открыть локальный файл «{}»: {error:#}",
+                        track.title
+                    )));
+                    return;
+                }
+            };
+            if local_source.duration_ms.is_none() {
+                local_source.duration_ms = track.duration_ms;
+            }
+            if let Some(audio) = &self.audio {
+                audio.reset();
+            }
+            self.current_track = Some(track);
+            self.current_track_started = false;
+            actions.push(Action::Audio(crate::audio::AudioEvent::Buffering));
+            let sender = self.sender.clone();
+            let generation = self.playback_generation;
+            self.playback_task = Some(tokio::spawn(async move {
+                let _ = sender.send(RuntimeMessage::PlaybackReady {
+                    generation,
+                    source: local_source,
+                    video_only_notice: None,
+                    replaced_track: None,
+                });
+            }));
+            return;
+        }
 
         // Выбор источника аудио: Spotify-треки играют через цепочку каталогов.
         // Ручной режим — один источник; «Автоматически» —

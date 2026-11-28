@@ -12,6 +12,8 @@ export const CLOSE_SVG = (
 export interface FullscreenHeaderProps {
   onClose: () => void;
   lang: Lang;
+  trackKey?: string;
+  hasWordSync?: boolean;
   visualMode?: "full" | "balanced";
   onSetVisualMode?: (mode: "full" | "balanced") => void;
   blurEnabled?: boolean;
@@ -21,6 +23,8 @@ export interface FullscreenHeaderProps {
 export function FullscreenHeader({
   onClose,
   lang,
+  trackKey = "",
+  hasWordSync = true,
   visualMode = "full",
   onSetVisualMode,
   blurEnabled,
@@ -33,6 +37,8 @@ export function FullscreenHeader({
       <div className="fs-top-left">
         {showLyricsSettings && (
           <LyricsProviderIsland
+            trackKey={trackKey}
+            hasWordSync={hasWordSync}
             visualMode={visualMode}
             onSetVisualMode={onSetVisualMode}
             blurEnabled={blurEnabled}

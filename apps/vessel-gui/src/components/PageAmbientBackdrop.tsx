@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, memo } from "react";
 import { createPortal } from "react-dom";
 import { useCustomization } from "../customization/CustomizationContext";
+import { isLightColor } from "../customization/colorUtils";
 
 export const LIBRARY_AMBIENT_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg width="1000" height="1000" viewBox="0 0 1000 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -34,13 +35,14 @@ export const PageAmbientBackdrop = memo(function PageAmbientBackdrop({
   const [mounted, setMounted] = useState(false);
 
   const hasWallpaper = Boolean(config.theme?.wallpaperData);
+  const isLightTheme = isLightColor(config.theme?.appBgColor || "#000000");
   const ambientMode = config.theme?.ambientMode ?? "dynamic";
   const isOff = hasWallpaper || ambientMode === "off";
   const isTheme = ambientMode === "theme";
 
   const effectiveSrc = isTheme
     ? null
-    : (url || (fallbackClass === "page-ambient-glow-fav" ? LIBRARY_AMBIENT_SVG : null));
+    : (url || (!isLightTheme && fallbackClass === "page-ambient-glow-fav" ? LIBRARY_AMBIENT_SVG : null));
 
   const [layers, setLayers] = useState<Layer[]>(() =>
     isOff
@@ -106,7 +108,7 @@ export const PageAmbientBackdrop = memo(function PageAmbientBackdrop({
                 key={layer.id}
                 className="page-ambient-layer-theme"
                 style={{
-                  opacity: isVisible ? 0.6 : 0,
+                  opacity: isVisible ? (isLightTheme ? 0.36 : 0.6) : 0,
                   transition: `opacity ${FADE_MS}ms ease-out`,
                 }}
               />
@@ -122,6 +124,7 @@ export const PageAmbientBackdrop = memo(function PageAmbientBackdrop({
               decoding="async"
               className={`page-ambient-layer-img ${isVisible ? "visible" : ""}`}
               style={{
+                opacity: isVisible ? (isLightTheme ? 0.44 : 0.78) : 0,
                 transition: `opacity ${FADE_MS}ms ease-out`,
               }}
             />

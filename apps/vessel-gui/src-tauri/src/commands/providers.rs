@@ -609,6 +609,7 @@ pub async fn set_provider_enabled(
         vessel_core::model::ProviderKind::Deezer => core.app.deezer_enabled = enabled,
         vessel_core::model::ProviderKind::Spotify => core.app.spotify_enabled = enabled,
         vessel_core::model::ProviderKind::YouTubeMusic => core.app.youtube_music_enabled = enabled,
+        vessel_core::model::ProviderKind::Local => {}
     }
     core.app.config_dirty = true;
     Ok(())

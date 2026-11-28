@@ -253,3 +253,27 @@ export async function authSaveUserSettings(req: SaveUserSettingsRequest): Promis
 export async function authSyncSettings(localSettings?: SyncedUserSettings | null): Promise<UserSettingsResponse> {
   return invoke<UserSettingsResponse>("auth_sync_settings", { localSettings: localSettings ?? null });
 }
+
+export async function getDownloadedTracks(): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("get_downloaded_tracks");
+}
+
+export async function removeDownloadedTrack(track: TrackRef): Promise<void> {
+  return invoke("remove_downloaded_track", { track });
+}
+
+export async function getLocalTracks(): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("get_local_tracks");
+}
+
+export async function pickAndAddLocalTracks(): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("pick_and_add_local_tracks");
+}
+
+export async function addLocalTrackPaths(paths: string[]): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("add_local_track_paths", { paths });
+}
+
+export async function removeLocalTrack(id: string): Promise<TrackRef[]> {
+  return invoke<TrackRef[]>("remove_local_track", { id });
+}

@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import type { TrackRef, PlayerState } from "../../api/types";
 import { formatTime, filterValidArtists } from "../../lib/utils";
 import { t, type Lang } from "../../i18n";
@@ -5,6 +6,9 @@ import { Artwork } from "../../components/Artwork";
 import { PlatformSwitchMenu } from "../../components/PlatformSwitchMenu";
 import { IconSparkle } from "../../components/Icons";
 import { MorphPlayIcon } from "../../components/MorphPlayIcon";
+import { EqualizerPopover } from "../../components/player/EqualizerPopover";
+import { loadStoredEqualizer, isAudioEffectsActive } from "../../components/player/equalizerData";
+import { usePlaybackRate } from "../../components/player/usePlaybackRate";
 import {
   HEART_SVG,
   SHUFFLE_SVG,
@@ -14,6 +18,7 @@ import {
   VOLUME_SVG,
   MUTE_SVG,
   EXPAND_SVG,
+  EQUALIZER_SVG,
 } from "./playerIcons";
 
 interface PlayerNowPlayingCardProps {
@@ -73,6 +78,11 @@ export function PlayerNowPlayingCard({
   onToggleFullscreen,
   onNavigateArtist,
 }: PlayerNowPlayingCardProps) {
+  const [isEqOpen, setIsEqOpen] = useState(false);
+  const eqBtnRef = useRef<HTMLButtonElement>(null);
+  usePlaybackRate();
+  const eqActive = isAudioEffectsActive(loadStoredEqualizer());
+
   return (
     <div
       className="player-main-card"
@@ -382,6 +392,36 @@ export function PlayerNowPlayingCard({
                 >
                   {EXPAND_SVG}
                 </button>
+
+                {/* Equalizer button */}
+                <button
+                  ref={eqBtnRef}
+                  type="button"
+                  onClick={() => setIsEqOpen((prev) => !prev)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: eqActive || isEqOpen ? "var(--accent, #ffffff)" : "var(--text3, rgba(255,255,255,0.5))",
+                    cursor: "pointer",
+                    padding: 4,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "color 0.15s ease, transform 0.12s ease",
+                  }}
+                  title={lang === "ru" ? "Эквалайзер" : "Equalizer"}
+                  aria-label="Equalizer"
+                >
+                  {EQUALIZER_SVG}
+                </button>
+
+                {isEqOpen && (
+                  <EqualizerPopover
+                    lang={lang}
+                    onClose={() => setIsEqOpen(false)}
+                    anchorRef={eqBtnRef}
+                  />
+                )}
 
                 {/* Volume slider */}
                 <div style={{ display: "flex", alignItems: "center", gap: 10, width: 130 }}>

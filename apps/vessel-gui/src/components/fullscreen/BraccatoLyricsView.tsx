@@ -1,6 +1,11 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useMemo } from "react";
 import type { Lyric } from "@braccato/parsers";
 import { braccatoVesselThemeCss } from "../../lib/lyricsEngine";
+import type {
+  LyricsAnimation,
+  LyricsSyncMode,
+  LyricsTextStyle,
+} from "./lyricsTypography";
 
 import "@braccato/core/element";
 import "@braccato/core/styles/variables.css";
@@ -13,6 +18,10 @@ export interface BraccatoLyricsViewProps {
   lyrics: Lyric[];
   curSeconds: number;
   isPlaying: boolean;
+  playbackRate?: number;
+  syncMode?: LyricsSyncMode;
+  textStyle?: LyricsTextStyle;
+  animation?: LyricsAnimation;
   onSeek: (seconds: number) => void;
   onUserScrollInteraction: () => void;
   onContainerScroll: (e: React.UIEvent<any>) => void;
@@ -23,17 +32,29 @@ export const BraccatoLyricsView: React.FC<BraccatoLyricsViewProps> = ({
   lyrics,
   curSeconds,
   isPlaying,
+  playbackRate = 1,
+  syncMode = "word",
+  textStyle = "default",
+  animation = "wave",
   onSeek,
   onUserScrollInteraction,
   onContainerScroll,
   scrolledTop,
 }) => {
+  const effectiveLyrics = useMemo(() => {
+    if (syncMode === "word") return lyrics;
+    return lyrics.map((line) => (line.parts?.length ? { ...line, parts: undefined } : line));
+  }, [lyrics, syncMode]);
+
   const elementRef = useRef<any>(null);
   const curSecondsRef = useRef(curSeconds);
   curSecondsRef.current = curSeconds;
 
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
+
+  const playbackRateRef = useRef(playbackRate);
+  playbackRateRef.current = playbackRate;
 
   const onSeekRef = useRef(onSeek);
   onSeekRef.current = onSeek;
@@ -85,7 +106,8 @@ export const BraccatoLyricsView: React.FC<BraccatoLyricsViewProps> = ({
       if (!el) return;
 
       el.theme = braccatoVesselThemeCss;
-      el.lyrics = lyrics;
+      el.lyrics = effectiveLyrics;
+      el.tickOptions = { playbackRate: playbackRateRef.current, lyricOffset: 0 };
       el.currentTime = curSecondsRef.current;
       el.playing = isPlayingRef.current;
 
@@ -132,28 +154,32 @@ export const BraccatoLyricsView: React.FC<BraccatoLyricsViewProps> = ({
         elementRef.current = null;
       };
     },
-    [lyrics, handleUserScroll, returnToFollowingMode]
+    [effectiveLyrics, handleUserScroll, returnToFollowingMode]
   );
 
-  // Update clock position on the Braccato element
+  // Update clock position & speed rate on the Braccato element
   useEffect(() => {
     const el = elementRef.current;
     if (el) {
+      el.tickOptions = { playbackRate, lyricOffset: 0 };
       el.currentTime = curSeconds;
       el.playing = isPlaying;
     }
-  }, [curSeconds, isPlaying]);
+  }, [curSeconds, isPlaying, playbackRate]);
 
-  // Update lyrics if lyrics change
+  // Update lyrics if lyrics or syncMode change
   useEffect(() => {
     const el = elementRef.current;
     if (el) {
-      el.lyrics = lyrics;
+      el.lyrics = effectiveLyrics;
     }
-  }, [lyrics]);
+  }, [effectiveLyrics]);
 
   return React.createElement(BRACCATO_TAG, {
     ref: setElement,
+    "data-lyrics-sync": syncMode,
+    "data-lyrics-style": textStyle,
+    "data-lyrics-anim": animation,
     className: `fs-lyrics-container ${scrolledTop ? "scrolled-top" : ""}`,
     onScroll: onContainerScroll,
     style: {

@@ -755,6 +755,7 @@ pub async fn get_or_generate_explore_content(
                     ProviderKind::YandexMusic => 20,
                     ProviderKind::SoundCloud => 10,
                     ProviderKind::YouTubeMusic => 5,
+                    ProviderKind::Local => 0,
                 };
                 let count = prov_artist_counts.get(&item.provider).copied().unwrap_or(0) as i32;
                 std::cmp::Reverse(match_score + quality_score - (count * 15))

@@ -622,3 +622,153 @@ pub async fn download_all_to_cache(
     let _ = app.emit("cache-complete", &final_res);
     Ok(final_res)
 }
+
+#[tauri::command]
+pub async fn get_downloaded_tracks(core: CoreState<'_>) -> Result<Vec<TrackRef>, String> {
+    use std::collections::{HashMap, HashSet};
+
+    let (known_tracks, download_dir_str) = {
+        let core = lock(&core);
+        let mut candidates = Vec::new();
+        // Приоритет: Избранное и плейлисты выше истории, чтобы обложки и провайдер не терялись
+        candidates.extend(core.app.library.iter().cloned());
+        for pl in &core.app.playlists {
+            candidates.extend(pl.tracks.iter().cloned());
+        }
+        if let Ok(hist) = core.storage.recent_history(2000) {
+            for h in hist {
+                candidates.push(h.track);
+            }
+        }
+        (candidates, resolve_download_dir(&core))
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut by_cache_key: HashMap<(ProviderKind, String), TrackRef> = HashMap::new();
+        for track in known_tracks {
+            let prefix_id: String = track
+                .id
+                .trim()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .take(64)
+                .collect();
+            if prefix_id.is_empty() {
+                continue;
+            }
+            by_cache_key.entry((track.provider, prefix_id)).or_insert(track);
+        }
+
+        let mut cached_entries = vessel_core::provider::cache::list_cached_entries();
+        // Сортируем так, чтобы Spotify / SoundCloud / Deezer / Yandex шли раньше YouTube-алиасов
+        cached_entries.sort_by_key(|e| match e.provider {
+            ProviderKind::Spotify => 0,
+            ProviderKind::SoundCloud => 1,
+            ProviderKind::Deezer => 2,
+            ProviderKind::YandexMusic => 3,
+            ProviderKind::YouTubeMusic => 4,
+            ProviderKind::Local => 5,
+        });
+
+        let mut result: Vec<TrackRef> = Vec::new();
+        let mut seen_canonical: HashSet<String> = HashSet::new();
+
+        // 1. Треки из офлайн-кэша (track-cache)
+        for entry in cached_entries {
+            let track = if let Some(found) = by_cache_key.get(&(entry.provider, entry.id_part.clone())) {
+                found.clone()
+            } else {
+                let meta = vessel_core::provider::cache::probe_audio_metadata(&entry.path);
+                let Ok(web_url) = url::Url::from_file_path(&entry.path) else {
+                    continue;
+                };
+                let fallback_title = entry
+                    .path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&entry.id_part)
+                    .to_string();
+                TrackRef {
+                    provider: entry.provider,
+                    id: entry.id_part,
+                    title: meta.title.unwrap_or(fallback_title),
+                    artists: meta.artist.into_iter().collect(),
+                    duration_ms: meta.duration_ms,
+                    artwork_url: None,
+                    web_url,
+                    capability: vessel_core::model::PlaybackCapability::Full,
+                    genres: Vec::new(),
+                    explicit: false,
+                    drm: false,
+                    isrc: None,
+                    origin: vessel_core::model::TrackOrigin::Original,
+                    album_url: None,
+                    album_title: meta.album,
+                }
+            };
+            let canon = track.canonical_key();
+            if seen_canonical.insert(canon) {
+                result.push(track);
+            }
+        }
+
+        // 2. Отдельные файлы, скачанные пользователем в папку загрузок (Музыка/Vessel)
+        let dl_dir = PathBuf::from(&download_dir_str);
+        if dl_dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&dl_dir) {
+                let mut files: Vec<_> = entries
+                    .flatten()
+                    .filter(|e| e.path().is_file())
+                    .collect();
+                files.sort_by_key(|e| {
+                    std::cmp::Reverse(
+                        e.metadata()
+                            .and_then(|m| m.modified())
+                            .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+                    )
+                });
+                for entry in files {
+                    let path = entry.path();
+                    let Ok(meta) = entry.metadata() else {
+                        continue;
+                    };
+                    if meta.len() < 32 * 1024 {
+                        continue;
+                    }
+                    if let Ok((_path_str, track)) = super::local::build_local_track_from_path(&path, "dl") {
+                        let canon = track.canonical_key();
+                        if seen_canonical.insert(canon) {
+                            result.push(track);
+                        }
+                    }
+                }
+            }
+        }
+
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_downloaded_track(core: CoreState<'_>, track: TrackRef) -> Result<(), String> {
+    if track.web_url.scheme() == "file" {
+        if let Ok(path) = track.web_url.to_file_path() {
+            let canonical_target = std::fs::canonicalize(&path).unwrap_or(path);
+            let allowed_cache = std::fs::canonicalize(vessel_core::provider::cache::track_cache_dir())
+                .unwrap_or_else(|_| vessel_core::provider::cache::track_cache_dir());
+            let dl_dir_str = {
+                let core = lock(&core);
+                resolve_download_dir(&core)
+            };
+            let allowed_dl = std::fs::canonicalize(&dl_dir_str).unwrap_or_else(|_| PathBuf::from(dl_dir_str));
+            if canonical_target.starts_with(&allowed_cache) || canonical_target.starts_with(&allowed_dl) {
+                let _ = std::fs::remove_file(&canonical_target);
+                return Ok(());
+            }
+        }
+    }
+    vessel_core::provider::cache::delete_cached_track(&track);
+    Ok(())
+}

@@ -3,6 +3,7 @@ pub mod cache;
 pub mod codec;
 pub mod history;
 pub mod library;
+pub mod local_tracks;
 pub mod playlist;
 pub mod queue;
 pub mod schema;
@@ -23,6 +24,7 @@ pub use queue::QueueSnapshot;
 pub use cache::RecommendationCacheRepository;
 pub use history::HistoryRepository;
 pub use library::LibraryRepository;
+pub use local_tracks::LocalTracksRepository;
 pub use playlist::PlaylistRepository;
 pub use queue::QueueRepository;
 
@@ -261,9 +263,32 @@ impl Storage {
             DELETE FROM history;
             DELETE FROM queue_tracks;
             DELETE FROM queue_state;
+            DELETE FROM local_tracks;
             ",
         )?;
         Ok(())
+    }
+
+    // --- Local Device Tracks ---
+
+    pub fn list_local_tracks(&self) -> Result<Vec<TrackRef>> {
+        let conn = self.connection()?;
+        LocalTracksRepository::list(&conn)
+    }
+
+    pub fn add_local_track(
+        &self,
+        file_path: &str,
+        track: &TrackRef,
+        added_at_ms: i64,
+    ) -> Result<bool> {
+        let conn = self.connection()?;
+        LocalTracksRepository::insert_if_missing(&conn, file_path, track, added_at_ms)
+    }
+
+    pub fn remove_local_track(&self, id: &str) -> Result<bool> {
+        let conn = self.connection()?;
+        LocalTracksRepository::remove_by_id(&conn, id)
     }
 
     pub fn get_cached_recommendation(

@@ -8,7 +8,8 @@ import { Artwork } from "./Artwork";
 import { IconSparkle } from "./Icons";
 import { MorphPlayIcon } from "./MorphPlayIcon";
 import { EqualizerPopover } from "./player/EqualizerPopover";
-import { loadStoredEqualizer, isEqActive } from "./player/equalizerData";
+import { loadStoredEqualizer, isAudioEffectsActive } from "./player/equalizerData";
+import { usePlaybackRate } from "./player/usePlaybackRate";
 import { PlayerContextMenu, type ContextMenuState } from "../pages/player";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
@@ -119,7 +120,17 @@ export function BottomPlayer() {
   const isVertical = config.player?.position === "left" || config.player?.position === "right";
   const isProgressFill = config.player?.style === "progress_fill";
   const effectiveHeight = isProgressFill ? 66 : 68;
+  const playbackRate = usePlaybackRate();
   const eqState = loadStoredEqualizer();
+  const eqActive = isAudioEffectsActive(eqState);
+
+  // Восстанавливаем глобальные настройки эквалайзера, усиления и скорости на старте приложения
+  useEffect(() => {
+    const initial = loadStoredEqualizer();
+    void api.setEqualizer(initial.enabled, initial.gains).catch(() => {});
+    void api.setAudioPreamp(initial.preampDb).catch(() => {});
+    void api.setPlaybackSpeed(initial.playbackRate).catch(() => {});
+  }, []);
 
   const track = state?.now_playing ?? null;
   const player = state?.player;
@@ -129,23 +140,33 @@ export function BottomPlayer() {
   const currentPosMs = progress.position_ms ?? player?.position_ms ?? 0;
 
   const [interpolatedPos, setInterpolatedPos] = useState(currentPosMs);
-  const syncRef = useRef({ pos: currentPosMs, time: Date.now() });
+  const syncRef = useRef({ pos: currentPosMs, time: Date.now(), rate: playbackRate });
 
   useEffect(() => {
-    syncRef.current = { pos: currentPosMs, time: Date.now() };
+    syncRef.current = { pos: currentPosMs, time: Date.now(), rate: playbackRate };
     setInterpolatedPos(currentPosMs);
   }, [currentPosMs, player?.status]);
 
   useEffect(() => {
+    const now = Date.now();
+    const prevElapsed = (now - syncRef.current.time) * syncRef.current.rate;
+    syncRef.current = {
+      pos: syncRef.current.pos + (player?.status === "playing" ? prevElapsed : 0),
+      time: now,
+      rate: playbackRate,
+    };
+  }, [playbackRate, player?.status]);
+
+  useEffect(() => {
     if (player?.status !== "playing") return;
     const interval = window.setInterval(() => {
-      const elapsed = Date.now() - syncRef.current.time;
+      const elapsed = (Date.now() - syncRef.current.time) * syncRef.current.rate;
       const cur = syncRef.current.pos + elapsed;
       const max = durationMs || Infinity;
       setInterpolatedPos(Math.min(max, cur));
     }, 60);
     return () => window.clearInterval(interval);
-  }, [player?.status, durationMs]);
+  }, [player?.status, durationMs, playbackRate]);
 
   if (!state || !player) return null;
 
@@ -696,8 +717,8 @@ export function BottomPlayer() {
         </div>
         <button
           ref={eqBtnRef}
-          className={`ctrl-btn eq-btn ${isEqActive(eqState.enabled, eqState.gains) ? "active" : "muted"}`}
-          style={isEqActive(eqState.enabled, eqState.gains) ? { color: "var(--accent)" } : undefined}
+          className={`ctrl-btn eq-btn ${eqActive ? "active" : "muted"}`}
+          style={eqActive ? { color: "var(--accent)" } : undefined}
           onClick={() => setIsEqOpen((prev) => !prev)}
           title={lang === "ru" ? "Эквалайзер" : "Equalizer"}
           aria-label="Equalizer"

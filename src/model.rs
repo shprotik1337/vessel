@@ -66,6 +66,7 @@ pub enum ProviderKind {
     Spotify,
     #[serde(rename = "youtube_music", alias = "you_tube_music")]
     YouTubeMusic,
+    Local,
 }
 
 impl ProviderKind {
@@ -93,6 +94,7 @@ impl ProviderKind {
             Self::Deezer => "Deezer",
             Self::Spotify => "Spotify",
             Self::YouTubeMusic => "YouTube Music",
+            Self::Local => "На устройстве",
         }
     }
 
@@ -103,6 +105,7 @@ impl ProviderKind {
             Self::Deezer => "deezer",
             Self::Spotify => "spotify",
             Self::YouTubeMusic => "youtube_music",
+            Self::Local => "local",
         }
     }
 }

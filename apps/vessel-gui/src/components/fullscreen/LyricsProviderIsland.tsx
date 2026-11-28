@@ -1,20 +1,58 @@
 import { useState, useRef, useEffect } from "react";
 import {
+  LYRICS_SETTINGS_EVENT,
   loadLyricsTypography,
   saveLyricsTypography,
   applyLyricsTypography,
+  loadTrackLyricOffset,
+  saveTrackLyricOffset,
+  formatLyricOffset,
+  LYRICS_OFFSET_MIN_MS,
+  LYRICS_OFFSET_MAX_MS,
+  LYRICS_OFFSET_STEP_MS,
   DEFAULT_LYRICS_TYPOGRAPHY,
   type LyricsTypography,
+  type LyricsSyncMode,
+  type LyricsTextStyle,
+  type LyricsAnimation,
 } from "./lyricsTypography";
 
 export type VisualMode = "full" | "balanced";
 
 export interface LyricsProviderIslandProps {
+  trackKey?: string;
+  hasWordSync?: boolean;
   visualMode?: VisualMode;
   onSetVisualMode?: (mode: VisualMode) => void;
   blurEnabled?: boolean;
   onToggleBlur?: () => void;
   lang?: string;
+}
+
+const SYNC_OPTIONS: { id: LyricsSyncMode; ru: string; en: string }[] = [
+  { id: "word", ru: "По словам", en: "By word" },
+  { id: "line", ru: "По строкам", en: "By line" },
+];
+
+const TEXT_STYLE_OPTIONS: { id: LyricsTextStyle; ru: string; en: string }[] = [
+  { id: "default", ru: "Обычный", en: "Default" },
+  { id: "cinema", ru: "Кино", en: "Cinema" },
+  { id: "shift", ru: "Сдвиг", en: "Shift" },
+  { id: "blur", ru: "Размытие", en: "Blur" },
+];
+
+const ANIMATION_OPTIONS: { id: LyricsAnimation; ru: string; en: string }[] = [
+  { id: "wave", ru: "Волна", en: "Wave" },
+  { id: "blur", ru: "Размытие", en: "Blur" },
+  { id: "flip3d", ru: "3D Переворот", en: "3D Flip" },
+  { id: "bounce", ru: "Отскок", en: "Bounce" },
+  { id: "drift", ru: "Дрифт", en: "Drift" },
+  { id: "off", ru: "Выкл", en: "Off" },
+];
+
+function cycleOption<T extends string>(options: readonly { id: T }[], current: T): T {
+  const idx = options.findIndex((o) => o.id === current);
+  return options[(idx + 1) % options.length].id;
 }
 
 const VISUAL_MODES = [
@@ -35,6 +73,8 @@ const VISUAL_MODES = [
 ];
 
 export function LyricsProviderIsland({
+  trackKey = "",
+  hasWordSync = true,
   visualMode = "full",
   onSetVisualMode,
   blurEnabled = true,
@@ -43,8 +83,26 @@ export function LyricsProviderIsland({
 }: LyricsProviderIslandProps) {
   const [visualQualityOpen, setVisualQualityOpen] = useState(false);
   const [typo, setTypo] = useState<LyricsTypography>(() => loadLyricsTypography());
+  const [offsetMs, setOffsetMs] = useState<number>(() => loadTrackLyricOffset(trackKey));
   const containerRef = useRef<HTMLDivElement | null>(null);
   const typoRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setOffsetMs(loadTrackLyricOffset(trackKey));
+  }, [trackKey]);
+
+  useEffect(() => {
+    const onSettings = () => {
+      setTypo(loadLyricsTypography());
+    };
+    window.addEventListener(LYRICS_SETTINGS_EVENT, onSettings);
+    return () => window.removeEventListener(LYRICS_SETTINGS_EVENT, onSettings);
+  }, []);
+
+  const updateOffset = (nextMs: number) => {
+    setOffsetMs(nextMs);
+    saveTrackLyricOffset(trackKey, nextMs);
+  };
 
   useEffect(() => {
     if (typoRafRef.current !== null) {
@@ -73,6 +131,9 @@ export function LyricsProviderIsland({
   const resetTypo = () => {
     setTypo(DEFAULT_LYRICS_TYPOGRAPHY);
     saveLyricsTypography(DEFAULT_LYRICS_TYPOGRAPHY);
+    if (trackKey) {
+      updateOffset(0);
+    }
   };
 
   useEffect(() => {
@@ -174,6 +235,103 @@ export function LyricsProviderIsland({
           </div>
 
           <div className="fs-vq-typo-section">
+            {/* Sync Mode / Text Style / Animation */}
+            <div className="fs-vq-meta-rows">
+              {(() => {
+                const effectiveSync: LyricsSyncMode = hasWordSync ? typo.syncMode : "line";
+                const found = SYNC_OPTIONS.find((o) => o.id === effectiveSync) ?? SYNC_OPTIONS[0];
+                return (
+                  <button
+                    type="button"
+                    disabled={!hasWordSync}
+                    className={`fs-vq-meta-row ${!hasWordSync ? "is-locked" : ""}`}
+                    onClick={() =>
+                      hasWordSync && updateTypo({ syncMode: cycleOption(SYNC_OPTIONS, typo.syncMode) })
+                    }
+                    title={
+                      !hasWordSync
+                        ? lang === "ru"
+                          ? "Для этого трека доступны только построчные тайминги"
+                          : "Only line-level timings available for this track"
+                        : undefined
+                    }
+                  >
+                    <span className="fs-vq-meta-label">{lang === "ru" ? "Синхронизация" : "Sync"}</span>
+                    <span className="fs-vq-meta-value">
+                      {lang === "ru" ? found.ru : found.en}
+                    </span>
+                  </button>
+                );
+              })()}
+
+              <button
+                type="button"
+                className="fs-vq-meta-row"
+                onClick={() => updateTypo({ textStyle: cycleOption(TEXT_STYLE_OPTIONS, typo.textStyle) })}
+              >
+                <span className="fs-vq-meta-label">{lang === "ru" ? "Стиль текста" : "Text style"}</span>
+                <span className="fs-vq-meta-value">
+                  {(() => {
+                    const found = TEXT_STYLE_OPTIONS.find((o) => o.id === typo.textStyle) ?? TEXT_STYLE_OPTIONS[0];
+                    return lang === "ru" ? found.ru : found.en;
+                  })()}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="fs-vq-meta-row"
+                onClick={() => updateTypo({ animation: cycleOption(ANIMATION_OPTIONS, typo.animation) })}
+              >
+                <span className="fs-vq-meta-label">{lang === "ru" ? "Анимация" : "Animation"}</span>
+                <span className="fs-vq-meta-value">
+                  {(() => {
+                    const found = ANIMATION_OPTIONS.find((o) => o.id === typo.animation) ?? ANIMATION_OPTIONS[0];
+                    return lang === "ru" ? found.ru : found.en;
+                  })()}
+                </span>
+              </button>
+            </div>
+
+            {/* Per-Track Timing Offset */}
+            {trackKey && (
+              <div className="fs-vq-slider-group">
+                <div className="fs-vq-slider-label-row">
+                  <span>{lang === "ru" ? "Смещение" : "Offset"}</span>
+                  <div className="fs-vq-offset-actions">
+                    {offsetMs !== 0 && (
+                      <button
+                        type="button"
+                        className="fs-vq-offset-reset"
+                        onClick={() => updateOffset(0)}
+                        title={lang === "ru" ? "Сбросить смещение для этого трека" : "Reset offset for this track"}
+                      >
+                        ↺
+                      </button>
+                    )}
+                    <span className={`fs-vq-slider-val ${offsetMs !== 0 ? "is-active" : ""}`}>
+                      {formatLyricOffset(offsetMs, lang)}
+                    </span>
+                  </div>
+                </div>
+                <div className="fs-vq-offset-slider-wrap">
+                  <span className="fs-vq-offset-zero" aria-hidden="true" />
+                  <input
+                    type="range"
+                    min={LYRICS_OFFSET_MIN_MS}
+                    max={LYRICS_OFFSET_MAX_MS}
+                    step={LYRICS_OFFSET_STEP_MS}
+                    value={offsetMs}
+                    onChange={(e) => updateOffset(Number(e.target.value))}
+                    onDoubleClick={() => updateOffset(0)}
+                    className="fs-vq-slider fs-vq-offset-slider"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="fs-vq-divider fs-vq-divider-compact" />
+
             {/* Font Size */}
             <div className="fs-vq-slider-group">
               <div className="fs-vq-slider-label-row">

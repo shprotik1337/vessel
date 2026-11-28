@@ -832,7 +832,7 @@ export function CustomizationProvider({ children }: { children: ReactNode }) {
       textColor: resolved.textColor,
       glassMode: resolved.glassMode,
       glassOpacity: resolved.glassOpacity,
-      windowOpacity: resolved.windowOpacity ?? 55,
+      windowOpacity: resolved.windowOpacity ?? 35,
       glassForce: resolved.glassForce ?? 55,
       backdropBlur: resolved.backdropBlur ?? 10,
     });

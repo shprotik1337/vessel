@@ -8,6 +8,15 @@ import {
   type LyricsCandidateOption,
 } from "../../lib/lyrics";
 import * as api from "../../api/commands";
+import { usePlaybackRate } from "../player/usePlaybackRate";
+import {
+  LYRICS_SETTINGS_EVENT,
+  applyLyricsTypography,
+  loadLyricsTypography,
+  loadTrackLyricOffset,
+  saveLyricsTypography,
+  type LyricsSyncMode,
+} from "./lyricsTypography";
 
 import type { Lang } from "../../i18n";
 
@@ -52,22 +61,54 @@ export function useFullscreenLyrics({
   const currentTrackKey = track ? `${track.provider}:${track.id}` : "";
   const loadedTrackKeyRef = useRef<string>("");
 
+  const playbackRate = usePlaybackRate();
+  const [trackOffsetMs, setTrackOffsetMs] = useState<number>(() =>
+    loadTrackLyricOffset(currentTrackKey),
+  );
+
+  useEffect(() => {
+    setTrackOffsetMs(loadTrackLyricOffset(currentTrackKey));
+  }, [currentTrackKey]);
+
+  useEffect(() => {
+    const onSettingsChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ trackKey?: string; offsetMs?: number }>).detail;
+      if (detail?.trackKey && detail.trackKey === currentTrackKey && typeof detail.offsetMs === "number") {
+        setTrackOffsetMs(detail.offsetMs);
+      } else {
+        setTrackOffsetMs(loadTrackLyricOffset(currentTrackKey));
+      }
+    };
+    window.addEventListener(LYRICS_SETTINGS_EVENT, onSettingsChanged);
+    return () => window.removeEventListener(LYRICS_SETTINGS_EVENT, onSettingsChanged);
+  }, [currentTrackKey]);
+
   const effectiveDuration = progressDurationMs || playerDurationMs || track?.duration_ms || 0;
   const initialPos = progressPositionMs || playerPositionMs || 0;
   const [posMs, setPosMs] = useState(initialPos);
-  const syncRef = useRef({ pos: initialPos, time: Date.now() });
+  const syncRef = useRef({ pos: initialPos, time: Date.now(), rate: playbackRate });
 
   useEffect(() => {
     const cur = progressPositionMs || playerPositionMs || 0;
-    syncRef.current = { pos: cur, time: Date.now() };
+    syncRef.current = { pos: cur, time: Date.now(), rate: playbackRate };
     setPosMs(cur);
   }, [progressPositionMs, playerStatus]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const prevElapsed = (now - syncRef.current.time) * syncRef.current.rate;
+    syncRef.current = {
+      pos: syncRef.current.pos + (playerStatus === "playing" ? prevElapsed : 0),
+      time: now,
+      rate: playbackRate,
+    };
+  }, [playbackRate, playerStatus]);
 
   useEffect(() => {
     if (playerStatus !== "playing") return;
     let animId: number;
     const update = () => {
-      const elapsed = Date.now() - syncRef.current.time;
+      const elapsed = (Date.now() - syncRef.current.time) * syncRef.current.rate;
       const cur = syncRef.current.pos + elapsed;
       const max = effectiveDuration || Infinity;
       setPosMs(Math.min(max, cur));
@@ -75,7 +116,7 @@ export function useFullscreenLyrics({
     };
     animId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(animId);
-  }, [playerStatus, effectiveDuration]);
+  }, [playerStatus, effectiveDuration, playbackRate]);
 
   // Track the actively requested fetch key to prevent race conditions
   const activeReqRef = useRef<string>("");
@@ -137,6 +178,19 @@ export function useFullscreenLyrics({
       });
   }, [currentTrackKey, track?.id, track?.title, track?.album_title, playerDurationMs]);
 
+  // Автоматически подстраиваем режим синхронизации под возможности загруженного текста:
+  // есть пословные тайминги -> «По словам», только построчные -> «По строкам».
+  useEffect(() => {
+    if (!lyricsData) return;
+    const autoSync: LyricsSyncMode = lyricsData.hasWordSync ? "word" : "line";
+    const current = loadLyricsTypography();
+    if (current.syncMode !== autoSync) {
+      const next = { ...current, syncMode: autoSync };
+      saveLyricsTypography(next);
+      applyLyricsTypography(next);
+    }
+  }, [lyricsData]);
+
   const durSecs = track?.duration_ms
     ? track.duration_ms / 1000
     : playerDurationMs
@@ -179,8 +233,8 @@ export function useFullscreenLyrics({
     selectProvider(candidates[prevIdx].provider);
   }, [candidates, activeProvider, selectProvider]);
 
-  // Determine current effective time and active lyric line index
-  const curSeconds = posMs / 1000;
+  // Determine current effective time (with per-track user offset) and active lyric line index
+  const curSeconds = Math.max(0, (posMs + trackOffsetMs) / 1000);
   let activeIndex = -1;
   if (lyricsData?.synced && lyricsData.lines.length > 0) {
     for (let i = lyricsData.lines.length - 1; i >= 0; i--) {
@@ -241,10 +295,11 @@ export function useFullscreenLyrics({
 
   const handleSeekToLyric = async (timeSecs: number) => {
     try {
-      const ms = Math.floor(Math.max(0, timeSecs) * 1000);
+      const audioTargetSecs = Math.max(0, timeSecs - trackOffsetMs / 1000);
+      const ms = Math.floor(audioTargetSecs * 1000);
       await api.seek(ms);
       setPosMs(ms);
-      syncRef.current = { pos: ms, time: Date.now() };
+      syncRef.current = { pos: ms, time: Date.now(), rate: playbackRate };
       setUserScrolled(false);
       await refresh();
     } catch (err) {
@@ -275,6 +330,8 @@ export function useFullscreenLyrics({
     handleSeekToLyric,
     lineProgress,
     curSeconds,
+    playbackRate,
+    trackOffsetMs,
     availableProviders: candidates,
     activeProvider,
     selectProvider,

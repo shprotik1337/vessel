@@ -20,6 +20,7 @@ pub fn provider_kind_from_str(value: &str) -> Result<ProviderKind, String> {
         "deezer" => Ok(ProviderKind::Deezer),
         "spotify" => Ok(ProviderKind::Spotify),
         "youtube_music" | "you_tube_music" | "youtube" => Ok(ProviderKind::YouTubeMusic),
+        "local" => Ok(ProviderKind::Local),
         _ => Err(format!("неизвестный провайдер: {value}")),
     }
 }

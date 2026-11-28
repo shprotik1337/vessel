@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   EQ_BANDS,
@@ -7,15 +7,27 @@ import {
   EQ_PRESETS,
   EQ_MAX_CUSTOM_PRESETS,
   EQ_PRESET_NAME_MAX,
+  PREAMP_MIN_DB,
+  PREAMP_MAX_DB,
+  PREAMP_STEP_DB,
+  SPEED_MIN,
+  SPEED_MAX,
+  SPEED_STEP,
+  SPEED_PRESETS,
   clampEqGain,
+  clampPreampDb,
+  clampSpeedRate,
   formatDb,
   formatEqFrequency,
+  formatSpeedRate,
   findEqPreset,
   findEqCustomPreset,
   loadStoredEqualizer,
   saveStoredEqualizer,
   type EqCategory,
   type EqCustomPreset,
+  type EqualizerStoredState,
+  type SpeedMode,
 } from "./equalizerData";
 import * as api from "../../api/commands";
 
@@ -186,6 +198,27 @@ function BandSlider({ frequency, value, dimmed, onChange }: BandSliderProps) {
   );
 }
 
+interface PopoverPos {
+  top?: number;
+  bottom?: number;
+  right: number;
+  placement: "top" | "bottom";
+}
+
+function computePopoverPos(anchorRef?: React.RefObject<HTMLElement | null>): PopoverPos {
+  if (typeof window !== "undefined" && anchorRef?.current) {
+    const rect = anchorRef.current.getBoundingClientRect();
+    const right = Math.max(16, Math.min(window.innerWidth - 352, window.innerWidth - rect.right - 12));
+    if (rect.top < window.innerHeight / 2) {
+      const top = Math.max(16, rect.bottom + 12);
+      return { top, right, placement: "top" };
+    }
+    const bottom = Math.max(80, window.innerHeight - rect.top + 12);
+    return { bottom, right, placement: "bottom" };
+  }
+  return { bottom: 92, right: 32, placement: "bottom" };
+}
+
 export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverProps) {
   const [eqState, setEqState] = useState(() => loadStoredEqualizer());
   const [tab, setTab] = useState<EqCategory>(() => {
@@ -198,39 +231,57 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
 
   const [isNaming, setIsNaming] = useState(false);
   const [draftName, setDraftName] = useState("");
-  const [pos, setPos] = useState<{ bottom: number; right: number }>({ bottom: 92, right: 32 });
+  const [pos, setPos] = useState<PopoverPos>(() => computePopoverPos(anchorRef));
 
-  useEffect(() => {
-    if (anchorRef?.current) {
-      const rect = anchorRef.current.getBoundingClientRect();
-      const right = Math.max(16, window.innerWidth - rect.right - 12);
-      const bottom = Math.max(80, window.innerHeight - rect.top + 12);
-      setPos({ bottom, right });
-    }
+  useLayoutEffect(() => {
+    const update = () => setPos(computePopoverPos(anchorRef));
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, [anchorRef]);
 
   const isEnabled = eqState.enabled;
   const gains = eqState.gains;
   const customPresets = eqState.customPresets;
+  const preampDb = eqState.preampDb;
+  const speedMode = eqState.speedMode;
+  const playbackRate = eqState.playbackRate;
+
+  const preampTrackRef = useRef<HTMLDivElement>(null);
+  const speedTrackRef = useRef<HTMLDivElement>(null);
 
   const activePreset = findEqPreset(gains);
   const activeCustom = activePreset ? null : findEqCustomPreset(customPresets, gains);
 
-  // Sync state to Rust DSP & LocalStorage whenever enabled or gains change
-  const applyState = (newEnabled: boolean, newGains: number[], newCustom?: EqCustomPreset[]) => {
-    const updated = {
-      enabled: newEnabled,
-      gains: newGains,
-      customPresets: newCustom ?? customPresets,
-    };
-    setEqState(updated);
-    saveStoredEqualizer(updated);
-    void api.setEqualizer(newEnabled, newGains).catch(() => {});
+  // Sync full state to Rust DSP & LocalStorage
+  const persistState = (
+    patch: Partial<EqualizerStoredState>,
+    syncFlags: { eq?: boolean; preamp?: boolean; speed?: boolean } = {},
+  ) => {
+    setEqState((prev) => {
+      const updated: EqualizerStoredState = {
+        ...prev,
+        ...patch,
+      };
+      saveStoredEqualizer(updated);
+      if (syncFlags.eq) {
+        void api.setEqualizer(updated.enabled, updated.gains).catch(() => {});
+      }
+      if (syncFlags.preamp) {
+        void api.setAudioPreamp(updated.preampDb).catch(() => {});
+      }
+      if (syncFlags.speed) {
+        void api.setPlaybackSpeed(updated.playbackRate).catch(() => {});
+      }
+      return updated;
+    });
   };
 
-  // Sync on initial mount
+  // Sync EQ, preamp & speed on initial mount
   useEffect(() => {
     void api.setEqualizer(isEnabled, gains).catch(() => {});
+    void api.setAudioPreamp(preampDb).catch(() => {});
+    void api.setPlaybackSpeed(playbackRate).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -243,18 +294,51 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
   }, [onClose]);
 
   const toggleEnabled = () => {
-    applyState(!isEnabled, gains);
+    persistState({ enabled: !isEnabled }, { eq: true });
   };
 
   const setBandGain = (index: number, db: number) => {
     const nextGains = [...gains];
     nextGains[index] = db;
     // Touching any band automatically activates EQ
-    applyState(true, nextGains);
+    persistState({ enabled: true, gains: nextGains }, { eq: true });
   };
 
   const applyPresetGains = (presetGains: number[]) => {
-    applyState(true, presetGains);
+    persistState({ enabled: true, gains: presetGains }, { eq: true });
+  };
+
+  const selectSpeedMode = (mode: SpeedMode) => {
+    if (mode === "custom") {
+      persistState({ speedMode: "custom" }, { speed: false });
+      return;
+    }
+    const nextRate = SPEED_PRESETS[mode];
+    persistState({ speedMode: mode, playbackRate: nextRate }, { speed: true });
+  };
+
+  const setCustomSpeed = (rate: number) => {
+    const clamped = clampSpeedRate(rate);
+    persistState({ speedMode: "custom", playbackRate: clamped }, { speed: true });
+  };
+
+  const setPreamp = (db: number) => {
+    const clamped = clampPreampDb(db);
+    persistState({ preampDb: clamped }, { preamp: true });
+  };
+
+  const setPreampFromPointer = (clientX: number) => {
+    const rect = preampTrackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    setPreamp(PREAMP_MIN_DB + ratio * (PREAMP_MAX_DB - PREAMP_MIN_DB));
+  };
+
+  const setSpeedFromPointer = (clientX: number) => {
+    const rect = speedTrackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    setCustomSpeed(SPEED_MIN + ratio * (SPEED_MAX - SPEED_MIN));
   };
 
   const handleSaveCustom = (e: React.FormEvent) => {
@@ -270,7 +354,7 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
     };
 
     const nextCustomList = [newCustom, ...customPresets].slice(0, EQ_MAX_CUSTOM_PRESETS);
-    applyState(true, gains, nextCustomList);
+    persistState({ enabled: true, gains, customPresets: nextCustomList }, { eq: true });
     setDraftName("");
     setIsNaming(false);
   };
@@ -278,7 +362,7 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
   const handleDeleteCustom = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const nextCustomList = customPresets.filter((p) => p.id !== id);
-    applyState(isEnabled, gains, nextCustomList);
+    persistState({ customPresets: nextCustomList }, { eq: false });
   };
 
   const canSaveMore = customPresets.length < EQ_MAX_CUSTOM_PRESETS;
@@ -317,12 +401,15 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
       />
       <div
         className="equalizer-popover"
+        data-placement={pos.placement}
         style={{
           position: "fixed",
-          bottom: pos.bottom,
+          ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }),
           right: pos.right,
           zIndex: 9999,
-          width: 320,
+          width: 336,
+          maxHeight: "calc(100vh - 32px)",
+          overflowY: "auto",
           background: "var(--card-bg)",
           border: "1px solid var(--border)",
           borderRadius: "var(--radius-panel, 14px)",
@@ -331,8 +418,8 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
           flexDirection: "column",
           gap: 14,
           boxShadow: "0 16px 48px rgba(0, 0, 0, 0.75)",
-          backdropFilter: "blur(24px) saturate(160%)",
-          WebkitBackdropFilter: "blur(24px) saturate(160%)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
           userSelect: "none",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -340,10 +427,209 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
-      {/* Header with Switch */}
+      {/* Speed Section */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
+            {lang === "ru" ? "Скорость" : "Speed"}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                fontVariantNumeric: "tabular-nums",
+                color: Math.abs(playbackRate - 1.0) > 0.01 ? "var(--accent)" : "var(--text3)",
+              }}
+            >
+              {formatSpeedRate(playbackRate)}
+            </span>
+            <button
+              onClick={onClose}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--text3)",
+                cursor: "pointer",
+                padding: 4,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "50%",
+              }}
+              title={lang === "ru" ? "Закрыть" : "Close"}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 6,
+          }}
+        >
+          {(
+            [
+              {
+                id: "slowed" as const,
+                label: "Slowed",
+                icon: (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                ),
+              },
+              { id: "default" as const, label: "Default", icon: null },
+              {
+                id: "speed" as const,
+                label: "Speed",
+                icon: (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                ),
+              },
+              {
+                id: "custom" as const,
+                label: lang === "ru" ? "Своя" : "Custom",
+                icon: (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="4" y1="21" x2="4" y2="14" />
+                    <line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" />
+                    <line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" />
+                    <line x1="9" y1="8" x2="15" y2="8" />
+                    <line x1="17" y1="16" x2="23" y2="16" />
+                  </svg>
+                ),
+              },
+            ]
+          ).map((chip) => {
+            const active = speedMode === chip.id;
+            return (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => selectSpeedMode(chip.id)}
+                style={{
+                  height: 30,
+                  padding: "0 8px",
+                  borderRadius: 9999,
+                  border: "none",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  background: active ? "var(--accent)" : "var(--elev)",
+                  color: active ? "var(--accent-contrast-text, #ffffff)" : "var(--text2)",
+                  transition: "all 0.15s ease",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {chip.icon}
+                <span>{chip.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {speedMode === "custom" && (
+          <div
+            ref={speedTrackRef}
+            role="slider"
+            tabIndex={0}
+            aria-label={lang === "ru" ? "Своя скорость" : "Custom speed"}
+            aria-valuemin={SPEED_MIN}
+            aria-valuemax={SPEED_MAX}
+            aria-valuenow={playbackRate}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setSpeedFromPointer(e.clientX);
+            }}
+            onPointerMove={(e) => {
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                setSpeedFromPointer(e.clientX);
+              }
+            }}
+            onDoubleClick={() => setCustomSpeed(1.0)}
+            onWheel={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setCustomSpeed(playbackRate + (e.deltaY < 0 ? SPEED_STEP : -SPEED_STEP));
+            }}
+            onKeyDown={(e) => {
+              const delta =
+                e.key === "ArrowRight" || e.key === "ArrowUp"
+                  ? SPEED_STEP
+                  : e.key === "ArrowLeft" || e.key === "ArrowDown"
+                  ? -SPEED_STEP
+                  : 0;
+              if (delta !== 0) {
+                e.preventDefault();
+                setCustomSpeed(playbackRate + delta);
+              }
+            }}
+            style={{
+              position: "relative",
+              height: 28,
+              borderRadius: 9999,
+              background: "var(--elev)",
+              border: "none",
+              overflow: "hidden",
+              cursor: "ew-resize",
+              touchAction: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0 12px",
+              outline: "none",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: `${((playbackRate - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)) * 100}%`,
+                background: "var(--accent)",
+                opacity: 0.25,
+                pointerEvents: "none",
+              }}
+            />
+            <span style={{ position: "relative", fontSize: 11, color: "var(--text2)", fontWeight: 500 }}>
+              {lang === "ru" ? "Точная скорость" : "Exact speed"}
+            </span>
+            <span
+              style={{
+                position: "relative",
+                fontSize: 11,
+                fontWeight: 700,
+                fontVariantNumeric: "tabular-nums",
+                color: "var(--text)",
+              }}
+            >
+              {formatSpeedRate(playbackRate)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Equalizer Header with Switch */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>
             {lang === "ru" ? "Эквалайзер" : "Equalizer"}
           </div>
           <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 1 }}>
@@ -351,71 +637,46 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Toggle switch */}
-          <label
+        <label
+          style={{
+            position: "relative",
+            display: "inline-block",
+            width: 36,
+            height: 20,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={isEnabled}
+            onChange={toggleEnabled}
+            style={{ opacity: 0, width: 0, height: 0 }}
+          />
+          <span
             style={{
-              position: "relative",
-              display: "inline-block",
-              width: 36,
-              height: 20,
-              cursor: "pointer",
+              position: "absolute",
+              inset: 0,
+              borderRadius: 9999,
+              background: isEnabled ? "var(--accent)" : "var(--elev)",
+              border: "1px solid var(--border)",
+              transition: "background 0.2s ease",
             }}
           >
-            <input
-              type="checkbox"
-              checked={isEnabled}
-              onChange={toggleEnabled}
-              style={{ opacity: 0, width: 0, height: 0 }}
-            />
             <span
               style={{
                 position: "absolute",
-                inset: 0,
-                borderRadius: 9999,
-                background: isEnabled ? "var(--accent)" : "var(--elev)",
-                border: "1px solid var(--border)",
-                transition: "background 0.2s ease",
+                top: 2,
+                left: isEnabled ? 18 : 2,
+                width: 14,
+                height: 14,
+                borderRadius: "50%",
+                background: isEnabled ? "var(--accent-contrast-text, var(--text))" : "var(--text)",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+                transition: "left 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
               }}
-            >
-              <span
-                style={{
-                  position: "absolute",
-                  top: 2,
-                  left: isEnabled ? 18 : 2,
-                  width: 14,
-                  height: 14,
-                  borderRadius: "50%",
-                  background: "var(--text)",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
-                  transition: "left 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                }}
-              />
-            </span>
-          </label>
-
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--text3)",
-              cursor: "pointer",
-              padding: 4,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "50%",
-            }}
-            title={lang === "ru" ? "Закрыть" : "Close"}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+            />
+          </span>
+        </label>
       </div>
 
       {/* Tabs */}
@@ -677,6 +938,116 @@ export function EqualizerPopover({ lang, onClose, anchorRef }: EqualizerPopoverP
           />
         ))}
       </div>
+
+      {/* Sound Gain Boost (Усиление 0 .. +12 дБ) */}
+      {(() => {
+        const boostPct = ((preampDb - PREAMP_MIN_DB) / (PREAMP_MAX_DB - PREAMP_MIN_DB)) * 100;
+        const dbLabel =
+          lang === "ru"
+            ? `${preampDb > 0 ? "+" : ""}${Number.isInteger(preampDb) ? preampDb : preampDb.toFixed(1)} дБ`
+            : `${preampDb > 0 ? "+" : ""}${Number.isInteger(preampDb) ? preampDb : preampDb.toFixed(1)} dB`;
+        return (
+          <div
+            ref={preampTrackRef}
+            role="slider"
+            tabIndex={0}
+            aria-label={lang === "ru" ? "Усиление" : "Gain boost"}
+            aria-valuemin={PREAMP_MIN_DB}
+            aria-valuemax={PREAMP_MAX_DB}
+            aria-valuenow={preampDb}
+            aria-valuetext={dbLabel}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setPreampFromPointer(e.clientX);
+            }}
+            onPointerMove={(e) => {
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                setPreampFromPointer(e.clientX);
+              }
+            }}
+            onDoubleClick={() => setPreamp(0)}
+            onWheel={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setPreamp(preampDb + (e.deltaY < 0 ? PREAMP_STEP_DB : -PREAMP_STEP_DB));
+            }}
+            onKeyDown={(e) => {
+              const delta =
+                e.key === "ArrowRight" || e.key === "ArrowUp"
+                  ? PREAMP_STEP_DB
+                  : e.key === "ArrowLeft" || e.key === "ArrowDown"
+                  ? -PREAMP_STEP_DB
+                  : 0;
+              if (delta !== 0) {
+                e.preventDefault();
+                setPreamp(preampDb + delta);
+              }
+            }}
+            style={{
+              position: "relative",
+              height: 36,
+              borderRadius: 9999,
+              background: "var(--elev)",
+              border: "none",
+              overflow: "hidden",
+              cursor: "ew-resize",
+              touchAction: "none",
+              outline: "none",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: `${boostPct}%`,
+                background: "var(--accent)",
+                borderRadius: 9999,
+                pointerEvents: "none",
+                transition: "width 0.05s linear",
+              }}
+            />
+            <div
+              style={{
+                position: "relative",
+                zIndex: 1,
+                height: "100%",
+                padding: "0 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--text)",
+                pointerEvents: "none",
+              }}
+            >
+              <span>{lang === "ru" ? "Усиление" : "Gain"}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{dbLabel}</span>
+            </div>
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 2,
+                padding: "0 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--accent-contrast-text, #ffffff)",
+                clipPath: `inset(0 ${100 - boostPct}% 0 0)`,
+                pointerEvents: "none",
+              }}
+            >
+              <span>{lang === "ru" ? "Усиление" : "Gain"}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{dbLabel}</span>
+            </div>
+          </div>
+        );
+      })()}
     </div>
     </>,
     document.body

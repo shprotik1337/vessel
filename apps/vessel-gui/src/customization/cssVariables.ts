@@ -10,13 +10,15 @@ export function applyThemeVariables(activeConfig: CustomizationConfig): void {
   const { theme, borderRadius, sidebar, player } = activeConfig;
   const isLight = isLightColor(theme.appBgColor);
 
+  const effectiveAccent = isLight && isLightColor(theme.accentColor) ? "#111114" : theme.accentColor;
+
   root.setAttribute("data-theme-mode", isLight ? "light" : "dark");
   root.style.setProperty("color-scheme", isLight ? "light" : "dark");
 
-  root.style.setProperty("--accent", theme.accentColor);
-  root.style.setProperty("--accent-hover", hexToRgba(theme.accentColor, 0.85));
-  root.style.setProperty("--accent-glow", hexToRgba(theme.accentColor, 0.35));
-  root.style.setProperty("--accent-contrast-text", getContrastTextColor(theme.accentColor));
+  root.style.setProperty("--accent", effectiveAccent);
+  root.style.setProperty("--accent-hover", hexToRgba(effectiveAccent, 0.85));
+  root.style.setProperty("--accent-glow", hexToRgba(effectiveAccent, 0.35));
+  root.style.setProperty("--accent-contrast-text", getContrastTextColor(effectiveAccent));
   root.style.setProperty("--text", theme.textColor);
   root.style.setProperty("--text2", hexToRgba(theme.textColor, 0.72));
   root.style.setProperty("--text3", hexToRgba(theme.textColor, 0.48));
@@ -78,11 +80,12 @@ export function applyThemeVariables(activeConfig: CustomizationConfig): void {
   root.style.setProperty("--player-width", `${player.widthPercent || 100}%`);
 
   const isGlass = Boolean(theme.glassMode);
-  const winOpacity = typeof theme.windowOpacity === "number" ? theme.windowOpacity : Math.round((theme.glassOpacity ?? 0.66) * 100);
+  const winOpacity = typeof theme.windowOpacity === "number" ? theme.windowOpacity : Math.round((theme.glassOpacity ?? 0.35) * 100);
   const alpha = isGlass ? Math.max(0.08, Math.min(1, winOpacity / 100)) : 1;
-  const lightGlassFactor = isLight && isGlass && winOpacity < 98 ? 0.68 : 1;
-  const surfaceAlpha = Math.max(0.08, Math.min(1, alpha * lightGlassFactor));
-  const playerBlurAlpha = isGlass ? Math.max(0.1, Math.min(0.9, surfaceAlpha * 0.9)) : 0.85;
+  const surfaceAlpha = isLight ? (isGlass ? Math.max(0.5, alpha) : 1) : alpha;
+  const playerBlurAlpha = isLight
+    ? (isGlass ? Math.max(0.82, surfaceAlpha) : 0.94)
+    : (isGlass ? Math.max(0.1, Math.min(0.9, surfaceAlpha * 0.9)) : 0.85);
   const blurPx = isGlass ? (typeof theme.backdropBlur === "number" ? theme.backdropBlur : (theme.wallpaperBlur || 16)) : 0;
   const glassForceVal = typeof theme.glassForce === "number" ? theme.glassForce / 100 : 0.05;
 
@@ -113,7 +116,7 @@ export function applyThemeVariables(activeConfig: CustomizationConfig): void {
   root.style.setProperty("--glass-border", hexToRgba(theme.textColor, 0.12));
   root.style.setProperty("--app-bg", theme.appBgColor);
   root.style.setProperty("--titlebar-bg", "transparent");
-  const waveBgAlpha = isGlass ? alpha : 1;
+  const waveBgAlpha = isLight ? (isGlass ? Math.max(0.86, alpha) : 1) : (isGlass ? alpha : 1);
   root.style.setProperty("--wave-bg-alpha", `${waveBgAlpha}`);
 
   // Settings modal adaptive surface tokens (respond to light/dark/custom themes & transparency)
@@ -140,5 +143,5 @@ export function applyThemeVariables(activeConfig: CustomizationConfig): void {
   );
   root.style.setProperty("--sett-switch-off", hexToRgba(theme.textColor, isLight ? 0.18 : 0.22));
   root.style.setProperty("--sett-switch-thumb-off", isLight ? theme.cardBgColor : theme.textColor);
-  root.style.setProperty("--sett-switch-thumb-on", getContrastTextColor(theme.accentColor));
+  root.style.setProperty("--sett-switch-thumb-on", getContrastTextColor(effectiveAccent));
 }

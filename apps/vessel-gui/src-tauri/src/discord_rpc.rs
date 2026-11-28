@@ -327,6 +327,10 @@ fn send_playback_activity(
             "Яндекс Музыка",
             "https://cdn.rcd.gg/PreMiD/websites/Y/Yandex%20Music/assets/logo.png",
         ),
+        ProviderKind::Local => (
+            "Локальный файл",
+            "https://cdn.rcd.gg/PreMiD/websites/S/SoundCloud/assets/logo.png",
+        ),
     };
 
     let is_ru = language != "en";

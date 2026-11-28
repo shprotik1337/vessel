@@ -120,6 +120,8 @@ export function providerLabel(provider: string): string {
     case "youtube_music":
     case "you_tube_music":
       return "YouTube Music";
+    case "local":
+      return "На устройстве";
     default:
       return provider;
   }

@@ -516,11 +516,11 @@ export function AppearanceSection({
               type="range"
               min="10"
               max="100"
-              value={config.theme?.windowOpacity ?? 55}
+              value={config.theme?.windowOpacity ?? 35}
               onChange={(e) => updateThemeDirectly({ windowOpacity: Number(e.target.value) })}
               className="sett-range-input"
             />
-            <span className="sett-slider-value">{config.theme?.windowOpacity ?? 55}%</span>
+            <span className="sett-slider-value">{config.theme?.windowOpacity ?? 35}%</span>
           </div>
         </div>
 

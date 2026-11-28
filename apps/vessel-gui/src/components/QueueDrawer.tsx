@@ -8,6 +8,12 @@ import type { TrackRef } from "../api/types";
 import { fetchLyricsMulti, parseCandidateToLyricsData, type LyricsData } from "../lib/lyrics";
 import * as api from "../api/commands";
 import { PlayerContextMenu, type ContextMenuState } from "../pages/player";
+import { usePlaybackRate } from "./player/usePlaybackRate";
+import {
+  LYRICS_SETTINGS_EVENT,
+  getLyricsTrackKey,
+  loadTrackLyricOffset,
+} from "./fullscreen/lyricsTypography";
 
 interface CompactLyricsProps {
   track: TrackRef | null | undefined;
@@ -24,25 +30,49 @@ function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
   const activeLineRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const [posMs, setPosMs] = useState(progress.position_ms);
-  const syncRef = useRef({ pos: progress.position_ms, time: Date.now() });
+  const playbackRate = usePlaybackRate();
+  const currentTrackKey = getLyricsTrackKey(track);
+  const [offsetMs, setOffsetMs] = useState<number>(() => loadTrackLyricOffset(currentTrackKey));
 
   useEffect(() => {
-    syncRef.current = { pos: progress.position_ms, time: Date.now() };
+    setOffsetMs(loadTrackLyricOffset(currentTrackKey));
+  }, [currentTrackKey]);
+
+  useEffect(() => {
+    const onSettings = () => setOffsetMs(loadTrackLyricOffset(currentTrackKey));
+    window.addEventListener(LYRICS_SETTINGS_EVENT, onSettings);
+    return () => window.removeEventListener(LYRICS_SETTINGS_EVENT, onSettings);
+  }, [currentTrackKey]);
+
+  const [posMs, setPosMs] = useState(progress.position_ms);
+  const syncRef = useRef({ pos: progress.position_ms, time: Date.now(), rate: playbackRate });
+
+  useEffect(() => {
+    syncRef.current = { pos: progress.position_ms, time: Date.now(), rate: playbackRate };
     setPosMs(progress.position_ms);
   }, [progress.position_ms, isPlaying]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const prevElapsed = (now - syncRef.current.time) * syncRef.current.rate;
+    syncRef.current = {
+      pos: syncRef.current.pos + (isPlaying ? prevElapsed : 0),
+      time: now,
+      rate: playbackRate,
+    };
+  }, [playbackRate, isPlaying]);
 
   useEffect(() => {
     if (!isPlaying) return;
     let animId: number;
     const update = () => {
-      const elapsed = Date.now() - syncRef.current.time;
+      const elapsed = (Date.now() - syncRef.current.time) * syncRef.current.rate;
       setPosMs(syncRef.current.pos + elapsed);
       animId = requestAnimationFrame(update);
     };
     animId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying]);
+  }, [isPlaying, playbackRate]);
 
   useEffect(() => {
     if (!track) {
@@ -81,7 +111,7 @@ function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
     };
   }, [track?.id, track?.title]);
 
-  const curSeconds = posMs / 1000;
+  const curSeconds = Math.max(0, (posMs + offsetMs) / 1000);
   let activeIndex = -1;
   if (lyrics?.synced && lyrics.lines.length > 0) {
     for (let i = lyrics.lines.length - 1; i >= 0; i--) {
@@ -120,7 +150,8 @@ function CompactDrawerLyrics({ track, isPlaying, lang }: CompactLyricsProps) {
 
   const seekToLine = async (timeSecs: number) => {
     try {
-      await api.seek(Math.round(timeSecs * 1000));
+      const ms = Math.round(Math.max(0, timeSecs - offsetMs / 1000) * 1000);
+      await api.seek(ms);
     } catch {}
   };
 

@@ -68,18 +68,7 @@ export function Home() {
           </div>
         </div>
 
-        {/* 2. Currently Listening Section (Liner Style) */}
-        <div className="home-row-line">
-          <div className="home-block-wrapper" data-block-id="currently-listening" data-width="full">
-            <CurrentlyListeningSection
-              nowKey={nowKey}
-              isLive={isLive}
-              lang={lang}
-            />
-          </div>
-        </div>
-
-        {/* 3. Recommendations Section */}
+        {/* 2. Recommendations Section */}
         <div className="home-row-line">
           <div className="home-block-wrapper" data-block-id="recommendations" data-width="full">
             <RecommendationsBlockContent
@@ -90,9 +79,20 @@ export function Home() {
           </div>
         </div>
 
+        {/* 3. Currently Listening Section (Liner Style) */}
+        <div className="home-row-line">
+          <div className="home-block-wrapper" data-block-id="currently-listening" data-width="full">
+            <CurrentlyListeningSection
+              nowKey={nowKey}
+              isLive={isLive}
+              lang={lang}
+            />
+          </div>
+        </div>
+
         {((state?.library?.length ?? 0) > 0 || (state?.playlists?.length ?? 0) > 0) && (
           <>
-            {/* 3. Personal Mixes Section */}
+            {/* 4. Personal Mixes Section */}
             <div className="home-row-line">
               <div className="home-block-wrapper" data-block-id="mixes" data-width="full">
                 <MixesBlockContent
@@ -102,7 +102,7 @@ export function Home() {
               </div>
             </div>
 
-            {/* 4. Explore Section ("You might like") */}
+            {/* 5. Explore Section ("You might like") */}
             <div className="home-row-line">
               <div className="home-block-wrapper" data-block-id="explore" data-width="full">
                 <ExploreBlockContent

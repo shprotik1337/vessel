@@ -19,6 +19,7 @@ interface MiniContextMenuProps {
   onClose: () => void;
   onPlayNext?: (track: TrackRef) => void;
   onRemoveTrack?: (index: number) => void;
+  removeLabel?: string;
   onStation?: (track: TrackRef) => void;
   lang: Lang;
 }
@@ -28,6 +29,7 @@ export function MiniContextMenu({
   onClose,
   onPlayNext,
   onRemoveTrack,
+  removeLabel,
   onStation,
   lang,
 }: MiniContextMenuProps) {
@@ -39,6 +41,7 @@ export function MiniContextMenu({
   const [downloaded, setDownloaded] = useState(false);
 
   const track = menu?.track;
+  const isLocal = track?.provider === "local" || (track?.web_url?.startsWith("file://") ?? false);
   const key = track ? trackKey(track) : "";
   const isFav = favoriteKeysSet && key ? favoriteKeysSet.has(key) : false;
   const userPlaylists = (state?.playlists ?? []).filter((pl) => !pl.is_album);
@@ -235,15 +238,17 @@ export function MiniContextMenu({
             onClick={(e) => e.stopPropagation()}
           >
             {/* 1. Начать станцию */}
-            <div className="mini-ctx-item" onClick={handleStartStation}>
-              <span className="mini-ctx-item-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="2" fill="currentColor" />
-                  <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14" />
-                </svg>
-              </span>
-              <span>{lang === "ru" ? "Начать станцию" : "Start station"}</span>
-            </div>
+            {!isLocal && (
+              <div className="mini-ctx-item" onClick={handleStartStation}>
+                <span className="mini-ctx-item-icon">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="2" fill="currentColor" />
+                    <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14" />
+                  </svg>
+                </span>
+                <span>{lang === "ru" ? "Начать станцию" : "Start station"}</span>
+              </div>
+            )}
 
             {/* 2. Играть следующим */}
             <div className="mini-ctx-item" onClick={handlePlayNextInternal}>
@@ -299,34 +304,38 @@ export function MiniContextMenu({
             </div>
 
             {/* 6. Скачать */}
-            <div className="mini-ctx-item" onClick={handleDownload}>
-              <span className="mini-ctx-item-icon">
-                {downloaded ? (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                )}
-              </span>
-              <span>{downloaded ? (lang === "ru" ? "Скачано" : "Downloaded") : (lang === "ru" ? "Скачать" : "Download")}</span>
-            </div>
+            {!isLocal && (
+              <div className="mini-ctx-item" onClick={handleDownload}>
+                <span className="mini-ctx-item-icon">
+                  {downloaded ? (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  )}
+                </span>
+                <span>{downloaded ? (lang === "ru" ? "Скачано" : "Downloaded") : (lang === "ru" ? "Скачать" : "Download")}</span>
+              </div>
+            )}
 
             {/* 7. Поделиться */}
-            <div className="mini-ctx-item" onClick={handleShare}>
-              <span className="mini-ctx-item-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                  <polyline points="16 6 12 2 8 6" />
-                  <line x1="12" y1="2" x2="12" y2="15" />
-                </svg>
-              </span>
-              <span>{lang === "ru" ? "Поделиться" : "Share"}</span>
-            </div>
+            {!isLocal && (
+              <div className="mini-ctx-item" onClick={handleShare}>
+                <span className="mini-ctx-item-icon">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                    <polyline points="16 6 12 2 8 6" />
+                    <line x1="12" y1="2" x2="12" y2="15" />
+                  </svg>
+                </span>
+                <span>{lang === "ru" ? "Поделиться" : "Share"}</span>
+              </div>
+            )}
 
             {onRemoveTrack && menu.index !== undefined && menu.index >= 0 && (
               <>
@@ -344,7 +353,7 @@ export function MiniContextMenu({
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                     </svg>
                   </span>
-                  <span>{lang === "ru" ? "Удалить из очереди" : "Remove from queue"}</span>
+                  <span>{removeLabel || (lang === "ru" ? "Удалить из очереди" : "Remove from queue")}</span>
                 </div>
               </>
             )}

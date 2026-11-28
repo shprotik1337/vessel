@@ -35,18 +35,85 @@ pub fn track_cache_dir() -> PathBuf {
 }
 
 /// Короткий префикс провайдера для имён файлов.
-fn provider_prefix(kind: ProviderKind) -> &'static str {
+pub fn provider_prefix(kind: ProviderKind) -> &'static str {
     match kind {
         ProviderKind::SoundCloud => "sc",
         ProviderKind::YandexMusic => "ya",
         ProviderKind::Deezer => "dz",
         ProviderKind::Spotify => "sp",
         ProviderKind::YouTubeMusic => "yt",
+        ProviderKind::Local => "loc",
     }
 }
 
+pub fn provider_from_prefix(prefix: &str) -> Option<ProviderKind> {
+    match prefix {
+        "sc" => Some(ProviderKind::SoundCloud),
+        "ya" => Some(ProviderKind::YandexMusic),
+        "dz" => Some(ProviderKind::Deezer),
+        "sp" => Some(ProviderKind::Spotify),
+        "yt" => Some(ProviderKind::YouTubeMusic),
+        "loc" => Some(ProviderKind::Local),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CachedFileEntry {
+    pub provider: ProviderKind,
+    pub id_part: String,
+    pub path: PathBuf,
+    pub size_bytes: u64,
+}
+
+/// Сканирует папку офлайн-кэша и возвращает валидные аудиофайлы.
+pub fn list_cached_entries() -> Vec<CachedFileEntry> {
+    let dir = track_cache_dir();
+    let mut entries = Vec::new();
+    let Ok(read_dir) = std::fs::read_dir(&dir) else {
+        return entries;
+    };
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()) else {
+            continue;
+        };
+        if !matches!(ext.as_str(), "mp3" | "m4a" | "mp4" | "aac" | "flac" | "ogg" | "wav" | "opus") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.len() < 32 * 1024 {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some((prefix, id_part)) = stem.split_once('_') else {
+            continue;
+        };
+        let Some(provider) = provider_from_prefix(prefix) else {
+            continue;
+        };
+        if id_part.is_empty() {
+            continue;
+        }
+        entries.push(CachedFileEntry {
+            provider,
+            id_part: id_part.to_string(),
+            path,
+            size_bytes: meta.len(),
+        });
+    }
+    entries
+}
+
 /// Безопасное имя файла кэша для трека: {провайдер}_{id}.{ext}
-fn cache_stem(track: &TrackRef) -> String {
+pub fn cache_stem(track: &TrackRef) -> String {
     let id: String = track
         .id
         .trim()
@@ -223,37 +290,89 @@ pub fn validate_cached_file(track: &TrackRef, path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Быстро узнаёт длительность аудиофайла (проба формата, без полного декода).
-fn probe_duration_ms(path: &Path) -> Option<u64> {
+#[derive(Clone, Debug, Default)]
+pub struct AudioFileMetadata {
+    pub duration_ms: Option<u64>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+}
+
+/// Быстро извлекает длительность и основные теги аудиофайла (через symphonia).
+pub fn probe_audio_metadata(path: &Path) -> AudioFileMetadata {
     use symphonia::core::{
         formats::{FormatOptions, TrackType, probe::Hint},
         io::MediaSourceStream,
-        meta::MetadataOptions,
+        meta::{MetadataOptions, StandardTag},
     };
-    let file = std::fs::File::open(path).ok()?;
+    let mut out = AudioFileMetadata::default();
+    let Ok(file) = std::fs::File::open(path) else {
+        return out;
+    };
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|value| value.to_str()) {
         hint.with_extension(ext);
     }
-    let format = symphonia::default::get_probe()
-        .probe(
-            &hint,
-            stream,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .ok()?;
-    let track = format.default_track(TrackType::Audio)?;
-    let duration = track.duration.as_ref()?;
-    let time_base = track.time_base.as_ref()?;
-    let numer = u64::from(time_base.numer.get());
-    let denom = u64::from(time_base.denom.get());
-    if denom == 0 {
-        // Файл с побитым time_base — не паникуем, считаем что длительность неизвестна
-        return None;
+    let Ok(mut format) = symphonia::default::get_probe().probe(
+        &hint,
+        stream,
+        FormatOptions::default(),
+        MetadataOptions::default(),
+    ) else {
+        return out;
+    };
+
+    if let Some(track) = format.default_track(TrackType::Audio) {
+        if let (Some(duration), Some(time_base)) = (track.duration.as_ref(), track.time_base.as_ref()) {
+            let numer = u64::from(time_base.numer.get());
+            let denom = u64::from(time_base.denom.get());
+            if denom > 0 {
+                out.duration_ms = Some((duration.get() * numer * 1000) / denom);
+            }
+        }
     }
-    Some((duration.get() as u64 * numer * 1000) / denom)
+
+    if let Some(rev) = format.metadata().current() {
+        for tag in &rev.media.tags {
+            let Some(std_tag) = &tag.std else {
+                continue;
+            };
+            match std_tag {
+                StandardTag::TrackTitle(v) if out.title.is_none() => {
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        out.title = Some(trimmed.to_string());
+                    }
+                }
+                StandardTag::Artist(v) if out.artist.is_none() => {
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        out.artist = Some(trimmed.to_string());
+                    }
+                }
+                StandardTag::AlbumArtist(v) if out.artist.is_none() => {
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        out.artist = Some(trimmed.to_string());
+                    }
+                }
+                StandardTag::Album(v) if out.album.is_none() => {
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        out.album = Some(trimmed.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// Быстро узнаёт длительность аудиофайла (проба формата, без полного декода).
+fn probe_duration_ms(path: &Path) -> Option<u64> {
+    probe_audio_metadata(path).duration_ms
 }
 
 /// Пустой источник для file-кэша без capability (для тестов/заглушек).

@@ -4,6 +4,21 @@ export const EQ_MAX_DB = 12;
 export const EQ_MAX_CUSTOM_PRESETS = 12;
 export const EQ_PRESET_NAME_MAX = 24;
 
+export type SpeedMode = "slowed" | "default" | "speed" | "custom";
+
+export const SPEED_MIN = 0.5;
+export const SPEED_MAX = 2.0;
+export const SPEED_STEP = 0.05;
+export const SPEED_PRESETS: Record<Exclude<SpeedMode, "custom">, number> = {
+  slowed: 0.85,
+  default: 1.0,
+  speed: 1.25,
+};
+
+export const PREAMP_MIN_DB = 0;
+export const PREAMP_MAX_DB = 12;
+export const PREAMP_STEP_DB = 0.5;
+
 export const FLAT_EQ: number[] = EQ_BANDS.map(() => 0);
 
 export type EqCategory = "enhance" | "genre" | "accent" | "custom";
@@ -235,11 +250,37 @@ export function formatEqFrequency(hz: number): string {
 }
 
 const STORAGE_KEY = "vessel_equalizer_state_v1";
+export const PLAYBACK_RATE_EVENT = "vessel-playback-rate-changed";
 
 export interface EqualizerStoredState {
   enabled: boolean;
   gains: number[];
   customPresets: EqCustomPreset[];
+  preampDb: number;
+  speedMode: SpeedMode;
+  playbackRate: number;
+}
+
+export function clampPreampDb(db: number): number {
+  if (!Number.isFinite(db)) return 0;
+  return Math.min(PREAMP_MAX_DB, Math.max(PREAMP_MIN_DB, Math.round(db * 2) / 2));
+}
+
+export function clampSpeedRate(rate: number): number {
+  if (!Number.isFinite(rate)) return 1.0;
+  return Math.min(SPEED_MAX, Math.max(SPEED_MIN, Math.round(rate * 20) / 20));
+}
+
+export function formatSpeedRate(rate: number): string {
+  return `${clampSpeedRate(rate).toFixed(2)}x`;
+}
+
+export function isAudioEffectsActive(state: EqualizerStoredState): boolean {
+  return (
+    isEqActive(state.enabled, state.gains) ||
+    state.preampDb > 0.01 ||
+    Math.abs(state.playbackRate - 1.0) > 0.01
+  );
 }
 
 export function loadStoredEqualizer(): EqualizerStoredState {
@@ -247,14 +288,31 @@ export function loadStoredEqualizer(): EqualizerStoredState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      const speedMode: SpeedMode =
+        parsed.speedMode === "slowed" ||
+        parsed.speedMode === "default" ||
+        parsed.speedMode === "speed" ||
+        parsed.speedMode === "custom"
+          ? parsed.speedMode
+          : "default";
+      const playbackRate =
+        typeof parsed.playbackRate === "number"
+          ? clampSpeedRate(parsed.playbackRate)
+          : speedMode === "custom"
+          ? 1.0
+          : SPEED_PRESETS[speedMode];
       return {
         enabled: Boolean(parsed.enabled),
-        gains: Array.isArray(parsed.gains) && parsed.gains.length === 10
-          ? parsed.gains.map(clampEqGain)
-          : FLAT_EQ,
+        gains:
+          Array.isArray(parsed.gains) && parsed.gains.length === 10
+            ? parsed.gains.map(clampEqGain)
+            : FLAT_EQ,
         customPresets: Array.isArray(parsed.customPresets)
           ? parsed.customPresets.slice(0, EQ_MAX_CUSTOM_PRESETS)
           : [],
+        preampDb: typeof parsed.preampDb === "number" ? clampPreampDb(parsed.preampDb) : 0,
+        speedMode,
+        playbackRate,
       };
     }
   } catch {}
@@ -262,11 +320,23 @@ export function loadStoredEqualizer(): EqualizerStoredState {
     enabled: false,
     gains: FLAT_EQ,
     customPresets: [],
+    preampDb: 0,
+    speedMode: "default",
+    playbackRate: 1.0,
   };
 }
 
 export function saveStoredEqualizer(state: EqualizerStoredState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent(PLAYBACK_RATE_EVENT, { detail: { rate: state.playbackRate } }),
+      );
+    }
   } catch {}
+}
+
+export function getStoredPlaybackRate(): number {
+  return loadStoredEqualizer().playbackRate;
 }

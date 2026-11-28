@@ -24,6 +24,7 @@ interface TrackRowProps {
   onPlay: (track: TrackRef) => void;
   onArtistClick?: (name: string, provider: string) => void;
   onRemove?: (track: TrackRef) => void;
+  removeLabel?: string;
   showAlbum?: boolean;
   showAdded?: boolean;
   addedLabel?: string;
@@ -36,6 +37,7 @@ function TrackRowComponent({
   onPlay,
   onArtistClick,
   onRemove,
+  removeLabel,
   showAlbum,
   showAdded,
   addedLabel,
@@ -166,11 +168,11 @@ function TrackRowComponent({
                     <span key={`${artist}-${i}`}>
                       <span
                         style={{
-                          cursor: onArtistClick ? "pointer" : undefined,
+                          cursor: onArtistClick && track.provider !== "local" ? "pointer" : undefined,
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (onArtistClick) {
+                          if (onArtistClick && track.provider !== "local") {
                             const targetProv = track.provider === "spotify" ? "deezer" : track.provider;
                             onArtistClick(artist, targetProv);
                           }
@@ -232,10 +234,11 @@ function TrackRowComponent({
       </div>
 
       <MiniContextMenu
-        menu={menu ? { track, x: menu.x, y: menu.y } : null}
+        menu={menu ? { track, x: menu.x, y: menu.y, index } : null}
         onClose={() => setMenu(null)}
         onPlayNext={handlePlayNext}
         onRemoveTrack={onRemove ? () => onRemove(track) : undefined}
+        removeLabel={removeLabel}
         lang={lang}
       />
 

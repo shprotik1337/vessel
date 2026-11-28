@@ -183,6 +183,7 @@ async fn run(
             ProviderKind::Deezer => 2,
             ProviderKind::YouTubeMusic => 3,
             ProviderKind::Spotify => 99,
+            ProviderKind::Local => 100,
         });
     }
 

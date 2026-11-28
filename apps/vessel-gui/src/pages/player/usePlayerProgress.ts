@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import * as api from "../../api/commands";
+import { usePlaybackRate } from "../../components/player/usePlaybackRate";
 
 interface UsePlayerProgressOptions {
   positionMs: number;
@@ -16,26 +17,37 @@ export function usePlayerProgress({
   refresh,
   showToast,
 }: UsePlayerProgressOptions) {
+  const playbackRate = usePlaybackRate();
   const [posMs, setPosMs] = useState(positionMs);
-  const syncRef = useRef({ pos: positionMs, time: Date.now() });
+  const syncRef = useRef({ pos: positionMs, time: Date.now(), rate: playbackRate });
   const [dragPercent, setDragPercent] = useState<number | null>(null);
   const seekBarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    syncRef.current = { pos: positionMs, time: Date.now() };
+    syncRef.current = { pos: positionMs, time: Date.now(), rate: playbackRate };
     setPosMs(positionMs);
   }, [positionMs, playerStatus]);
 
   useEffect(() => {
+    const now = Date.now();
+    const prevElapsed = (now - syncRef.current.time) * syncRef.current.rate;
+    syncRef.current = {
+      pos: syncRef.current.pos + (playerStatus === "playing" ? prevElapsed : 0),
+      time: now,
+      rate: playbackRate,
+    };
+  }, [playbackRate, playerStatus]);
+
+  useEffect(() => {
     if (playerStatus !== "playing") return;
     const timer = window.setInterval(() => {
-      const elapsed = Date.now() - syncRef.current.time;
+      const elapsed = (Date.now() - syncRef.current.time) * syncRef.current.rate;
       const cur = syncRef.current.pos + elapsed;
       const max = durationMs || Infinity;
       setPosMs(Math.min(max, cur));
     }, 100);
     return () => window.clearInterval(timer);
-  }, [playerStatus, durationMs]);
+  }, [playerStatus, durationMs, playbackRate]);
 
   const rawPercent = durationMs > 0 ? Math.min(100, Math.max(0, (posMs / durationMs) * 100)) : 0;
   const shownPercent = dragPercent ?? rawPercent;

@@ -45,6 +45,14 @@ export async function setEqualizer(enabled: boolean, gains: number[]): Promise<v
   return invoke("set_equalizer", { enabled, gains });
 }
 
+export async function setAudioPreamp(db: number): Promise<void> {
+  return invoke("set_audio_preamp", { db });
+}
+
+export async function setPlaybackSpeed(rate: number): Promise<void> {
+  return invoke("set_playback_speed", { rate });
+}
+
 export async function stopPlayback(): Promise<void> {
   return invoke("stop");
 }

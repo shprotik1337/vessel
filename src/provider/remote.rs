@@ -766,6 +766,7 @@ fn provider_site(kind: ProviderKind) -> Url {
         ProviderKind::Deezer => "https://www.deezer.com",
         ProviderKind::Spotify => "https://open.spotify.com",
         ProviderKind::YouTubeMusic => "https://music.youtube.com",
+        ProviderKind::Local => "file:///",
     };
     Url::parse(raw).expect("статический URL правильный")
 }

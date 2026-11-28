@@ -27,6 +27,7 @@ export const LYRICS_SOURCES: LyricsSource[] = [
 
 export interface LyricsData {
   synced: boolean;
+  hasWordSync?: boolean;
   lines: LyricLine[];
   braccatoLyrics?: Lyric[];
   rawLyrics?: string;
@@ -290,6 +291,7 @@ function processLyricsResponse(data: any, sourceName: string): LyricsData | null
     if (parsed.syncedLines.length > 0 || parsed.braccatoLyrics.length > 0) {
       return {
         synced: true,
+        hasWordSync: parsed.hasWordSync,
         lines: parsed.syncedLines,
         braccatoLyrics: parsed.braccatoLyrics,
         rawLyrics: data.syncedLyrics,
@@ -336,6 +338,7 @@ export function parseCandidateToLyricsData(
       .filter((l: LyricLine) => l.text.length > 0);
     return {
       synced: false,
+      hasWordSync: false,
       lines: plainLines,
       plain: candidate.content,
       source: candidate.provider,
@@ -345,6 +348,7 @@ export function parseCandidateToLyricsData(
   const parsed = parseRawLyrics(candidate.content, durationSecs);
   return {
     synced: parsed.syncedLines.length > 0 || parsed.braccatoLyrics.length > 0,
+    hasWordSync: candidate.syncLevel === "word_level" || parsed.hasWordSync,
     lines: parsed.syncedLines,
     braccatoLyrics: parsed.braccatoLyrics,
     rawLyrics: candidate.content,

@@ -217,6 +217,20 @@ pub async fn set_equalizer(
 }
 
 #[tauri::command]
+pub async fn set_audio_preamp(core: CoreState<'_>, db: f32) -> Result<(), String> {
+    let core = lock(&core);
+    core.runtime.set_audio_preamp(db);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_playback_speed(core: CoreState<'_>, rate: f32) -> Result<(), String> {
+    let core = lock(&core);
+    core.runtime.set_playback_speed(rate);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn fetch_server_lyrics(
     core: CoreState<'_>,
     track_name: Option<String>,

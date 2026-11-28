@@ -19,6 +19,7 @@ fn frontend_track_key(track: &TrackRef) -> String {
         ProviderKind::Deezer => "deezer",
         ProviderKind::Spotify => "spotify",
         ProviderKind::YouTubeMusic => "youtube_music",
+        ProviderKind::Local => "local",
     };
     format!("{}:{}", provider, track.id.trim())
 }

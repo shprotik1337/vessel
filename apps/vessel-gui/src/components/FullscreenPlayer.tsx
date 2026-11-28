@@ -210,6 +210,8 @@ export function FullscreenPlayer() {
       <FullscreenHeader
         onClose={() => setFullscreenOpen(false)}
         lang={lang}
+        trackKey={track ? `${track.provider}:${track.id}` : ""}
+        hasWordSync={Boolean(lyrics.lyricsData?.hasWordSync)}
         visualMode={visualMode}
         onSetVisualMode={handleSetVisualMode}
         blurEnabled={blurEnabled}

@@ -1,4 +1,4 @@
-export type ProviderKind = "soundcloud" | "yandex_music" | "deezer" | "spotify" | "youtube_music" | "you_tube_music";
+export type ProviderKind = "soundcloud" | "yandex_music" | "deezer" | "spotify" | "youtube_music" | "you_tube_music" | "local";
 
 export type TrackOrigin = "original" | "smart_shuffle" | "autoplay" | "my_wave";
 
@@ -206,6 +206,8 @@ export type View =
   | "library"
   | "playlists"
   | "favorites"
+  | "downloads"
+  | "local"
   | "recent"
   | "queue"
   | "settings"

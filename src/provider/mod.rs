@@ -247,6 +247,7 @@ fn provider_order(kind: ProviderKind) -> u8 {
         ProviderKind::Deezer => 2,
         ProviderKind::Spotify => 3,
         ProviderKind::YouTubeMusic => 4,
+        ProviderKind::Local => 5,
     }
 }
 
@@ -289,6 +290,7 @@ pub async fn probe_provider(
             let provider = youtube::YouTubeMusicProvider::new()?;
             provider.probe().await
         }
+        ProviderKind::Local => Ok(()),
     }
 }
 

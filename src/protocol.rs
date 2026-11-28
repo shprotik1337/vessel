@@ -85,6 +85,7 @@ pub fn kind_segment(kind: ProviderKind) -> &'static str {
         ProviderKind::Deezer => "deezer",
         ProviderKind::Spotify => "spotify",
         ProviderKind::YouTubeMusic => "youtube_music",
+        ProviderKind::Local => "local",
     }
 }
 
@@ -95,6 +96,7 @@ pub fn kind_from_segment(segment: &str) -> Option<ProviderKind> {
         "deezer" => Some(ProviderKind::Deezer),
         "spotify" => Some(ProviderKind::Spotify),
         "youtube_music" => Some(ProviderKind::YouTubeMusic),
+        "local" => Some(ProviderKind::Local),
         _ => None,
     }
 }

@@ -189,7 +189,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
     wallpaperBlur: typeof raw.theme?.wallpaperBlur === "number" ? raw.theme.wallpaperBlur : 0,
     wallpaperDim: typeof raw.theme?.wallpaperDim === "number" ? raw.theme.wallpaperDim : 0,
     glassMode: raw.theme?.glassMode !== undefined ? Boolean(raw.theme.glassMode) : true,
-    glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.55,
+    glassOpacity: typeof raw.theme?.glassOpacity === "number" ? raw.theme.glassOpacity : 0.35,
     trackRowOpacity: typeof raw.theme?.trackRowOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowOpacity)) : 0,
     trackRowStyle: raw.theme?.trackRowStyle === "glass" ? "glass" : "none",
     trackRowActiveOpacity: typeof raw.theme?.trackRowActiveOpacity === "number" ? Math.max(0, Math.min(1, raw.theme.trackRowActiveOpacity)) : 0.08,
@@ -197,7 +197,7 @@ export function sanitizeConfig(raw: any): CustomizationConfig {
       ? raw.theme.trackRowActiveStyle
       : "glass",
     ambientMode: "dynamic",
-    windowOpacity: typeof raw.theme?.windowOpacity === "number" ? Math.max(0, Math.min(100, raw.theme.windowOpacity)) : 55,
+    windowOpacity: typeof raw.theme?.windowOpacity === "number" ? Math.max(0, Math.min(100, raw.theme.windowOpacity)) : 35,
     glassForce: typeof raw.theme?.glassForce === "number" ? Math.max(0, Math.min(100, raw.theme.glassForce)) : 55,
     backdropBlur: typeof raw.theme?.backdropBlur === "number" ? Math.max(0, Math.min(40, raw.theme.backdropBlur)) : 10,
     customTrackArt: typeof raw.theme?.customTrackArt === "string" ? raw.theme.customTrackArt : null,

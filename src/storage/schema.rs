@@ -92,6 +92,15 @@ pub fn initialize_schema(connection: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_pending_artist_deletions_user
             ON pending_artist_deletions(user_id);
+
+        CREATE TABLE IF NOT EXISTS local_tracks (
+            id TEXT PRIMARY KEY,
+            file_path TEXT NOT NULL UNIQUE,
+            track_json TEXT NOT NULL,
+            added_at_ms INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_local_tracks_added
+            ON local_tracks(added_at_ms DESC);
         ",
     )?;
 

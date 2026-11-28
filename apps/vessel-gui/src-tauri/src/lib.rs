@@ -133,6 +133,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::Deezer => "deezer",
             vessel_core::model::ProviderKind::Spotify => "spotify",
             vessel_core::model::ProviderKind::YouTubeMusic => "youtube_music",
+            vessel_core::model::ProviderKind::Local => "local",
         }
         .to_string();
         let enabled = match kind {
@@ -141,6 +142,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::Deezer => core.app.deezer_enabled,
             vessel_core::model::ProviderKind::Spotify => core.app.spotify_enabled,
             vessel_core::model::ProviderKind::YouTubeMusic => core.app.youtube_music_enabled,
+            vessel_core::model::ProviderKind::Local => true,
         };
         let has_credentials = match kind {
             vessel_core::model::ProviderKind::SoundCloud => credentials.soundcloud,
@@ -148,6 +150,7 @@ fn provider_statuses(core: &GuiCore) -> Vec<ProviderStatus> {
             vessel_core::model::ProviderKind::Deezer => credentials.deezer,
             vessel_core::model::ProviderKind::Spotify => credentials.spotify,
             vessel_core::model::ProviderKind::YouTubeMusic => credentials.youtube,
+            vessel_core::model::ProviderKind::Local => true,
         };
         let guest = core.account_state.is_authenticated()
             && core.runtime.is_guest_provider(kind)
@@ -930,6 +933,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::set_crossfade,
             commands::set_audio_agc,
             commands::set_equalizer,
+            commands::set_audio_preamp,
+            commands::set_playback_speed,
             commands::toggle_favorite,
             commands::get_playlists,
             commands::import_playlist_url,
@@ -991,6 +996,12 @@ pub fn run() -> anyhow::Result<()> {
             commands::set_auto_fallback,
             commands::get_storage_stats,
             commands::clear_storage_cache,
+            commands::get_downloaded_tracks,
+            commands::remove_downloaded_track,
+            commands::get_local_tracks,
+            commands::add_local_track_paths,
+            commands::pick_and_add_local_tracks,
+            commands::remove_local_track,
             commands::get_spotify_proxy,
             commands::set_spotify_proxy,
             commands::get_spotify_playback_source,

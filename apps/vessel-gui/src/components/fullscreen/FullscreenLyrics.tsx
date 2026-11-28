@@ -1,9 +1,14 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import type { TrackRef } from "../../api/types";
 import { t, type Lang } from "../../i18n";
 import { type useFullscreenLyrics } from "./useFullscreenLyrics";
 import { BraccatoLyricsView } from "./BraccatoLyricsView";
-import { applyLyricsTypography, loadLyricsTypography } from "./lyricsTypography";
+import {
+  LYRICS_SETTINGS_EVENT,
+  applyLyricsTypography,
+  loadLyricsTypography,
+  type LyricsTypography,
+} from "./lyricsTypography";
 
 export interface FullscreenLyricsProps {
   track: TrackRef | null | undefined;
@@ -32,11 +37,22 @@ export function FullscreenLyrics({
     handleSeekToLyric,
     lineProgress,
     curSeconds,
+    playbackRate,
     activeProvider,
   } = lyrics;
 
+  const [typoSettings, setTypoSettings] = useState<LyricsTypography>(() => loadLyricsTypography());
+  const effectiveSyncMode = lyricsData?.hasWordSync ? typoSettings.syncMode : "line";
+
   useEffect(() => {
-    applyLyricsTypography(loadLyricsTypography());
+    const sync = () => {
+      const next = loadLyricsTypography();
+      setTypoSettings(next);
+      applyLyricsTypography(next);
+    };
+    sync();
+    window.addEventListener(LYRICS_SETTINGS_EVENT, sync);
+    return () => window.removeEventListener(LYRICS_SETTINGS_EVENT, sync);
   }, []);
 
   return (
@@ -71,6 +87,10 @@ export function FullscreenLyrics({
           lyrics={lyricsData.braccatoLyrics}
           curSeconds={curSeconds}
           isPlaying={playerStatus === "playing"}
+          playbackRate={playbackRate}
+          syncMode={effectiveSyncMode}
+          textStyle={typoSettings.textStyle}
+          animation={typoSettings.animation}
           onSeek={(timeS) => void handleSeekToLyric(timeS)}
           onUserScrollInteraction={handleUserScrollInteraction}
           onContainerScroll={handleContainerScroll}
@@ -79,6 +99,9 @@ export function FullscreenLyrics({
       ) : lyricsData && lyricsData.lines && lyricsData.lines.length > 0 ? (
         <div
           ref={lyricsContainerRef}
+          data-lyrics-sync={effectiveSyncMode}
+          data-lyrics-style={typoSettings.textStyle}
+          data-lyrics-anim={typoSettings.animation}
           className={`fs-lyrics-container ${scrolledTop ? "scrolled-top" : ""}`}
           onWheel={handleUserScrollInteraction}
           onTouchMove={handleUserScrollInteraction}
@@ -88,15 +111,17 @@ export function FullscreenLyrics({
             {lyricsData.lines.map((line, idx) => {
               const isActive = lyricsData.synced && idx === activeIndex;
               const isPast = lyricsData.synced && activeIndex >= 0 && idx < activeIndex;
+              const dist = activeIndex >= 0 ? Math.min(4, Math.abs(idx - activeIndex)) : 1;
 
               return (
                 <div
                   key={`${line.time}-${idx}`}
                   ref={isActive ? activeLineRef : null}
+                  data-dist={dist}
                   className={`fs-lyric-line ${isActive ? "active" : ""} ${isPast ? "past" : ""}`}
                   onClick={() => lyricsData.synced && void handleSeekToLyric(line.time)}
                 >
-                  {isActive && line.words && line.words.length > 0 ? (
+                  {effectiveSyncMode === "word" && isActive && line.words && line.words.length > 0 ? (
                     <span className="fs-lyric-words-wrap">
                       {line.words.map((w, wIdx) => {
                         const wEnd =

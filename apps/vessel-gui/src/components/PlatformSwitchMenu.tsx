@@ -26,7 +26,6 @@ interface PlatformItem {
 const PLATFORMS: PlatformItem[] = [
   { id: "youtube_music", label: "YouTube Music", color: "#ff0000" },
   { id: "soundcloud", label: "SoundCloud", color: "#ff5500" },
-  { id: "yandex", label: "Яндекс Музыка", color: "#fc3f1d" },
   { id: "deezer", label: "Deezer", color: "#a238ff" },
 ];
 

@@ -59,17 +59,6 @@ function IconRecent() {
   );
 }
 
-function IconQueue() {
-  return (
-    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="14" y2="12" />
-      <line x1="4" y1="18" x2="11" y2="18" />
-      <polygon points="17 14 21 16.5 17 19 17 14" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
 function IconPlayer() {
   return (
     <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -101,8 +90,6 @@ export function Sidebar() {
   } = useApp();
   const {
     config,
-    isQueueOpen,
-    toggleQueue,
   } = useCustomization();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -170,8 +157,6 @@ export function Sidebar() {
         return { label: t(lang, "nav.favorites"), icon: <IconFavorites />, count: state?.library.length };
       case "recent":
         return { label: t(lang, "nav.recent"), icon: <IconRecent /> };
-      case "queue":
-        return { label: t(lang, "nav.queue"), icon: <IconQueue />, count: state?.queue.length };
       default:
         return { label: v, icon: null };
     }
@@ -181,17 +166,14 @@ export function Sidebar() {
 
   const nav = (v: string) => {
     const meta = getNavMeta(v);
-    const isActive = v === "queue" ? isQueueOpen : view === v;
+    const isActive = view === v;
 
     if (isCompactRail) {
       return (
         <button
           key={v}
           className={`nav-item icon-only ${isActive ? "active" : ""}`}
-          onClick={() => {
-            if (v === "queue") toggleQueue();
-            else navigateTo(v);
-          }}
+          onClick={() => navigateTo(v)}
           title={meta.count !== undefined ? `${meta.label} (${meta.count})` : meta.label}
           aria-label={meta.label}
         >
@@ -204,10 +186,7 @@ export function Sidebar() {
       <button
         key={v}
         className={`nav-item ${isActive ? "active" : ""}`}
-        onClick={() => {
-          if (v === "queue") toggleQueue();
-          else navigateTo(v);
-        }}
+        onClick={() => navigateTo(v)}
         title={meta.label}
       >
         <span className="nav-item-icon">{meta.icon}</span>
@@ -244,17 +223,14 @@ export function Sidebar() {
               >
                 <span className="island-nav-icon">{getNavMeta("home").icon}</span>
               </button>
-              {(["search", "player", "library", "recent", "queue"] as const).map((v) => {
+              {(["search", "player", "library", "recent"] as const).map((v) => {
                 const meta = getNavMeta(v);
-                const isActive = v === "queue" ? isQueueOpen : view === v;
+                const isActive = view === v;
                 return (
                   <button
                     key={v}
                     className={`island-nav-item ${isActive ? "active" : ""}`}
-                    onClick={() => {
-                      if (v === "queue") toggleQueue();
-                      else navigateTo(v);
-                    }}
+                    onClick={() => navigateTo(v)}
                     title={meta.label}
                   >
                     <span className="island-nav-icon">{meta.icon}</span>
@@ -315,17 +291,14 @@ export function Sidebar() {
               </button>
             </div>
             <div className="top-nav-center">
-              {(["search", "player", "library", "recent", "queue"] as const).map((v) => {
+              {(["search", "player", "library", "recent"] as const).map((v) => {
                 const meta = getNavMeta(v);
-                const isActive = v === "queue" ? isQueueOpen : view === v;
+                const isActive = view === v;
                 return (
                   <button
                     key={v}
                     className={`nav-item top-nav-item ${isActive ? "active" : ""}`}
-                    onClick={() => {
-                      if (v === "queue") toggleQueue();
-                      else navigateTo(v);
-                    }}
+                    onClick={() => navigateTo(v)}
                     title={meta.label}
                   >
                     <span className="nav-item-icon">{meta.icon}</span>
@@ -386,7 +359,7 @@ export function Sidebar() {
 
         {/* Main navigation list */}
         <div className="nav" style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center", width: "100%" }}>
-          {(["search", "player", "library", "recent", "queue"] as const).map((v) => nav(v))}
+          {(["search", "player", "library", "recent"] as const).map((v) => nav(v))}
         </div>
 
         {/* Bottom section: settings */}

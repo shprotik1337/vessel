@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useApp } from "../store";
+import { MorphPlayIcon } from "./MorphPlayIcon";
+import { useCustomization } from "../customization/CustomizationContext";
+import { isLightColor } from "../customization/colorUtils";
 import { artistLabel, resolveArtworkUrl, trackKey } from "../lib/utils";
 import type { TrackRef } from "../api/types";
 import * as api from "../api/commands";
@@ -158,6 +161,10 @@ export function WaveSection() {
     waveLoading,
     regenerateWave,
   } = useApp();
+  const { config } = useCustomization();
+  const isLightTheme = isLightColor(config.theme?.appBgColor || "#000000");
+  const isLightThemeRef = useRef(isLightTheme);
+  isLightThemeRef.current = isLightTheme;
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [switchingKey, setSwitchingKey] = useState<string | null>(null);
@@ -356,10 +363,22 @@ export function WaveSection() {
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
 
-      ctx.globalCompositeOperation = "screen";
+      const isLight = isLightThemeRef.current;
+      ctx.globalCompositeOperation = isLight ? "source-over" : "screen";
 
-      const rgb1 = currentColor1.map(Math.round).join(",");
-      const rgb2 = currentColor2.map(Math.round).join(",");
+      const clampLightColor = (c: RGB): string => {
+        if (!isLight) return c.map(Math.round).join(",");
+        const [r, g, b] = c;
+        const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        // Avoid painting white fog on light themes when cover art is predominantly white
+        if (luma > 205) {
+          return `${Math.round(r * 0.58)},${Math.round(g * 0.60)},${Math.round(b * 0.68)}`;
+        }
+        return c.map(Math.round).join(",");
+      };
+
+      const rgb1 = clampLightColor(currentColor1);
+      const rgb2 = clampLightColor(currentColor2);
 
       // 1. Центральное мягкое свечение позади главной обложки
       const centerGlow = ctx.createRadialGradient(
@@ -370,8 +389,8 @@ export function WaveSection() {
         h * 0.55,
         w * 0.35,
       );
-      centerGlow.addColorStop(0, `rgba(${rgb1}, 0.55)`);
-      centerGlow.addColorStop(0.5, `rgba(${rgb2}, 0.25)`);
+      centerGlow.addColorStop(0, `rgba(${rgb1}, ${isLight ? 0.24 : 0.55})`);
+      centerGlow.addColorStop(0.5, `rgba(${rgb2}, ${isLight ? 0.12 : 0.25})`);
       centerGlow.addColorStop(1, "transparent");
       ctx.fillStyle = centerGlow;
       ctx.fillRect(0, 0, w, h);
@@ -412,11 +431,12 @@ export function WaveSection() {
         }
         ctx.closePath();
 
+        const ribbonAlpha = isLight ? r.alpha * 0.58 : r.alpha;
         const grad = ctx.createLinearGradient(w * 0.1, 0, w * 0.9, 0);
         grad.addColorStop(0, "transparent");
-        grad.addColorStop(0.25, `rgba(${color}, ${r.alpha * 0.6})`);
-        grad.addColorStop(0.5, `rgba(${color}, ${r.alpha})`);
-        grad.addColorStop(0.75, `rgba(${color}, ${r.alpha * 0.6})`);
+        grad.addColorStop(0.25, `rgba(${color}, ${ribbonAlpha * 0.6})`);
+        grad.addColorStop(0.5, `rgba(${color}, ${ribbonAlpha})`);
+        grad.addColorStop(0.75, `rgba(${color}, ${ribbonAlpha * 0.6})`);
         grad.addColorStop(1, "transparent");
 
         ctx.fillStyle = grad;
@@ -583,7 +603,11 @@ export function WaveSection() {
               const scale = isCenter ? 1.18 : Math.max(0.5, 0.86 - absOff * 0.12);
               const opacity = absOff > 3 ? 0 : Math.max(0.18, 1 - absOff * 0.22);
               const zIndex = 20 - absOff;
-              const filter = isCenter ? "brightness(1.03)" : "brightness(0.6)";
+              const filter = isCenter
+                ? "brightness(1.03)"
+                : isLightTheme
+                ? "brightness(0.96)"
+                : "brightness(0.6)";
               const coverSrc = resolveArtworkUrl(track.artwork_url);
               const itemLoading = isCenter && isActiveBuffering;
 
@@ -659,13 +683,7 @@ export function WaveSection() {
           }
         >
           <div className="wave-btn-spinner" />
-          <svg viewBox="0 0 24 24">
-            {isWavePlaying ? (
-              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-            ) : (
-              <path d="M8 5v14l11-7z" />
-            )}
-          </svg>
+          <MorphPlayIcon playing={isWavePlaying} size={24} />
         </button>
       </div>
     </div>
